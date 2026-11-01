@@ -1,10 +1,15 @@
+import 'dart:typed_data';
+
 import 'package:clixsell_pos/l10n/app_strings.dart';
 import 'package:clixsell_pos/models/product.dart';
 import 'package:clixsell_pos/models/product_category.dart';
 import 'package:clixsell_pos/screens/inventory/product_validators.dart';
+import 'package:clixsell_pos/services/product_api_client.dart';
 import 'package:clixsell_pos/state/product_store.dart';
 import 'package:clixsell_pos/utils/formatters.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'support/fake_product_backend.dart';
 
 Product _product(String id, {required int qty, required int min, double price = 10}) {
   final now = DateTime(2025);
@@ -39,58 +44,160 @@ void main() {
     });
   });
 
-  group('InventoryStats', () {
-    test('computes totals dynamically from the product list', () {
-      final store = ProductStore(initialProducts: [
-        _product('1', qty: 0, min: 5, price: 15), // out
-        _product('2', qty: 3, min: 10, price: 2), // low
-        _product('3', qty: 24, min: 10, price: 5), // in
-      ]);
-      var stats = store.stats;
-      expect(stats.totalProducts, 3);
-      expect(stats.lowStock, 1);
-      expect(stats.outOfStock, 1);
-      expect(stats.inventoryValue, 0 * 15 + 3 * 2 + 24 * 5);
+  test('InventoryStats computes totals dynamically', () {
+    final stats = InventoryStats.from([
+      _product('1', qty: 0, min: 5, price: 15), // out
+      _product('2', qty: 3, min: 10, price: 2), // low
+      _product('3', qty: 24, min: 10, price: 5), // in
+    ]);
+    expect(stats.totalProducts, 3);
+    expect(stats.lowStock, 1);
+    expect(stats.outOfStock, 1);
+    expect(stats.inventoryValue, 0 * 15 + 3 * 2 + 24 * 5);
+  });
 
-      store.addProduct(
-        name: 'New',
-        barcode: '99999999',
+  group('Product JSON', () {
+    test('fromJson reads the backend response, including its stock status', () {
+      final p = Product.fromJson({
+        'productId': 7,
+        'name': 'Milk',
+        'barcode': '12345678',
+        'category': 'freshProduce',
+        'sellingPrice': 5,
+        'quantity': 3,
+        'minStock': 10,
+        'supplierName': 'Dairy Co',
+        'stockStatus': 'LOW_STOCK',
+        'image': 'AQID', // base64 of [1, 2, 3]
+        'imageName': 'milk.png',
+        'createdAt': '2026-11-01T22:37:43',
+        'updatedAt': '2026-11-01T22:40:00',
+      });
+      expect(p.id, '7');
+      expect(p.category, ProductCategory.freshProduce);
+      expect(p.price, 5.0);
+      expect(p.imageBytes, [1, 2, 3]);
+      expect(p.serverStockStatus, StockStatus.lowStock);
+      expect(p.stockStatus, StockStatus.lowStock);
+      expect(p.updatedAt, DateTime(2026, 11, 1, 22, 40));
+    });
+
+    test('toRequestJson matches the backend ProductRequest', () {
+      final p = _product('1', qty: 4, min: 2, price: 8.5).copyWith(
+        imageBytes: Uint8List.fromList([1, 2, 3]),
+        imageName: 'a.png',
+      );
+      expect(p.toRequestJson(), {
+        'name': 'Item 1',
+        'barcode': '10000001',
+        'category': 'other',
+        'sellingPrice': 8.5,
+        'quantity': 4,
+        'minStock': 2,
+        'supplierName': 'Supplier',
+        'image': 'AQID',
+        'imageName': 'a.png',
+      });
+    });
+  });
+
+  group('ProductStore with the API', () {
+    late FakeProductBackend backend;
+    late ProductStore store;
+
+    setUp(() {
+      backend = FakeProductBackend()
+        ..seed(name: 'Eggs', barcode: '33333333', price: 15, quantity: 0, minStock: 5)
+        ..seed(name: 'Bread', barcode: '22222222', price: 2, quantity: 3, minStock: 10);
+      store = ProductStore(api: backend.apiClient());
+    });
+
+    test('load fetches products from the server (SELECT)', () async {
+      await store.load();
+      expect(store.hasLoaded, isTrue);
+      expect(store.products.map((p) => p.name), ['Bread', 'Eggs']);
+      expect(store.stats.outOfStock, 1);
+      expect(backend.requests, ['GET /api/products']);
+    });
+
+    test('load failure is reported, and retry works', () async {
+      backend.offline = true;
+      await store.load();
+      expect(store.hasLoaded, isFalse);
+      expect(store.loadError!.isNetworkError, isTrue);
+
+      backend.offline = false;
+      await store.load();
+      expect(store.hasLoaded, isTrue);
+      expect(store.loadError, isNull);
+    });
+
+    test('add sends POST and keeps the saved product (INSERT)', () async {
+      await store.load();
+      final saved = await store.addProduct(
+        name: ' Milk ',
+        barcode: '11111111',
         category: ProductCategory.dairy,
-        price: 2.5,
-        quantity: 4,
-        minStockLevel: 4,
-        supplier: 'X',
+        price: 5,
+        quantity: 24,
+        minStockLevel: 10,
+        supplier: 'Dairy Co',
       );
-      stats = store.stats;
-      expect(stats.totalProducts, 4);
-      expect(stats.lowStock, 2);
-      expect(stats.inventoryValue, 126 + 10);
-
-      store.deleteProduct('1');
-      stats = store.stats;
-      expect(stats.totalProducts, 3);
-      expect(stats.outOfStock, 0);
+      expect(saved.id, '3');
+      expect(saved.name, 'Milk');
+      expect(store.products.first.id, '3');
+      expect(store.stats.totalProducts, 3);
+      expect(backend.rows.length, 3);
+      expect(backend.requests.last, 'POST /api/products');
     });
 
-    test('update replaces product and rejects duplicate barcodes', () {
-      final a = _product('1', qty: 1, min: 1);
-      final b = _product('2', qty: 1, min: 1);
-      final store = ProductStore(initialProducts: [a, b]);
-      store.updateProduct(a.copyWith(quantity: 50));
-      expect(store.findById('1')!.quantity, 50);
-      expect(store.stats.lowStock, 1);
-      expect(
-        () => store.updateProduct(a.copyWith(barcode: b.barcode)),
-        throwsStateError,
+    test('duplicate barcode from the server throws and changes nothing', () async {
+      await store.load();
+      await expectLater(
+        store.addProduct(
+          name: 'Copy',
+          barcode: '22222222',
+          category: ProductCategory.dairy,
+          price: 1,
+          quantity: 1,
+          minStockLevel: 1,
+          supplier: 'X',
+        ),
+        throwsA(isA<ApiException>()
+            .having((e) => e.isDuplicateBarcode, 'isDuplicateBarcode', true)),
       );
+      expect(store.products.length, 2);
     });
 
-    test('restore puts a deleted product back', () {
-      final store = ProductStore(initialProducts: [_product('1', qty: 1, min: 0)]);
-      final removed = store.deleteProduct('1')!;
-      expect(store.products, isEmpty);
-      store.restoreProduct(removed);
-      expect(store.products.single.id, '1');
+    test('update sends PUT and replaces the product (UPDATE)', () async {
+      await store.load();
+      final bread = store.products.firstWhere((p) => p.name == 'Bread');
+      await store.updateProduct(bread.copyWith(quantity: 50));
+      expect(store.findById(bread.id)!.quantity, 50);
+      expect(store.findById(bread.id)!.serverStockStatus, StockStatus.inStock);
+      expect(store.stats.lowStock, 0);
+      expect(backend.rowById(2)!['quantity'], 50);
+      expect(backend.requests.last, 'PUT /api/products/2');
+    });
+
+    test('delete sends DELETE and removes the product; restore re-inserts it', () async {
+      await store.load();
+      final removed = await store.deleteProduct('1');
+      expect(removed!.name, 'Eggs');
+      expect(store.products.length, 1);
+      expect(backend.rowById(1), isNull);
+      expect(backend.requests.last, 'DELETE /api/products/1');
+
+      await store.restoreProduct(removed);
+      expect(store.products.length, 2);
+      expect(backend.rows.length, 2);
+    });
+
+    test('delete failure (server down) keeps the product', () async {
+      await store.load();
+      backend.offline = true;
+      await expectLater(store.deleteProduct('1'), throwsA(isA<ApiException>()));
+      expect(store.products.length, 2);
     });
   });
 
@@ -147,4 +254,3 @@ void main() {
     expect(Formatters.currency(5), '₪ 5.00');
   });
 }
-

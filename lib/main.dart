@@ -2,16 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'screens/app_shell.dart';
+import 'services/product_api_client.dart';
 import 'state/product_store.dart';
 import 'theme/app_theme.dart';
 
 void main() {
-  runApp(ClixSellApp(store: ProductStore.withSampleData()));
+  // Products come from the backend API (which stores them in the database).
+  final store = ProductStore(api: ProductApiClient())..load();
+  runApp(ClixSellApp(store: store));
 }
 
 /// Root widget of ClixSell POS.
 ///
-/// Owns the in-memory [ProductStore] and the current language. Switching to
+/// Owns the [ProductStore] (backed by the API) and the current language. Switching to
 /// Arabic changes the locale to `ar`, which makes Flutter lay out the whole
 /// app right-to-left automatically.
 class ClixSellApp extends StatefulWidget {

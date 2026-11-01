@@ -183,6 +183,29 @@ class AppStrings {
   String get productNotFound =>
       _t('This product no longer exists.', 'هذا المنتج لم يعد موجودًا.');
 
+  // ── Server / API ──────────────────────────────────────────────────────────
+  String get loadingProducts =>
+      _t('Loading products from the server…', 'جارٍ تحميل المنتجات من الخادم…');
+  String get serverUnreachableTitle =>
+      _t("Can't reach the server", 'تعذّر الاتصال بالخادم');
+  String serverUnreachableBody(String url) => _t(
+        'Make sure the ClixSell backend is running at $url, then try again.',
+        'تأكد من تشغيل خادم ClixSell على $url ثم أعد المحاولة.',
+      );
+  String get loadFailedTitle =>
+      _t('Could not load products', 'تعذّر تحميل المنتجات');
+  String get retry => _t('Try again', 'إعادة المحاولة');
+  String get networkError => _t(
+        "Can't reach the server. Check that the backend is running.",
+        'تعذّر الاتصال بالخادم. تأكد من أن الخادم يعمل.',
+      );
+  String saveFailed(String reason) =>
+      _t('Could not save the product: $reason', 'تعذّر حفظ المنتج: $reason');
+  String deleteFailed(String reason) =>
+      _t('Could not delete the product: $reason', 'تعذّر حذف المنتج: $reason');
+  String restoreFailed(String reason) =>
+      _t('Could not restore the product: $reason', 'تعذّرت استعادة المنتج: $reason');
+
   // ── Delete dialog ─────────────────────────────────────────────────────────
   String get deleteTitle => _t('Delete product?', 'حذف المنتج؟');
   String deleteBody(String name) => _t(

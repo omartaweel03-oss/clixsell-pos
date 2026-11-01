@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../l10n/app_strings.dart';
 import '../../models/product.dart';
 import '../../models/product_category.dart';
+import '../../services/product_api_client.dart';
 import '../../state/product_store.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/formatters.dart';
@@ -89,23 +90,48 @@ class _InventoryPageState extends State<InventoryPage> {
     if (!confirmed || !mounted) return;
 
     final index = store.products.indexWhere((p) => p.id == product.id);
-    final removed = store.deleteProduct(product.id);
+    final Product? removed;
+    try {
+      removed = await store.deleteProduct(product.id); // DELETE /api/products/{id}
+    } on ApiException catch (e) {
+      _showError(messenger, s.deleteFailed(_describe(e, s)));
+      return;
+    }
     if (removed == null) return;
+    final Product deleted = removed;
 
     messenger
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
-          content: Text(s.productDeleted(removed.name)),
+          content: Text(s.productDeleted(deleted.name)),
           duration: const Duration(seconds: 5),
           persist: false, // auto-hide even though it has an Undo action
           action: SnackBarAction(
             label: s.undo,
             textColor: AppColors.primarySoft,
-            onPressed: () => store.restoreProduct(removed, index: index),
+            onPressed: () async {
+              try {
+                await store.restoreProduct(deleted, index: index);
+              } on ApiException catch (e) {
+                _showError(messenger, s.restoreFailed(_describe(e, s)));
+              }
+            },
           ),
         ),
       );
+  }
+
+  static String _describe(ApiException e, AppStrings s) =>
+      e.isNetworkError ? s.networkError : e.message;
+
+  static void _showError(ScaffoldMessengerState messenger, String message) {
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Text(message),
+        backgroundColor: AppColors.danger,
+      ));
   }
 
   @override
@@ -135,12 +161,14 @@ class _InventoryPageState extends State<InventoryPage> {
                 children: [
                   _Header(onAddProduct: widget.onAddProduct),
                   const SizedBox(height: AppSpacing.xl),
-                  _StatsGrid(
-                    stats: stats,
-                    statusFilter: _statusFilter,
-                    onFilter: _toggleStatusFilter,
-                  ),
-                  const SizedBox(height: AppSpacing.xl),
+                  if (store.hasLoaded) ...[
+                    _StatsGrid(
+                      stats: stats,
+                      statusFilter: _statusFilter,
+                      onFilter: _toggleStatusFilter,
+                    ),
+                    const SizedBox(height: AppSpacing.xl),
+                  ],
                   Card(
                     child: Padding(
                       padding: const EdgeInsets.all(AppSpacing.lg + 4),
@@ -167,7 +195,23 @@ class _InventoryPageState extends State<InventoryPage> {
                             onClear: _clearFilters,
                           ),
                           const SizedBox(height: AppSpacing.lg),
-                          if (store.products.isEmpty)
+                          if (!store.hasLoaded && store.isLoading)
+                            _LoadingState(message: s.loadingProducts)
+                          else if (!store.hasLoaded)
+                            _EmptyState(
+                              key: const Key('serverErrorState'),
+                              icon: Icons.cloud_off_rounded,
+                              title: store.loadError?.isNetworkError ?? true
+                                  ? s.serverUnreachableTitle
+                                  : s.loadFailedTitle,
+                              body: store.loadError?.isNetworkError ?? true
+                                  ? s.serverUnreachableBody(store.serverUrl)
+                                  : store.loadError!.message,
+                              actionLabel: s.retry,
+                              actionIcon: Icons.refresh_rounded,
+                              onAction: store.load,
+                            )
+                          else if (store.products.isEmpty)
                             _EmptyState(
                               icon: Icons.inventory_2_outlined,
                               title: s.emptyTitle,
@@ -580,8 +624,29 @@ class _Pagination extends StatelessWidget {
   }
 }
 
+class _LoadingState extends StatelessWidget {
+  const _LoadingState({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 56),
+      child: Column(
+        children: [
+          const CircularProgressIndicator(),
+          const SizedBox(height: AppSpacing.lg),
+          Text(message, style: const TextStyle(color: AppColors.textSecondary)),
+        ],
+      ),
+    );
+  }
+}
+
 class _EmptyState extends StatelessWidget {
   const _EmptyState({
+    super.key,
     required this.icon,
     required this.title,
     required this.body,

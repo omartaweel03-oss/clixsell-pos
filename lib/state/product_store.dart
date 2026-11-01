@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 
 import '../models/product.dart';
 import '../models/product_category.dart';
+import '../services/product_api_client.dart';
 
 /// Inventory statistics derived from the current product list.
 /// Nothing here is hard-coded – it is recomputed from [ProductStore.products].
@@ -46,26 +47,37 @@ class InventoryStats {
   }
 }
 
-/// In-memory product repository.
+/// The app's single source of product data.
 ///
-/// Products live only in application memory for now (no database / backend).
-/// Widgets listen to this [ChangeNotifier] so the product list and statistics
-/// update immediately after every add, edit or delete.
+/// Every change goes to the backend first (through [ProductApiClient]):
+/// add → INSERT, update → UPDATE, delete → DELETE. Only when the backend
+/// confirms the change is the local list updated, so the Product Screen
+/// always shows what is stored in the database. Widgets listen to this
+/// [ChangeNotifier], so the list and statistics update immediately.
 class ProductStore extends ChangeNotifier {
-  ProductStore({List<Product>? initialProducts})
-      : _products = List.of(initialProducts ?? const []);
+  ProductStore({required ProductApiClient api}) : _api = api;
 
-  /// Store pre-filled with a few demo products so the page is not empty on
-  /// first launch. They can be edited or deleted like any other product.
-  factory ProductStore.withSampleData() =>
-      ProductStore(initialProducts: _sampleProducts());
-
-  final List<Product> _products;
-  int _idCounter = 0;
+  final ProductApiClient _api;
+  List<Product> _products = [];
+  bool _isLoading = false;
+  bool _hasLoaded = false;
+  ApiException? _loadError;
 
   List<Product> get products => List.unmodifiable(_products);
 
   InventoryStats get stats => InventoryStats.from(_products);
+
+  /// True while the product list is being fetched from the backend.
+  bool get isLoading => _isLoading;
+
+  /// True once the product list has been fetched successfully at least once.
+  bool get hasLoaded => _hasLoaded;
+
+  /// Why the last load failed (null when it succeeded).
+  ApiException? get loadError => _loadError;
+
+  /// Base URL of the backend (shown in "cannot reach server" messages).
+  String get serverUrl => _api.baseUrl;
 
   /// Sorted, de-duplicated supplier names (used for form autocomplete).
   List<String> get suppliers {
@@ -81,13 +93,33 @@ class ProductStore extends ChangeNotifier {
     return null;
   }
 
-  /// True when another product (other than [excludeId]) already uses [barcode].
+  /// Quick check against the loaded list, so the form can warn before
+  /// saving. The backend makes the final decision (409 DUPLICATE_BARCODE).
   bool isBarcodeTaken(String barcode, {String? excludeId}) {
     final normalized = barcode.trim();
     return _products.any((p) => p.barcode == normalized && p.id != excludeId);
   }
 
-  Product addProduct({
+  /// SELECT: loads all products from the backend.
+  Future<void> load() async {
+    _isLoading = true;
+    _loadError = null;
+    notifyListeners();
+    try {
+      _products = await _api.fetchProducts();
+      _hasLoaded = true;
+    } on ApiException catch (e) {
+      _loadError = e;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// INSERT: sends a new product to the backend and adds the saved result.
+  ///
+  /// Throws [ApiException] if the backend rejects it or cannot be reached.
+  Future<Product> addProduct({
     required String name,
     required String barcode,
     required ProductCategory category,
@@ -97,13 +129,10 @@ class ProductStore extends ChangeNotifier {
     required String supplier,
     Uint8List? imageBytes,
     String? imageName,
-  }) {
-    if (isBarcodeTaken(barcode)) {
-      throw StateError('Barcode $barcode already exists');
-    }
+  }) async {
     final now = DateTime.now();
-    final product = Product(
-      id: _nextId(),
+    final draft = Product(
+      id: '',
       name: name.trim(),
       barcode: barcode.trim(),
       category: category,
@@ -116,80 +145,56 @@ class ProductStore extends ChangeNotifier {
       createdAt: now,
       updatedAt: now,
     );
-    _products.insert(0, product); // newest first
+    final saved = await _api.createProduct(draft);
+    _products.insert(0, saved); // newest first
     notifyListeners();
-    return product;
+    return saved;
   }
 
-  void updateProduct(Product updated) {
-    final index = _products.indexWhere((p) => p.id == updated.id);
+  /// UPDATE: sends the changed product to the backend and stores the result.
+  ///
+  /// Throws [ApiException] if the backend rejects it or cannot be reached.
+  Future<Product> updateProduct(Product updated) async {
+    final saved = await _api.updateProduct(updated);
+    final index = _products.indexWhere((p) => p.id == saved.id);
     if (index == -1) {
-      throw StateError('Product ${updated.id} not found');
+      _products.insert(0, saved);
+    } else {
+      _products[index] = saved;
     }
-    if (isBarcodeTaken(updated.barcode, excludeId: updated.id)) {
-      throw StateError('Barcode ${updated.barcode} already exists');
+    notifyListeners();
+    return saved;
+  }
+
+  /// DELETE: removes the product in the backend, then from the list.
+  /// Returns the removed product (so the UI can offer "Undo").
+  ///
+  /// Throws [ApiException] if the backend cannot delete it.
+  Future<Product?> deleteProduct(String id) async {
+    final existing = findById(id);
+    if (existing == null) return null;
+    try {
+      await _api.deleteProduct(id);
+    } on ApiException catch (e) {
+      // Already deleted in the database (e.g. from another device): just
+      // remove it here too. Any other error is passed on.
+      if (!e.isNotFound) rethrow;
     }
-    _products[index] = updated.copyWith(updatedAt: DateTime.now());
+    _products.removeWhere((p) => p.id == id);
     notifyListeners();
+    return existing;
   }
 
-  /// Removes the product and returns it (so the UI can offer "Undo").
-  Product? deleteProduct(String id) {
-    final index = _products.indexWhere((p) => p.id == id);
-    if (index == -1) return null;
-    final removed = _products.removeAt(index);
+  /// Undo for delete: inserts the product again (the database gives it a new id).
+  Future<Product> restoreProduct(Product product, {int index = 0}) async {
+    final saved = await _api.createProduct(product);
+    _products.insert(index.clamp(0, _products.length), saved);
     notifyListeners();
-    return removed;
+    return saved;
   }
 
-  /// Puts a previously deleted product back (used by the Undo action).
-  void restoreProduct(Product product, {int index = 0}) {
-    if (findById(product.id) != null) return;
-    _products.insert(index.clamp(0, _products.length), product);
-    notifyListeners();
-  }
-
-  String _nextId() {
-    _idCounter++;
-    return 'P-${DateTime.now().microsecondsSinceEpoch}-$_idCounter';
-  }
-
-  static List<Product> _sampleProducts() {
-    final now = DateTime.now();
-    Product p(
-      int i,
-      String name,
-      String barcode,
-      ProductCategory c,
-      double price,
-      int qty,
-      int min,
-      String supplier,
-    ) =>
-        Product(
-          id: 'seed-$i',
-          name: name,
-          barcode: barcode,
-          category: c,
-          price: price,
-          quantity: qty,
-          minStockLevel: min,
-          supplier: supplier,
-          createdAt: now.subtract(Duration(days: 30 - i)),
-          updatedAt: now.subtract(Duration(days: 30 - i)),
-        );
-
-    return [
-      p(1, 'حليب 1 لتر', '7290012345678', ProductCategory.dairy, 5.00, 24, 10, 'الجنيدي'),
-      p(2, 'خبز أبيض', '7290388880001', ProductCategory.bakery, 2.00, 3, 10, 'مخبز البلد'),
-      p(3, 'مياه معدنية 1.5 لتر', '7290005555555', ProductCategory.beverages, 1.00, 60, 20, 'جبل المكبر'),
-      p(4, 'بيض 30 حبة', '7290006565656', ProductCategory.freshProduce, 15.00, 0, 5, 'مزارع الريف'),
-      p(5, 'عصير برتقال 1 لتر', '7290005555500', ProductCategory.beverages, 8.00, 6, 8, 'سنيورة'),
-      p(6, 'Basmati Rice 5kg', '6281000000123', ProductCategory.groceries, 32.50, 18, 5, 'Al-Wadi Trading'),
-      p(7, 'Dish Soap 750ml', '6291041500213', ProductCategory.cleaning, 9.90, 0, 4, 'CleanCo'),
-      p(8, 'شيبس بطاطا', '7290100250011', ProductCategory.snacks, 3.50, 45, 15, 'الجنيدي'),
-    ];
-  }
+  /// Asks the backend's Product business logic for a new, unused barcode.
+  Future<String> generateBarcode() => _api.generateBarcode();
 }
 
 /// Makes a single [ProductStore] available to the whole widget tree and

@@ -47,3 +47,7 @@ app.*.map.json
 # Widget Preview related
 .widget_preview/
 clixsell_pos_inventory.zip
+
+# Backend (Spring Boot)
+backend/target/
+backend/*.db
