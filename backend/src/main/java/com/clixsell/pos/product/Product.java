@@ -1,6 +1,7 @@
 package com.clixsell.pos.product;
 
 import com.clixsell.pos.common.LocalDateTimeTextConverter;
+import com.clixsell.pos.store.Store;
 import com.clixsell.pos.supplier.Supplier;
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
@@ -37,6 +38,9 @@ import java.util.Set;
  *   <li>{@link #getStockValue()} – price × quantity</li>
  *   <li>{@link #generateBarcode(Random)} – valid EAN-13 barcode</li>
  * </ul>
+ *
+ * <p>Every product belongs to one store (column store_id). Its barcode is
+ * unique within that store, and its supplier must belong to the same store.
  */
 @Entity
 @Table(name = "products")
@@ -61,6 +65,10 @@ public class Product {
     @Column(name = "product_id")
     private Long productId;
 
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "store_id", nullable = false, updatable = false)
+    private Store store;
+
     @ManyToOne(fetch = FetchType.EAGER, optional = false)
     @JoinColumn(name = "supplier_id", nullable = false)
     private Supplier supplier;
@@ -68,7 +76,8 @@ public class Product {
     @Column(nullable = false)
     private String name;
 
-    @Column(nullable = false, unique = true)
+    /** Unique within the store: UNIQUE (store_id, barcode). */
+    @Column(nullable = false)
     private String barcode;
 
     @Column(nullable = false)
@@ -104,13 +113,14 @@ public class Product {
     // ── Creating and changing a product ───────────────────────────────────
 
     /**
-     * Creates a new, valid product.
+     * Creates a new, valid product for {@code store}.
      *
      * @throws ProductValidationException if any field breaks a rule
      */
-    public static Product create(ProductRequest request, Supplier supplier) {
+    public static Product create(ProductRequest request, Supplier supplier, Store store) {
         validate(request);
         Product product = new Product();
+        product.store = store;
         product.applyDetails(request, supplier);
         product.createdAt = now();
         product.updatedAt = product.createdAt;
@@ -129,6 +139,9 @@ public class Product {
     }
 
     private void applyDetails(ProductRequest request, Supplier newSupplier) {
+        if (!sameStore(newSupplier.getStore(), store)) {
+            throw new IllegalArgumentException("The supplier belongs to a different store");
+        }
         this.name = request.name().trim();
         this.barcode = request.barcode().trim();
         this.category = request.category();
@@ -161,6 +174,16 @@ public class Product {
         }
         quantity = (int) newQuantity;
         updatedAt = now();
+    }
+
+    /** True if this product belongs to the store with this id. */
+    public boolean belongsTo(long storeId) {
+        return store != null && store.getStoreId() != null && store.getStoreId() == storeId;
+    }
+
+    private static boolean sameStore(Store a, Store b) {
+        if (a == b) return true;
+        return a != null && b != null && a.getStoreId() != null && a.getStoreId().equals(b.getStoreId());
     }
 
     // ── Stock rules ───────────────────────────────────────────────────────
@@ -289,6 +312,7 @@ public class Product {
     // ── Getters ───────────────────────────────────────────────────────────
 
     public Long getProductId() { return productId; }
+    public Store getStore() { return store; }
     public Supplier getSupplier() { return supplier; }
     public String getName() { return name; }
     public String getBarcode() { return barcode; }

@@ -1,6 +1,7 @@
--- ClixSell POS database schema (SQLite)
+-- V1: original ClixSell POS schema (single store), run by Flyway.
 -- Based on the PRODUCTS and SUPPLIERS tables of the project ERD (report, Figure 3.13).
--- Runs on every start; IF NOT EXISTS keeps existing data.
+-- Databases created before Flyway was added already have these tables:
+-- Flyway records them as version 1 (baseline) and does not run this file again.
 
 CREATE TABLE IF NOT EXISTS suppliers (
     supplier_id      INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -8,6 +8,7 @@ import java.time.LocalDateTime;
  */
 public record ProductResponse(
         Long productId,
+        Long storeId,
         String name,
         String barcode,
         String category,
@@ -26,6 +27,7 @@ public record ProductResponse(
     public static ProductResponse from(Product p) {
         return new ProductResponse(
                 p.getProductId(),
+                p.getStore().getStoreId(),
                 p.getName(),
                 p.getBarcode(),
                 p.getCategory(),

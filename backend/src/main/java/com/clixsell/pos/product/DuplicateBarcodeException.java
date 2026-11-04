@@ -4,6 +4,6 @@ package com.clixsell.pos.product;
 public class DuplicateBarcodeException extends RuntimeException {
 
     public DuplicateBarcodeException(String barcode) {
-        super("Another product already uses barcode " + barcode);
+        super("Another product in this store already uses barcode " + barcode);
     }
 }

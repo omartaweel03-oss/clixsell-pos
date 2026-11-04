@@ -1,8 +1,8 @@
 package com.clixsell.pos.common;
 
+import com.clixsell.pos.auth.LoginFailedException;
 import com.clixsell.pos.product.DuplicateBarcodeException;
 import com.clixsell.pos.product.ProductNotFoundException;
-import com.clixsell.pos.product.ProductValidationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -13,14 +13,36 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 
 import java.util.Map;
 
-/** Turns business and request errors into clear JSON error responses. */
+/**
+ * Turns business and request errors into clear JSON error responses.
+ * (401 "not logged in" and 403 "wrong role" are written by SecurityConfig.)
+ */
 @RestControllerAdvice
 public class ApiExceptionHandler {
 
-    @ExceptionHandler(ProductValidationException.class)
-    public ResponseEntity<ApiError> validation(ProductValidationException e) {
+    /** Product, store and user validation errors (ProductValidationException is one of them). */
+    @ExceptionHandler(ValidationException.class)
+    public ResponseEntity<ApiError> validation(ValidationException e) {
         return error(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED",
-                "Some product fields are not valid", e.getFieldErrors());
+                "Some fields are not valid", e.getFieldErrors());
+    }
+
+    @ExceptionHandler(LoginFailedException.class)
+    public ResponseEntity<ApiError> loginFailed(LoginFailedException e) {
+        HttpStatus status = e.getReason() == LoginFailedException.Reason.ACCOUNT_LOCKED
+                ? HttpStatus.TOO_MANY_REQUESTS
+                : HttpStatus.UNAUTHORIZED;
+        return error(status, e.getReason().name(), e.getMessage(), Map.of());
+    }
+
+    @ExceptionHandler(NotFoundException.class)
+    public ResponseEntity<ApiError> notFound(NotFoundException e) {
+        return error(HttpStatus.NOT_FOUND, e.getCode(), e.getMessage(), Map.of());
+    }
+
+    @ExceptionHandler(ConflictException.class)
+    public ResponseEntity<ApiError> conflict(ConflictException e) {
+        return error(HttpStatus.CONFLICT, e.getCode(), e.getMessage(), e.fieldErrors());
     }
 
     @ExceptionHandler(DuplicateBarcodeException.class)
@@ -30,7 +52,7 @@ public class ApiExceptionHandler {
     }
 
     @ExceptionHandler(ProductNotFoundException.class)
-    public ResponseEntity<ApiError> notFound(ProductNotFoundException e) {
+    public ResponseEntity<ApiError> productNotFound(ProductNotFoundException e) {
         return error(HttpStatus.NOT_FOUND, "PRODUCT_NOT_FOUND", e.getMessage(), Map.of());
     }
 
