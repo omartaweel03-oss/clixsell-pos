@@ -14,15 +14,20 @@ import 'widgets/product_table.dart';
 
 /// Inventory Management page: header, live statistics, search/filters,
 /// and the product list with edit / delete actions.
+///
+/// With [readOnly] (Cashiers) the add / edit / delete actions are hidden.
+/// The backend refuses those operations for Cashiers in any case.
 class InventoryPage extends StatefulWidget {
   const InventoryPage({
     super.key,
     required this.onAddProduct,
     required this.onEditProduct,
+    this.readOnly = false,
   });
 
   final VoidCallback onAddProduct;
   final ValueChanged<Product> onEditProduct;
+  final bool readOnly;
 
   @override
   State<InventoryPage> createState() => _InventoryPageState();
@@ -92,7 +97,9 @@ class _InventoryPageState extends State<InventoryPage> {
     final index = store.products.indexWhere((p) => p.id == product.id);
     final Product? removed;
     try {
-      removed = await store.deleteProduct(product.id); // DELETE /api/products/{id}
+      removed = await store.deleteProduct(
+        product.id,
+      ); // DELETE /api/products/{id}
     } on ApiException catch (e) {
       _showError(messenger, s.deleteFailed(_describe(e, s)));
       return;
@@ -128,10 +135,9 @@ class _InventoryPageState extends State<InventoryPage> {
   static void _showError(ScaffoldMessengerState messenger, String message) {
     messenger
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(
-        content: Text(message),
-        backgroundColor: AppColors.danger,
-      ));
+      ..showSnackBar(
+        SnackBar(content: Text(message), backgroundColor: AppColors.danger),
+      );
   }
 
   @override
@@ -149,17 +155,25 @@ class _InventoryPageState extends State<InventoryPage> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final horizontal = constraints.maxWidth < 600 ? AppSpacing.lg : AppSpacing.xxl;
+        final horizontal = constraints.maxWidth < 600
+            ? AppSpacing.lg
+            : AppSpacing.xxl;
         return SingleChildScrollView(
           padding: EdgeInsets.fromLTRB(
-              horizontal, AppSpacing.xl, horizontal, AppSpacing.xxl),
+            horizontal,
+            AppSpacing.xl,
+            horizontal,
+            AppSpacing.xxl,
+          ),
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 1400),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _Header(onAddProduct: widget.onAddProduct),
+                  _Header(
+                    onAddProduct: widget.readOnly ? null : widget.onAddProduct,
+                  ),
                   const SizedBox(height: AppSpacing.xl),
                   if (store.hasLoaded) ...[
                     _StatsGrid(
@@ -218,7 +232,9 @@ class _InventoryPageState extends State<InventoryPage> {
                               body: s.emptyBody,
                               actionLabel: s.addProduct,
                               actionIcon: Icons.add_rounded,
-                              onAction: widget.onAddProduct,
+                              onAction: widget.readOnly
+                                  ? null
+                                  : widget.onAddProduct,
                             )
                           else if (filtered.isEmpty)
                             _EmptyState(
@@ -232,15 +248,20 @@ class _InventoryPageState extends State<InventoryPage> {
                           else ...[
                             ProductTable(
                               products: visible,
-                              onEdit: widget.onEditProduct,
-                              onDelete: _deleteProduct,
+                              onEdit: widget.readOnly
+                                  ? null
+                                  : widget.onEditProduct,
+                              onDelete: widget.readOnly ? null : _deleteProduct,
                             ),
                             const SizedBox(height: AppSpacing.lg),
                             _Pagination(
                               page: page,
                               pageCount: pageCount,
                               label: s.showingRange(
-                                  start + 1, end, filtered.length),
+                                start + 1,
+                                end,
+                                filtered.length,
+                              ),
                               onPage: (p) => setState(() => _page = p),
                             ),
                           ],
@@ -265,7 +286,8 @@ class _InventoryPageState extends State<InventoryPage> {
 class _Header extends StatelessWidget {
   const _Header({required this.onAddProduct});
 
-  final VoidCallback onAddProduct;
+  /// Null when the user may not add products (Cashier).
+  final VoidCallback? onAddProduct;
 
   @override
   Widget build(BuildContext context) {
@@ -283,7 +305,9 @@ class _Header extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.xs + 2),
         Text(
-          s.inventoryDescription,
+          onAddProduct == null
+              ? s.inventoryDescriptionCashier
+              : s.inventoryDescription,
           style: const TextStyle(
             fontSize: 14.5,
             color: AppColors.textSecondary,
@@ -300,12 +324,18 @@ class _Header extends StatelessWidget {
       label: Text(s.addProduct),
     );
 
+    if (onAddProduct == null) return titleBlock;
+
     return LayoutBuilder(
       builder: (context, c) {
         if (c.maxWidth < 640) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [titleBlock, const SizedBox(height: AppSpacing.lg), button],
+            children: [
+              titleBlock,
+              const SizedBox(height: AppSpacing.lg),
+              button,
+            ],
           );
         }
         return Row(
@@ -437,7 +467,10 @@ class _Toolbar extends StatelessWidget {
       onChanged: onSearch,
       decoration: InputDecoration(
         hintText: s.searchHint,
-        prefixIcon: const Icon(Icons.search_rounded, color: AppColors.textMuted),
+        prefixIcon: const Icon(
+          Icons.search_rounded,
+          color: AppColors.textMuted,
+        ),
         fillColor: AppColors.background,
         suffixIcon: ValueListenableBuilder<TextEditingValue>(
           valueListenable: searchController,
@@ -467,8 +500,10 @@ class _Toolbar extends StatelessWidget {
         for (final c in ProductCategory.values)
           DropdownMenuItem(
             value: c,
-            child: Text(c.label(arabic: s.isArabic),
-                overflow: TextOverflow.ellipsis),
+            child: Text(
+              c.label(arabic: s.isArabic),
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
       ],
       onChanged: onCategory,
@@ -618,7 +653,10 @@ class _Pagination extends StatelessWidget {
       spacing: AppSpacing.lg,
       children: [
         info,
-        SingleChildScrollView(scrollDirection: Axis.horizontal, child: controls),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: controls,
+        ),
       ],
     );
   }
@@ -660,7 +698,9 @@ class _EmptyState extends StatelessWidget {
   final String body;
   final String actionLabel;
   final IconData actionIcon;
-  final VoidCallback onAction;
+
+  /// Null hides the button (e.g. a Cashier cannot add products).
+  final VoidCallback? onAction;
 
   @override
   Widget build(BuildContext context) {
@@ -689,12 +729,14 @@ class _EmptyState extends StatelessWidget {
             textAlign: TextAlign.center,
             style: const TextStyle(color: AppColors.textSecondary),
           ),
-          const SizedBox(height: AppSpacing.lg),
-          FilledButton.icon(
-            onPressed: onAction,
-            icon: Icon(actionIcon, size: 18),
-            label: Text(actionLabel),
-          ),
+          if (onAction != null) ...[
+            const SizedBox(height: AppSpacing.lg),
+            FilledButton.icon(
+              onPressed: onAction,
+              icon: Icon(actionIcon, size: 18),
+              label: Text(actionLabel),
+            ),
+          ],
         ],
       ),
     );

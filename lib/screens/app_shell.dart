@@ -1,24 +1,42 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_strings.dart';
+import '../models/app_user.dart';
 import '../models/product.dart';
+import '../services/admin_api_clients.dart';
+import '../services/api_http.dart';
 import '../state/product_store.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_sidebar.dart';
+import 'admin/staff_accounts_page.dart';
+import 'admin/stores_page.dart';
 import 'inventory/inventory_page.dart';
 import 'inventory/product_form_page.dart';
 
-/// Main layout: navy sidebar + content area.
+/// Main layout after login: navy sidebar + content area.
 ///
-/// Handles navigation between the Products list, Add Product and
-/// Edit Product, and adapts to the screen size:
+/// The pages depend on the user's role:
+/// * System Admin → Stores (and each store's Store Admins)
+/// * Store Admin  → Products, Add / Edit Product, Cashiers
+/// * Cashier      → Products (view only)
+///
+/// Adapts to the screen size:
 /// * ≥ 1100 px: full sidebar
 /// * ≥ 720 px: compact icon sidebar
 /// * < 720 px: top app bar with a drawer
 class AppShell extends StatefulWidget {
-  const AppShell({super.key, required this.onToggleLanguage});
+  const AppShell({
+    super.key,
+    required this.user,
+    required this.http,
+    required this.onToggleLanguage,
+    required this.onLogout,
+  });
 
+  final AppUser user;
+  final ApiHttp http;
   final VoidCallback onToggleLanguage;
+  final VoidCallback onLogout;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -27,11 +45,19 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
 
-  SidebarDestination _destination = SidebarDestination.products;
+  late SidebarDestination _destination = widget.user.role.home;
   String? _editingProductId;
   GlobalKey<ProductFormPageState> _formKey = GlobalKey<ProductFormPageState>();
 
-  bool get _onForm => _destination != SidebarDestination.products;
+  bool get _onForm =>
+      _destination == SidebarDestination.addProduct ||
+      _destination == SidebarDestination.editProduct;
+
+  /// Asks before leaving a product form with unsaved changes.
+  Future<bool> _canLeaveForm() async {
+    if (!_onForm) return true;
+    return await _formKey.currentState?.confirmLeave() ?? true;
+  }
 
   /// Central navigation method used by the sidebar and page buttons.
   Future<void> _navigate(
@@ -42,8 +68,11 @@ class _AppShellState extends State<AppShell> {
     if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
       Navigator.of(context).pop();
     }
+    // A role can only open its own pages.
+    if (!widget.user.role.destinations.contains(destination)) return;
 
-    final sameEdit = destination == SidebarDestination.editProduct &&
+    final sameEdit =
+        destination == SidebarDestination.editProduct &&
         _destination == SidebarDestination.editProduct &&
         (product == null || product.id == _editingProductId);
     if (destination == _destination &&
@@ -51,11 +80,7 @@ class _AppShellState extends State<AppShell> {
       return; // already there
     }
 
-    // Protect unsaved form data.
-    if (_onForm) {
-      final canLeave = await _formKey.currentState?.confirmLeave() ?? true;
-      if (!canLeave || !mounted) return;
-    }
+    if (!await _canLeaveForm() || !mounted) return;
 
     setState(() {
       _destination = destination;
@@ -66,6 +91,14 @@ class _AppShellState extends State<AppShell> {
       }
       _formKey = GlobalKey<ProductFormPageState>();
     });
+  }
+
+  Future<void> _logout() async {
+    if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
+      Navigator.of(context).pop();
+    }
+    if (!await _canLeaveForm() || !mounted) return;
+    widget.onLogout();
   }
 
   void _onSaved(Product product, {required bool wasEditing}) {
@@ -80,13 +113,18 @@ class _AppShellState extends State<AppShell> {
         SnackBar(
           content: Row(
             children: [
-              const Icon(Icons.check_circle_rounded,
-                  color: AppColors.success, size: 20),
+              const Icon(
+                Icons.check_circle_rounded,
+                color: AppColors.success,
+                size: 20,
+              ),
               const SizedBox(width: AppSpacing.sm),
               Expanded(
-                child: Text(wasEditing
-                    ? s.productUpdated(product.name)
-                    : s.productAdded(product.name)),
+                child: Text(
+                  wasEditing
+                      ? s.productUpdated(product.name)
+                      : s.productAdded(product.name),
+                ),
               ),
             ],
           ),
@@ -101,11 +139,23 @@ class _AppShellState extends State<AppShell> {
     });
   }
 
-  Widget _buildContent(ProductStore store) {
+  Widget _buildContent(ProductStore? store) {
+    final s = AppStrings.of(context);
     switch (_destination) {
+      case SidebarDestination.stores:
+        return StoresPage(key: const ValueKey('stores'), http: widget.http);
+      case SidebarDestination.cashiers:
+        return StaffAccountsPage(
+          key: const ValueKey('cashiers'),
+          api: cashiersApi(widget.http),
+          title: s.cashiersTitle,
+          description: s.cashiersDescription,
+          addLabel: s.addCashier,
+        );
       case SidebarDestination.products:
         return InventoryPage(
           key: const ValueKey('inventory'),
+          readOnly: widget.user.role == UserRole.cashier,
           onAddProduct: () => _navigate(SidebarDestination.addProduct),
           onEditProduct: (p) =>
               _navigate(SidebarDestination.editProduct, product: p),
@@ -117,8 +167,9 @@ class _AppShellState extends State<AppShell> {
           onCancel: _backToList,
         );
       case SidebarDestination.editProduct:
-        final product =
-            _editingProductId == null ? null : store.findById(_editingProductId!);
+        final product = _editingProductId == null
+            ? null
+            : store?.findById(_editingProductId!);
         if (product == null) {
           return _MissingProduct(onBack: _backToList);
         }
@@ -134,20 +185,20 @@ class _AppShellState extends State<AppShell> {
   @override
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
-    final store = ProductStoreScope.of(context);
+    final store = widget.user.role.worksInStore
+        ? ProductStoreScope.of(context)
+        : null;
     final editingName = _editingProductId == null
         ? null
-        : store.findById(_editingProductId!)?.name;
+        : store?.findById(_editingProductId!)?.name;
 
     final content = AnimatedSwitcher(
       duration: const Duration(milliseconds: 220),
       switchInCurve: Curves.easeOut,
       // Expand children to the full content area so short pages (the form)
       // stay top-aligned instead of being centred by the default Stack.
-      layoutBuilder: (current, previous) => Stack(
-        fit: StackFit.expand,
-        children: [...previous, ?current],
-      ),
+      layoutBuilder: (current, previous) =>
+          Stack(fit: StackFit.expand, children: [...previous, ?current]),
       child: KeyedSubtree(
         key: ValueKey('$_destination-$_editingProductId'),
         child: _buildContent(store),
@@ -159,12 +210,14 @@ class _AppShellState extends State<AppShell> {
         final width = constraints.maxWidth;
 
         Widget sidebar({required bool compact}) => AppSidebar(
-              selected: _destination,
-              compact: compact,
-              editingProductName: editingName,
-              onSelect: (d) => _navigate(d),
-              onToggleLanguage: widget.onToggleLanguage,
-            );
+          user: widget.user,
+          selected: _destination,
+          compact: compact,
+          editingProductName: editingName,
+          onSelect: (d) => _navigate(d),
+          onToggleLanguage: widget.onToggleLanguage,
+          onLogout: _logout,
+        );
 
         if (width >= 720) {
           return Scaffold(
@@ -180,17 +233,21 @@ class _AppShellState extends State<AppShell> {
 
         // Small screens: AppBar + Drawer.
         final title = switch (_destination) {
+          SidebarDestination.stores => s.storesTitle,
           SidebarDestination.products => s.inventoryTitle,
           SidebarDestination.addProduct => s.navAddProduct,
           SidebarDestination.editProduct => s.navEditProduct,
+          SidebarDestination.cashiers => s.cashiersTitle,
         };
         return Scaffold(
           key: _scaffoldKey,
           appBar: AppBar(
             backgroundColor: AppColors.sidebar,
             foregroundColor: Colors.white,
-            title: Text(title,
-                style: const TextStyle(fontWeight: FontWeight.w700)),
+            title: Text(
+              title,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
           ),
           drawer: Drawer(
             width: 260,
@@ -216,8 +273,11 @@ class _MissingProduct extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.search_off_rounded,
-              size: 48, color: AppColors.textMuted),
+          const Icon(
+            Icons.search_off_rounded,
+            size: 48,
+            color: AppColors.textMuted,
+          ),
           const SizedBox(height: AppSpacing.md),
           Text(s.productNotFound),
           const SizedBox(height: AppSpacing.lg),

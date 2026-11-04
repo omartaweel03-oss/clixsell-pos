@@ -15,13 +15,15 @@ class ProductTable extends StatelessWidget {
   const ProductTable({
     super.key,
     required this.products,
-    required this.onEdit,
-    required this.onDelete,
+    this.onEdit,
+    this.onDelete,
   });
 
   final List<Product> products;
-  final ValueChanged<Product> onEdit;
-  final ValueChanged<Product> onDelete;
+
+  /// Null for read-only users (Cashiers): the edit/delete actions are hidden.
+  final ValueChanged<Product>? onEdit;
+  final ValueChanged<Product>? onDelete;
 
   static const double wideBreakpoint = 960;
 
@@ -42,8 +44,10 @@ class ProductTable extends StatelessWidget {
               if (i > 0) const SizedBox(height: AppSpacing.md),
               _ProductCard(
                 product: products[i],
-                onEdit: () => onEdit(products[i]),
-                onDelete: () => onDelete(products[i]),
+                onEdit: onEdit == null ? null : () => onEdit!(products[i]),
+                onDelete: onDelete == null
+                    ? null
+                    : () => onDelete!(products[i]),
               ),
             ],
           ],
@@ -67,15 +71,13 @@ class _Cols {
 }
 
 class _WideTable extends StatelessWidget {
-  const _WideTable({
-    required this.products,
-    required this.onEdit,
-    required this.onDelete,
-  });
+  const _WideTable({required this.products, this.onEdit, this.onDelete});
 
   final List<Product> products;
-  final ValueChanged<Product> onEdit;
-  final ValueChanged<Product> onDelete;
+  final ValueChanged<Product>? onEdit;
+  final ValueChanged<Product>? onDelete;
+
+  bool get _showActions => onEdit != null || onDelete != null;
 
   @override
   Widget build(BuildContext context) {
@@ -87,18 +89,18 @@ class _WideTable extends StatelessWidget {
     );
 
     Widget h(String text, int flex, {bool center = false}) => Expanded(
-          flex: flex,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Text(
-              text,
-              style: headerStyle,
-              textAlign: center ? TextAlign.center : TextAlign.start,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        );
+      flex: flex,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Text(
+          text,
+          style: headerStyle,
+          textAlign: center ? TextAlign.center : TextAlign.start,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+    );
 
     return Column(
       children: [
@@ -118,7 +120,7 @@ class _WideTable extends StatelessWidget {
               h(s.colMinStock, _Cols.min, center: true),
               h(s.colSupplier, _Cols.supplier),
               h(s.colStatus, _Cols.status, center: true),
-              h(s.colActions, _Cols.actions, center: true),
+              if (_showActions) h(s.colActions, _Cols.actions, center: true),
             ],
           ),
         ),
@@ -126,8 +128,8 @@ class _WideTable extends StatelessWidget {
           _WideRow(
             key: ValueKey(p.id),
             product: p,
-            onEdit: () => onEdit(p),
-            onDelete: () => onDelete(p),
+            onEdit: onEdit == null ? null : () => onEdit!(p),
+            onDelete: onDelete == null ? null : () => onDelete!(p),
           ),
       ],
     );
@@ -138,13 +140,13 @@ class _WideRow extends StatefulWidget {
   const _WideRow({
     super.key,
     required this.product,
-    required this.onEdit,
-    required this.onDelete,
+    this.onEdit,
+    this.onDelete,
   });
 
   final Product product;
-  final VoidCallback onEdit;
-  final VoidCallback onDelete;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
 
   @override
   State<_WideRow> createState() => _WideRowState();
@@ -160,23 +162,24 @@ class _WideRowState extends State<_WideRow> {
     const cellStyle = TextStyle(fontSize: 13.5, color: AppColors.textPrimary);
 
     Widget cell(Widget child, int flex, {bool center = false}) => Expanded(
-          flex: flex,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Align(
-              alignment:
-                  center ? Alignment.center : AlignmentDirectional.centerStart,
-              child: child,
-            ),
-          ),
-        );
+      flex: flex,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Align(
+          alignment: center
+              ? Alignment.center
+              : AlignmentDirectional.centerStart,
+          child: child,
+        ),
+      ),
+    );
 
     Widget text(String value, {TextStyle? style}) => Text(
-          value,
-          style: style ?? cellStyle,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        );
+      value,
+      style: style ?? cellStyle,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    );
 
     final qtyColor = switch (p.stockStatus) {
       StockStatus.outOfStock => AppColors.danger,
@@ -192,9 +195,7 @@ class _WideRowState extends State<_WideRow> {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
           color: _hover ? AppColors.primarySoft.withValues(alpha: 0.45) : null,
-          border: const Border(
-            bottom: BorderSide(color: AppColors.divider),
-          ),
+          border: const Border(bottom: BorderSide(color: AppColors.divider)),
         ),
         child: Row(
           children: [
@@ -227,10 +228,7 @@ class _WideRowState extends State<_WideRow> {
               ),
               _Cols.barcode,
             ),
-            cell(
-              text(p.category.label(arabic: s.isArabic)),
-              _Cols.category,
-            ),
+            cell(text(p.category.label(arabic: s.isArabic)), _Cols.category),
             cell(
               text(
                 Formatters.currency(p.price),
@@ -264,32 +262,38 @@ class _WideRowState extends State<_WideRow> {
               ),
               _Cols.supplier,
             ),
-            cell(StockStatusBadge(status: p.stockStatus), _Cols.status,
-                center: true),
             cell(
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _ActionIcon(
-                    key: Key('edit-${p.id}'),
-                    icon: Icons.edit_outlined,
-                    color: AppColors.primary,
-                    tooltip: s.edit,
-                    onPressed: widget.onEdit,
-                  ),
-                  const SizedBox(width: 6),
-                  _ActionIcon(
-                    key: Key('delete-${p.id}'),
-                    icon: Icons.delete_outline_rounded,
-                    color: AppColors.danger,
-                    tooltip: s.delete,
-                    onPressed: widget.onDelete,
-                  ),
-                ],
-              ),
-              _Cols.actions,
+              StockStatusBadge(status: p.stockStatus),
+              _Cols.status,
               center: true,
             ),
+            if (widget.onEdit != null || widget.onDelete != null)
+              cell(
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (widget.onEdit != null)
+                      _ActionIcon(
+                        key: Key('edit-${p.id}'),
+                        icon: Icons.edit_outlined,
+                        color: AppColors.primary,
+                        tooltip: s.edit,
+                        onPressed: widget.onEdit!,
+                      ),
+                    const SizedBox(width: 6),
+                    if (widget.onDelete != null)
+                      _ActionIcon(
+                        key: Key('delete-${p.id}'),
+                        icon: Icons.delete_outline_rounded,
+                        color: AppColors.danger,
+                        tooltip: s.delete,
+                        onPressed: widget.onDelete!,
+                      ),
+                  ],
+                ),
+                _Cols.actions,
+                center: true,
+              ),
           ],
         ),
       ),
@@ -337,15 +341,11 @@ class _ActionIcon extends StatelessWidget {
 
 /// Compact representation used on narrow screens.
 class _ProductCard extends StatelessWidget {
-  const _ProductCard({
-    required this.product,
-    required this.onEdit,
-    required this.onDelete,
-  });
+  const _ProductCard({required this.product, this.onEdit, this.onDelete});
 
   final Product product;
-  final VoidCallback onEdit;
-  final VoidCallback onDelete;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -353,25 +353,25 @@ class _ProductCard extends StatelessWidget {
     final p = product;
 
     Widget info(String label, String value, {Color? color}) => Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              label,
-              style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 13.5,
-                fontWeight: FontWeight.w600,
-                color: color ?? AppColors.textPrimary,
-              ),
-            ),
-          ],
-        );
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 13.5,
+            fontWeight: FontWeight.w600,
+            color: color ?? AppColors.textPrimary,
+          ),
+        ),
+      ],
+    );
 
     return Container(
       padding: const EdgeInsets.all(AppSpacing.lg),
@@ -439,36 +439,38 @@ class _ProductCard extends StatelessWidget {
               info(s.colSupplier, p.supplier, color: AppColors.primary),
             ],
           ),
-          const SizedBox(height: AppSpacing.md),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  key: Key('edit-${p.id}'),
-                  onPressed: onEdit,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.primary,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+          if (onEdit != null && onDelete != null) ...[
+            const SizedBox(height: AppSpacing.md),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    key: Key('edit-${p.id}'),
+                    onPressed: onEdit,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.primary,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    label: Text(s.edit),
                   ),
-                  icon: const Icon(Icons.edit_outlined, size: 18),
-                  label: Text(s.edit),
                 ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: OutlinedButton.icon(
-                  key: Key('delete-${p.id}'),
-                  onPressed: onDelete,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.danger,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    key: Key('delete-${p.id}'),
+                    onPressed: onDelete,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.danger,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                    label: Text(s.delete),
                   ),
-                  icon: const Icon(Icons.delete_outline_rounded, size: 18),
-                  label: Text(s.delete),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
+          ],
         ],
       ),
     );

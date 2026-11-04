@@ -59,6 +59,7 @@ class ProductStore extends ChangeNotifier {
 
   final ProductApiClient _api;
   List<Product> _products = [];
+  bool _disposed = false;
   bool _isLoading = false;
   bool _hasLoaded = false;
   ApiException? _loadError;
@@ -195,6 +196,19 @@ class ProductStore extends ChangeNotifier {
 
   /// Asks the backend's Product business logic for a new, unused barcode.
   Future<String> generateBarcode() => _api.generateBarcode();
+
+  /// The store is disposed at logout. A request still running at that
+  /// moment must not notify listeners that no longer exist.
+  @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
 }
 
 /// Makes a single [ProductStore] available to the whole widget tree and

@@ -1,26 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
+import 'models/app_user.dart';
 import 'screens/app_shell.dart';
+import 'screens/auth/login_page.dart';
+import 'services/api_http.dart';
 import 'services/product_api_client.dart';
+import 'state/auth_session.dart';
 import 'state/product_store.dart';
 import 'theme/app_theme.dart';
 
 void main() {
-  // Products come from the backend API (which stores them in the database).
-  final store = ProductStore(api: ProductApiClient())..load();
-  runApp(ClixSellApp(store: store));
+  runApp(ClixSellApp(http: ApiHttp()));
 }
 
 /// Root widget of ClixSell POS.
 ///
-/// Owns the [ProductStore] (backed by the API) and the current language. Switching to
-/// Arabic changes the locale to `ar`, which makes Flutter lay out the whole
-/// app right-to-left automatically.
+/// Shows the Login screen until someone logs in, then the screens of their
+/// role. Also owns the current language: switching to Arabic changes the
+/// locale to `ar`, which makes Flutter lay out the whole app right-to-left.
 class ClixSellApp extends StatefulWidget {
-  const ClixSellApp({super.key, required this.store, this.initialLocale});
+  const ClixSellApp({super.key, required this.http, this.initialLocale});
 
-  final ProductStore store;
+  /// Connection to the backend (tests pass one that talks to a fake server).
+  final ApiHttp http;
   final Locale? initialLocale;
 
   @override
@@ -29,6 +32,7 @@ class ClixSellApp extends StatefulWidget {
 
 class _ClixSellAppState extends State<ClixSellApp> {
   late Locale _locale = widget.initialLocale ?? const Locale('en');
+  late final AuthSession _session = AuthSession(http: widget.http);
 
   void _toggleLanguage() {
     setState(() {
@@ -39,9 +43,15 @@ class _ClixSellAppState extends State<ClixSellApp> {
   }
 
   @override
+  void dispose() {
+    _session.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return ProductStoreScope(
-      store: widget.store,
+    return AuthSessionScope(
+      session: _session,
       child: MaterialApp(
         title: 'ClixSell POS',
         debugShowCheckedModeBanner: false,
@@ -49,8 +59,83 @@ class _ClixSellAppState extends State<ClixSellApp> {
         locale: _locale,
         supportedLocales: const [Locale('en'), Locale('ar')],
         localizationsDelegates: GlobalMaterialLocalizations.delegates,
-        home: AppShell(onToggleLanguage: _toggleLanguage),
+        home: _Home(onToggleLanguage: _toggleLanguage),
       ),
     );
+  }
+}
+
+/// Login screen when logged out; the user's screens when logged in.
+class _Home extends StatelessWidget {
+  const _Home({required this.onToggleLanguage});
+
+  final VoidCallback onToggleLanguage;
+
+  @override
+  Widget build(BuildContext context) {
+    final session = AuthSessionScope.of(context);
+    final user = session.user;
+    if (user == null) {
+      return LoginPage(onToggleLanguage: onToggleLanguage);
+    }
+    // A new key per login: nothing from a previous user's session survives.
+    return _LoggedIn(
+      key: ValueKey(session.http.token),
+      user: user,
+      session: session,
+      onToggleLanguage: onToggleLanguage,
+    );
+  }
+}
+
+class _LoggedIn extends StatefulWidget {
+  const _LoggedIn({
+    super.key,
+    required this.user,
+    required this.session,
+    required this.onToggleLanguage,
+  });
+
+  final AppUser user;
+  final AuthSession session;
+  final VoidCallback onToggleLanguage;
+
+  @override
+  State<_LoggedIn> createState() => _LoggedInState();
+}
+
+class _LoggedInState extends State<_LoggedIn> {
+  /// Product data of the user's store (Store Admins and Cashiers only).
+  ProductStore? _products;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.user.role.worksInStore) {
+      // Products come from the backend API, which returns only this
+      // user's store and stores them in the database.
+      _products = ProductStore(api: ProductApiClient(widget.session.http))
+        ..load();
+    }
+  }
+
+  @override
+  void dispose() {
+    _products?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final shell = AppShell(
+      user: widget.user,
+      http: widget.session.http,
+      onToggleLanguage: widget.onToggleLanguage,
+      onLogout: widget.session.logout,
+    );
+    final products = _products;
+    return products == null
+        ? shell
+        : ProductStoreScope(store: products, child: shell);
   }
 }

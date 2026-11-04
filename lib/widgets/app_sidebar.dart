@@ -1,29 +1,56 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_strings.dart';
+import '../models/app_user.dart';
 import '../theme/app_theme.dart';
 
-/// Identifies the destinations that exist in this phase of the project.
-enum SidebarDestination { products, addProduct, editProduct }
+/// The pages a user can open.
+enum SidebarDestination { stores, products, addProduct, editProduct, cashiers }
+
+/// Which pages each role may open (the backend enforces the same rules).
+extension RoleDestinations on UserRole {
+  List<SidebarDestination> get destinations => switch (this) {
+    UserRole.systemAdmin => const [SidebarDestination.stores],
+    UserRole.storeAdmin => const [
+      SidebarDestination.products,
+      SidebarDestination.addProduct,
+      SidebarDestination.editProduct,
+      SidebarDestination.cashiers,
+    ],
+    UserRole.cashier => const [SidebarDestination.products],
+  };
+
+  SidebarDestination get home => destinations.first;
+}
+
+String roleLabel(UserRole role, AppStrings s) => switch (role) {
+  UserRole.systemAdmin => s.roleSystemAdmin,
+  UserRole.storeAdmin => s.roleStoreAdmin,
+  UserRole.cashier => s.roleCashier,
+};
 
 /// Dark navy navigation sidebar.
 ///
-/// Only modules that are implemented are listed, so there are no dead buttons:
-/// Products (inventory list), Add Product, and Edit Product (shown while a
-/// product is being edited). The language button switches English/Arabic.
+/// Shows only the pages the logged-in user's role may open, so there are no
+/// dead buttons, plus who is logged in (name, role, store), the language
+/// switch and Log out.
 class AppSidebar extends StatelessWidget {
   const AppSidebar({
     super.key,
+    required this.user,
     required this.selected,
     required this.onSelect,
     required this.onToggleLanguage,
+    required this.onLogout,
     this.compact = false,
     this.editingProductName,
   });
 
+  final AppUser user;
   final SidebarDestination selected;
   final ValueChanged<SidebarDestination> onSelect;
   final VoidCallback onToggleLanguage;
+  final VoidCallback onLogout;
 
   /// Icon-only rail for medium-width screens.
   final bool compact;
@@ -35,6 +62,83 @@ class AppSidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
 
+    Widget section(String label) => compact
+        ? const SizedBox(height: AppSpacing.md)
+        : Padding(
+            padding: const EdgeInsetsDirectional.fromSTEB(24, 12, 24, 8),
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: AppColors.sidebarMuted,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.1,
+              ),
+            ),
+          );
+
+    _NavItem item(
+      SidebarDestination d,
+      IconData icon,
+      IconData selectedIcon,
+      String label, {
+      String? caption,
+    }) => _NavItem(
+      key: Key('nav-${d.name}'),
+      icon: icon,
+      selectedIcon: selectedIcon,
+      label: label,
+      caption: caption,
+      compact: compact,
+      selected: selected == d,
+      onTap: () => onSelect(d),
+    );
+
+    final items = <Widget>[
+      if (user.role == UserRole.systemAdmin) ...[
+        section(s.navSectionAdmin),
+        item(
+          SidebarDestination.stores,
+          Icons.storefront_outlined,
+          Icons.storefront_rounded,
+          s.navStores,
+        ),
+      ],
+      if (user.role.worksInStore) ...[
+        section(s.navSectionInventory),
+        item(
+          SidebarDestination.products,
+          Icons.inventory_2_outlined,
+          Icons.inventory_2_rounded,
+          s.navInventory,
+          caption: user.role == UserRole.cashier ? s.viewOnly : null,
+        ),
+      ],
+      if (user.role == UserRole.storeAdmin) ...[
+        item(
+          SidebarDestination.addProduct,
+          Icons.add_box_outlined,
+          Icons.add_box_rounded,
+          s.navAddProduct,
+        ),
+        if (editingProductName != null)
+          item(
+            SidebarDestination.editProduct,
+            Icons.edit_outlined,
+            Icons.edit_rounded,
+            s.navEditProduct,
+            caption: editingProductName,
+          ),
+        section(s.navSectionStaff),
+        item(
+          SidebarDestination.cashiers,
+          Icons.badge_outlined,
+          Icons.badge_rounded,
+          s.navCashiers,
+        ),
+      ],
+    ];
+
     return Container(
       width: compact ? 84 : 248,
       color: AppColors.sidebar,
@@ -43,78 +147,175 @@ class AppSidebar extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _Brand(compact: compact),
-            const SizedBox(height: AppSpacing.lg),
-            if (!compact)
-              Padding(
-                padding: const EdgeInsetsDirectional.fromSTEB(24, 8, 24, 8),
-                child: Text(
-                  s.navSectionInventory,
-                  style: const TextStyle(
-                    color: AppColors.sidebarMuted,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1.1,
-                  ),
-                ),
-              ),
-            _NavItem(
-              icon: Icons.inventory_2_outlined,
-              selectedIcon: Icons.inventory_2_rounded,
-              label: s.navInventory,
-              compact: compact,
-              selected: selected == SidebarDestination.products,
-              onTap: () => onSelect(SidebarDestination.products),
+            const SizedBox(height: AppSpacing.md),
+            Expanded(
+              child: ListView(padding: EdgeInsets.zero, children: items),
             ),
-            _NavItem(
-              icon: Icons.add_box_outlined,
-              selectedIcon: Icons.add_box_rounded,
-              label: s.navAddProduct,
-              compact: compact,
-              selected: selected == SidebarDestination.addProduct,
-              onTap: () => onSelect(SidebarDestination.addProduct),
-            ),
-            if (editingProductName != null)
-              _NavItem(
-                icon: Icons.edit_outlined,
-                selectedIcon: Icons.edit_rounded,
-                label: s.navEditProduct,
-                caption: editingProductName,
-                compact: compact,
-                selected: selected == SidebarDestination.editProduct,
-                onTap: () => onSelect(SidebarDestination.editProduct),
-              ),
-            const Spacer(),
+            _UserCard(user: user, compact: compact),
             Padding(
-              padding: EdgeInsets.all(compact ? AppSpacing.md : AppSpacing.lg),
-              child: Tooltip(
-                message: s.languageToggleTooltip,
-                child: OutlinedButton(
-                  onPressed: onToggleLanguage,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    side: BorderSide(
-                      color: Colors.white.withValues(alpha: 0.25),
-                    ),
-                    padding: EdgeInsets.symmetric(
-                      horizontal: compact ? 0 : 16,
-                      vertical: 14,
-                    ),
+              padding: EdgeInsets.fromLTRB(
+                compact ? AppSpacing.md : AppSpacing.lg,
+                AppSpacing.sm,
+                compact ? AppSpacing.md : AppSpacing.lg,
+                compact ? AppSpacing.md : AppSpacing.lg,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _SidebarButton(
+                    key: const Key('languageButton'),
+                    compact: compact,
+                    icon: Icons.translate_rounded,
+                    label: s.languageToggle,
+                    tooltip: s.languageToggleTooltip,
+                    onPressed: onToggleLanguage,
                   ),
-                  child: compact
-                      ? const Icon(Icons.translate_rounded, size: 20)
-                      : Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.translate_rounded, size: 18),
-                            const SizedBox(width: AppSpacing.sm),
-                            Text(s.languageToggle),
-                          ],
-                        ),
-                ),
+                  const SizedBox(height: AppSpacing.sm),
+                  _SidebarButton(
+                    key: const Key('logoutButton'),
+                    compact: compact,
+                    icon: Icons.logout_rounded,
+                    label: s.logout,
+                    tooltip: s.logout,
+                    onPressed: onLogout,
+                  ),
+                ],
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _UserCard extends StatelessWidget {
+  const _UserCard({required this.user, required this.compact});
+
+  final AppUser user;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppStrings.of(context);
+    final initials = user.fullName.trim().isEmpty
+        ? '?'
+        : user.fullName
+              .trim()
+              .split(RegExp(r'\s+'))
+              .take(2)
+              .map((w) => w[0])
+              .join()
+              .toUpperCase();
+    final avatar = CircleAvatar(
+      radius: 18,
+      backgroundColor: AppColors.primary,
+      child: Text(
+        initials,
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w700,
+          fontSize: 13,
+        ),
+      ),
+    );
+    final details = [
+      roleLabel(user.role, s),
+      if (user.storeName != null) user.storeName!,
+    ].join(' · ');
+
+    if (compact) {
+      return Tooltip(
+        message: '${user.fullName}\n$details',
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Center(child: avatar),
+        ),
+      );
+    }
+    return Container(
+      key: const Key('currentUserCard'),
+      margin: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+      ),
+      child: Row(
+        children: [
+          avatar,
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  user.fullName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  details,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.sidebarMuted,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SidebarButton extends StatelessWidget {
+  const _SidebarButton({
+    super.key,
+    required this.compact,
+    required this.icon,
+    required this.label,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  final bool compact;
+  final IconData icon;
+  final String label;
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: OutlinedButton(
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.white,
+          side: BorderSide(color: Colors.white.withValues(alpha: 0.25)),
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 0 : 16,
+            vertical: 12,
+          ),
+        ),
+        child: compact
+            ? Icon(icon, size: 20)
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(icon, size: 18),
+                  const SizedBox(width: AppSpacing.sm),
+                  Flexible(child: Text(label, overflow: TextOverflow.ellipsis)),
+                ],
+              ),
       ),
     );
   }
@@ -181,6 +382,7 @@ class _Brand extends StatelessWidget {
 
 class _NavItem extends StatelessWidget {
   const _NavItem({
+    super.key,
     required this.icon,
     required this.selectedIcon,
     required this.label,
@@ -203,10 +405,7 @@ class _NavItem extends StatelessWidget {
     final fg = selected ? Colors.white : AppColors.sidebarText;
     final content = AnimatedContainer(
       duration: const Duration(milliseconds: 160),
-      padding: EdgeInsets.symmetric(
-        horizontal: compact ? 0 : 14,
-        vertical: 12,
-      ),
+      padding: EdgeInsets.symmetric(horizontal: compact ? 0 : 14, vertical: 12),
       decoration: BoxDecoration(
         color: selected ? AppColors.primary : Colors.transparent,
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
@@ -238,8 +437,9 @@ class _NavItem extends StatelessWidget {
                         style: TextStyle(
                           color: fg,
                           fontSize: 14.5,
-                          fontWeight:
-                              selected ? FontWeight.w700 : FontWeight.w500,
+                          fontWeight: selected
+                              ? FontWeight.w700
+                              : FontWeight.w500,
                         ),
                       ),
                       if (caption != null)
@@ -260,10 +460,7 @@ class _NavItem extends StatelessWidget {
     );
 
     final item = Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: compact ? 14 : 16,
-        vertical: 3,
-      ),
+      padding: EdgeInsets.symmetric(horizontal: compact ? 14 : 16, vertical: 3),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
@@ -276,7 +473,10 @@ class _NavItem extends StatelessWidget {
     );
 
     return compact
-        ? Tooltip(message: caption == null ? label : '$label · $caption', child: item)
+        ? Tooltip(
+            message: caption == null ? label : '$label · $caption',
+            child: item,
+          )
         : item;
   }
 }
