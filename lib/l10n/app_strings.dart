@@ -382,6 +382,170 @@ class AppStrings {
     'يجب أن يتكون الاسم من حرفين على الأقل',
   );
 
+  // ── Store POS settings ────────────────────────────────────────────────────
+  String get taxRateLabel => _t('Tax rate', 'نسبة الضريبة');
+  String get maxDiscountLabel => _t('Max. discount', 'أقصى خصم');
+  String get vPercent => _t('Enter 0 – 100', 'أدخل رقمًا من 0 إلى 100');
+  String taxAndDiscount(double tax, double maxDiscount) => _t(
+        'Tax ${_pct(tax)}% · max. discount ${_pct(maxDiscount)}%',
+        'الضريبة ${_pct(tax)}% · أقصى خصم ${_pct(maxDiscount)}%',
+      );
+  static String _pct(double v) =>
+      v == v.roundToDouble() ? v.toInt().toString() : v.toString();
+
+  // ── POS (Cashier Dashboard, report Figure 3.2) ────────────────────────────
+  String get navPos => _t('Point of Sale', 'نقطة البيع');
+  String get navSectionSales => _t('SALES', 'المبيعات');
+  String get posTitle => _t('Point of Sale (POS)', 'نقطة البيع (POS)');
+  String get posSubtitle =>
+      _t('Add products and complete the sale', 'أضف المنتجات وأكمل عملية البيع');
+  String get posSearchHint => _t('Search by name or barcode…', 'ابحث بالاسم أو الباركود…');
+  String get posSearchTooltip => _t(
+        'Type or scan a barcode and press Enter to add it',
+        'اكتب الباركود أو امسحه ثم اضغط Enter لإضافته',
+      );
+  String get categoriesProducts => _t('Categories / Products', 'الأصناف / المنتجات');
+  String get allTab => _t('All', 'الكل');
+  String get noProductsFound => _t('No matching products', 'لا توجد منتجات مطابقة');
+  String get outOfStockShort => _t('Out of stock', 'نفد');
+  String leftInStock(int n) => _t('$n left', 'متبقٍ $n');
+  String get currentInvoice => _t('Current Invoice', 'الفاتورة الحالية');
+  String get newInvoiceChip => _t('New invoice', 'فاتورة جديدة');
+  String get colLineTotal => _t('Total', 'الإجمالي');
+  String get emptyInvoiceTitle => _t('No products yet', 'لا توجد منتجات بعد');
+  String get emptyInvoiceBody => _t(
+        'Tap a product or scan its barcode to add it.',
+        'اضغط على منتج أو امسح الباركود لإضافته.',
+      );
+  String get clearAll => _t('Clear all', 'مسح الكل');
+  String get applyDiscount => _t('Apply discount', 'تطبيق خصم');
+  String get removeItem => _t('Remove', 'حذف');
+  String get decreaseQty => _t('Decrease', 'إنقاص');
+  String get increaseQty => _t('Increase', 'زيادة');
+  String get invoiceSummary => _t('Invoice Summary', 'ملخص الفاتورة');
+  String get itemsCount => _t('Items', 'عدد الأصناف');
+  String get subtotalLabel => _t('Subtotal', 'المجموع الفرعي');
+  String get discountLabel => _t('Discount', 'الخصم');
+  String taxLabel(double rate) => _t('Tax (${_pct(rate)}%)', 'الضريبة (${_pct(rate)}%)');
+  String get totalLabel => _t('Total', 'الإجمالي');
+  String get paymentMethods => _t('Payment Methods', 'طرق الدفع');
+  String get payCash => _t('Cash', 'دفع نقدي');
+  String get payCard => _t('Credit card', 'بطاقة ائتمان');
+  String get payWallet => _t('E-wallet', 'محفظة إلكترونية');
+  String get payBank => _t('Bank transfer', 'تحويل بنكي');
+  String get completeSale => _t('Complete Sale', 'إتمام البيع');
+  String get newInvoice => _t('New Invoice', 'فاتورة جديدة');
+  String get suspendInvoice => _t('Suspend Invoice', 'تعليق الفاتورة');
+  String get suspendedInvoices => _t('Suspended', 'المعلقة');
+  String get returnLabel => _t('Return', 'مرتجع');
+  String get cancelInvoice => _t('Cancel Invoice', 'إلغاء الفاتورة');
+  String get productsTab => _t('Products', 'المنتجات');
+  String invoiceTab(int n) => _t('Invoice ($n)', 'الفاتورة ($n)');
+
+  // POS messages
+  String stockLimit(String name, int n) => _t(
+        'Only $n of "$name" in stock',
+        'المتوفر من "$name" هو $n فقط',
+      );
+  String outOfStockMsg(String name) =>
+      _t('"$name" is out of stock', '"$name" غير متوفر في المخزون');
+  String barcodeNotFound(String code) =>
+      _t('No product with barcode $code', 'لا يوجد منتج بالباركود $code');
+  String saleCompleted(String inv) =>
+      _t('Sale $inv completed', 'تم إتمام البيع $inv');
+  String invoiceSuspended(String inv) =>
+      _t('Invoice $inv was suspended', 'تم تعليق الفاتورة $inv');
+  String invoiceResumed(String inv) =>
+      _t('Invoice $inv resumed', 'تم استئناف الفاتورة $inv');
+  String invoiceCanceled(String inv) =>
+      _t('Invoice $inv was canceled', 'تم إلغاء الفاتورة $inv');
+  String get invoiceCleared => _t('Invoice cleared', 'تم مسح الفاتورة');
+  String skippedProducts(String names) => _t(
+        'No longer available and left out: $names',
+        'لم تعد متوفرة وتم استبعادها: $names',
+      );
+  String get notEnoughStockTitle => _t('Not enough stock', 'المخزون غير كافٍ');
+  String get confirmNewInvoiceTitle => _t('Start a new invoice?', 'بدء فاتورة جديدة؟');
+  String get confirmNewInvoiceBody => _t(
+        'The products on the current invoice will be removed.',
+        'سيتم حذف منتجات الفاتورة الحالية.',
+      );
+  String get confirmCancelTitle => _t('Cancel this invoice?', 'إلغاء هذه الفاتورة؟');
+  String get confirmCancelBody => _t(
+        'All products on the invoice will be removed.',
+        'سيتم حذف جميع منتجات الفاتورة.',
+      );
+  String confirmCancelSuspendedBody(String inv) => _t(
+        'Suspended invoice $inv will be marked as canceled.',
+        'سيتم تعليم الفاتورة المعلقة $inv كملغاة.',
+      );
+  String get keepInvoice => _t('Keep invoice', 'إبقاء الفاتورة');
+  String get yesContinue => _t('Yes, continue', 'نعم، متابعة');
+
+  // Discount dialog
+  String get discountTitle => _t('Invoice discount', 'خصم الفاتورة');
+  String get discountAmount => _t('Amount (₪)', 'مبلغ (₪)');
+  String get discountPercent => _t('Percent (%)', 'نسبة (%)');
+  String get discountValueLabel => _t('Discount', 'الخصم');
+  String maxDiscountHint(double pct, String amount) => _t(
+        'Maximum ${_pct(pct)}% of the subtotal ($amount)',
+        'الحد الأقصى ${_pct(pct)}% من المجموع الفرعي ($amount)',
+      );
+  String get discountTooHigh =>
+      _t('Discount is above the allowed maximum', 'الخصم أعلى من الحد المسموح');
+  String get removeDiscount => _t('Remove discount', 'إزالة الخصم');
+  String get apply => _t('Apply', 'تطبيق');
+
+  // Suspended invoices dialog
+  String get suspendedTitle => _t('Suspended Invoices', 'الفواتير المعلقة');
+  String get noSuspended =>
+      _t('There are no suspended invoices.', 'لا توجد فواتير معلقة.');
+  String get resume => _t('Resume', 'استئناف');
+  String itemsAndCashier(int items, String cashier) =>
+      _t('$items items · $cashier', '$items أصناف · $cashier');
+  String get replaceInvoiceTitle =>
+      _t('Replace the current invoice?', 'استبدال الفاتورة الحالية؟');
+  String get replaceInvoiceBody => _t(
+        'The current invoice has products. Resuming will remove them.',
+        'الفاتورة الحالية فيها منتجات، وسيتم حذفها عند الاستئناف.',
+      );
+
+  // Return dialog
+  String get returnTitle => _t('Return Products', 'إرجاع منتجات');
+  String get returnCodeLabel =>
+      _t('Invoice number or receipt code', 'رقم الفاتورة أو رمز الإيصال');
+  String get returnCodeHint => _t('e.g. INV-000012', 'مثال: INV-000012');
+  String get find => _t('Find', 'بحث');
+  String get chooseProduct => _t('Choose the product to return', 'اختر المنتج المراد إرجاعه');
+  String soldReturnable(int sold, int returnable) => _t(
+        'Sold $sold · can return $returnable',
+        'المباع $sold · يمكن إرجاع $returnable',
+      );
+  String get returnQuantity => _t('Quantity', 'الكمية');
+  String get returnReason => _t('Reason', 'السبب');
+  String get returnReasonHint =>
+      _t('e.g. Damaged package', 'مثال: العبوة تالفة');
+  String get confirmReturn => _t('Confirm Return', 'تأكيد الإرجاع');
+  String get returnDone => _t('Return completed', 'تم الإرجاع');
+  String refundInfo(String amount, String method) =>
+      _t('Refund $amount by $method', 'استرداد $amount عن طريق $method');
+  String get stockRestored =>
+      _t('The units were put back into stock.', 'تمت إعادة الكمية إلى المخزون.');
+  String get nothingToReturn =>
+      _t('Everything on this invoice was already returned.', 'تم إرجاع كل منتجات هذه الفاتورة.');
+  String get searchAgain => _t('Another invoice', 'فاتورة أخرى');
+  String get done => _t('Done', 'تم');
+
+  // Receipt dialog
+  String get receiptTitle => _t('Digital Receipt', 'الإيصال الرقمي');
+  String get scanReceipt => _t(
+        'Scan the QR code to keep the receipt. Use this code for returns.',
+        'امسح رمز QR للاحتفاظ بالإيصال، واستخدم الرمز عند الإرجاع.',
+      );
+  String get cashierLabel => _t('Cashier', 'الكاشير');
+  String get paidBy => _t('Paid by', 'طريقة الدفع');
+  String get close => _t('Close', 'إغلاق');
+
   // ── Delete dialog ─────────────────────────────────────────────────────────
   String get deleteTitle => _t('Delete product?', 'حذف المنتج؟');
   String deleteBody(String name) => _t(

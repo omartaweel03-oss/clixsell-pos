@@ -19,11 +19,15 @@ class StoresApiClient {
     required String name,
     String? address,
     String? phone,
+    double? taxRate,
+    double? maxDiscountPercent,
   }) async => StoreInfo.fromJson(
     await _http.post('/admin/stores', {
           'name': name,
           'address': address,
           'phone': phone,
+          'taxRate': taxRate,
+          'maxDiscountPercent': maxDiscountPercent,
         })
         as Map<String, dynamic>,
   );
@@ -33,11 +37,15 @@ class StoresApiClient {
     required String name,
     String? address,
     String? phone,
+    double? taxRate,
+    double? maxDiscountPercent,
   }) async => StoreInfo.fromJson(
     await _http.put('/admin/stores/$storeId', {
           'name': name,
           'address': address,
           'phone': phone,
+          'taxRate': taxRate,
+          'maxDiscountPercent': maxDiscountPercent,
         })
         as Map<String, dynamic>,
   );

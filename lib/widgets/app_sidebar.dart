@@ -5,7 +5,14 @@ import '../models/app_user.dart';
 import '../theme/app_theme.dart';
 
 /// The pages a user can open.
-enum SidebarDestination { stores, products, addProduct, editProduct, cashiers }
+enum SidebarDestination {
+  stores,
+  pos,
+  products,
+  addProduct,
+  editProduct,
+  cashiers,
+}
 
 /// Which pages each role may open (the backend enforces the same rules).
 extension RoleDestinations on UserRole {
@@ -15,9 +22,14 @@ extension RoleDestinations on UserRole {
       SidebarDestination.products,
       SidebarDestination.addProduct,
       SidebarDestination.editProduct,
+      SidebarDestination.pos,
       SidebarDestination.cashiers,
     ],
-    UserRole.cashier => const [SidebarDestination.products],
+    // The cashier's home is the POS screen (report Figure 3.2).
+    UserRole.cashier => const [
+      SidebarDestination.pos,
+      SidebarDestination.products,
+    ],
   };
 
   SidebarDestination get home => destinations.first;
@@ -105,6 +117,13 @@ class AppSidebar extends StatelessWidget {
         ),
       ],
       if (user.role.worksInStore) ...[
+        section(s.navSectionSales),
+        item(
+          SidebarDestination.pos,
+          Icons.point_of_sale_outlined,
+          Icons.point_of_sale_rounded,
+          s.navPos,
+        ),
         section(s.navSectionInventory),
         item(
           SidebarDestination.products,

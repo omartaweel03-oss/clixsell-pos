@@ -7,6 +7,8 @@ import 'screens/auth/login_page.dart';
 import 'services/api_http.dart';
 import 'services/product_api_client.dart';
 import 'state/auth_session.dart';
+import 'services/sales_api_client.dart';
+import 'state/pos_cart.dart';
 import 'state/product_store.dart';
 import 'theme/app_theme.dart';
 
@@ -108,6 +110,9 @@ class _LoggedInState extends State<_LoggedIn> {
   /// Product data of the user's store (Store Admins and Cashiers only).
   ProductStore? _products;
 
+  /// The cashier's current POS invoice; kept while switching pages.
+  PosCart? _cart;
+
   @override
   void initState() {
     super.initState();
@@ -116,11 +121,27 @@ class _LoggedInState extends State<_LoggedIn> {
       // user's store and stores them in the database.
       _products = ProductStore(api: ProductApiClient(widget.session.http))
         ..load();
+      _cart = PosCart();
+      _loadStoreSettings();
+    }
+  }
+
+  /// Tax rate and maximum discount of the user's store, for the POS totals.
+  Future<void> _loadStoreSettings() async {
+    try {
+      final store = await SalesApiClient(widget.session.http).storeSettings();
+      _cart?.applyStoreSettings(
+        taxRate: store.taxRate,
+        maxDiscountPercent: store.maxDiscountPercent,
+      );
+    } on ApiException {
+      // The defaults stay; the backend calculates the real totals anyway.
     }
   }
 
   @override
   void dispose() {
+    _cart?.dispose();
     _products?.dispose();
     super.dispose();
   }
@@ -136,6 +157,9 @@ class _LoggedInState extends State<_LoggedIn> {
     final products = _products;
     return products == null
         ? shell
-        : ProductStoreScope(store: products, child: shell);
+        : ProductStoreScope(
+            store: products,
+            child: PosCartScope(cart: _cart!, child: shell),
+          );
   }
 }

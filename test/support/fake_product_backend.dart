@@ -28,6 +28,13 @@ class FakeProductBackend {
   final List<Map<String, dynamic>> rows = [];
   final List<Map<String, dynamic>> stores = [];
   final List<Map<String, dynamic>> users = [];
+
+  /// Sales ("sales" + their lines), in SaleResponse JSON format.
+  final List<Map<String, dynamic>> sales = [];
+  final List<Map<String, dynamic>> returns = [];
+  int _nextSaleId = 1;
+  int _nextSaleItemId = 1;
+  final Map<int, int> _invoiceCounter = {}; // storeId → next number
   final Map<String, String> _passwords = {}; // username → password
   final Map<String, int> _sessions = {}; // token → userId
 
@@ -162,6 +169,16 @@ class FakeProductBackend {
       if (role != 'STORE_ADMIN') return _forbidden();
       return _staff(storeId!, 'CASHIER', path.substring('/api/store/cashiers'.length), method, body);
     }
+    // Own store settings
+    if (path == '/api/store' && method == 'GET') {
+      if (role == 'SYSTEM_ADMIN') return _forbidden();
+      return _json(200, _storeJson(_find(stores, 'storeId', storeId!)!));
+    }
+    // POS: sales and returns (Store Admin and Cashier, own store)
+    if (path.startsWith('/api/sales') || path.startsWith('/api/returns')) {
+      if (role == 'SYSTEM_ADMIN') return _forbidden();
+      return _pos(user, storeId!, path, method, body, request);
+    }
     // Products: Store Admin (all) and Cashier (read only), own store
     if (path.startsWith('/api/products')) {
       if (role == 'SYSTEM_ADMIN') return _forbidden();
@@ -220,6 +237,8 @@ class FakeProductBackend {
   }
 
   Map<String, dynamic> _storeJson(Map<String, dynamic> st) => {
+        'taxRate': 16.0,
+        'maxDiscountPercent': 10.0,
         ...st,
         'adminCount': users
             .where((u) => u['storeId'] == st['storeId'] && u['role'] == 'STORE_ADMIN')
@@ -344,6 +363,197 @@ class FakeProductBackend {
       }
     }
     return _error(400, 'BAD_REQUEST', 'Unexpected request');
+  }
+
+  // ── POS (mirrors SaleService / ReturnService of the backend) ─────────────
+
+  double _money(num v) => (v * 100).round() / 100;
+
+  double _taxRate(int storeId) =>
+      ((_find(stores, 'storeId', storeId)?['taxRate']) as num?)?.toDouble() ?? 16.0;
+
+  double _maxDiscount(int storeId) =>
+      ((_find(stores, 'storeId', storeId)?['maxDiscountPercent']) as num?)?.toDouble() ?? 10.0;
+
+  Future<http.Response> _pos(Map<String, dynamic> user, int storeId, String path, String method,
+      Map<String, dynamic> Function() body, http.Request request) async {
+    final mine = sales.where((x) => x['storeId'] == storeId).toList();
+    if (path == '/api/sales/suspended' && method == 'GET') {
+      return _json(200, mine.where((x) => x['status'] == 'SUSPENDED').toList().reversed.toList());
+    }
+    if (path == '/api/sales/lookup') {
+      final code = (request.url.queryParameters['code'] ?? '').trim();
+      for (final x in mine) {
+        if (x['status'] == 'COMPLETED' &&
+            ((x['invoiceNumber'] as String).toUpperCase() == code.toUpperCase() ||
+                x['receiptCode'] == code)) {
+          return _json(200, x);
+        }
+      }
+      return _error(404, 'SALE_NOT_FOUND', "No completed invoice or receipt '$code' in this store");
+    }
+    if (path == '/api/returns' && method == 'POST') return _return(user, storeId, body());
+
+    final suspendedId = RegExp(r'^/api/sales/suspended/(\d+)$').firstMatch(path);
+    if (suspendedId != null && method == 'DELETE') {
+      final sale = _find(mine, 'saleId', int.parse(suspendedId.group(1)!));
+      if (sale == null) return _error(404, 'SALE_NOT_FOUND', 'Invoice was not found');
+      if (sale['status'] != 'SUSPENDED') {
+        return _error(409, 'SALE_NOT_SUSPENDED', 'Only a suspended invoice can be canceled');
+      }
+      sale['status'] = 'CANCELED';
+      return _json(200, sale);
+    }
+    final getId = RegExp(r'^/api/sales/(\d+)$').firstMatch(path);
+    if (getId != null && method == 'GET') {
+      final sale = _find(mine, 'saleId', int.parse(getId.group(1)!));
+      return sale == null ? _error(404, 'SALE_NOT_FOUND', 'Invoice was not found') : _json(200, sale);
+    }
+    final complete = path == '/api/sales' && method == 'POST';
+    final suspendNew = path == '/api/sales/suspended' && method == 'POST';
+    if (complete || suspendNew || (suspendedId != null && method == 'PUT')) {
+      final b = body();
+      final saleId = suspendedId != null ? int.parse(suspendedId.group(1)!) : b['saleId'] as int?;
+      return _saveSale(user, storeId, b, saleId: suspendNew ? null : saleId, complete: complete);
+    }
+    return _error(400, 'BAD_REQUEST', 'Unexpected request');
+  }
+
+  http.Response _saveSale(Map<String, dynamic> user, int storeId, Map<String, dynamic> b,
+      {required int? saleId, required bool complete}) {
+    final lines = (b['items'] as List<dynamic>? ?? const []);
+    if (lines.isEmpty) {
+      return _error(400, 'VALIDATION_FAILED', 'Some fields are not valid',
+          {'items': 'Add at least one product to the invoice'});
+    }
+    Map<String, dynamic>? existing;
+    if (saleId != null) {
+      existing = _find(sales.where((x) => x['storeId'] == storeId).toList(), 'saleId', saleId);
+      if (existing == null) return _error(404, 'SALE_NOT_FOUND', 'Invoice was not found');
+      if (existing['status'] != 'SUSPENDED') {
+        return _error(409, 'SALE_NOT_SUSPENDED', 'Invoice is no longer suspended');
+      }
+    }
+    final items = <Map<String, dynamic>>[];
+    for (final l in lines) {
+      final m = l as Map<String, dynamic>;
+      final product = rows.where((r) => r['productId'] == m['productId'] && r['storeId'] == storeId).firstOrNull;
+      if (product == null) {
+        return _error(404, 'PRODUCT_NOT_FOUND', 'Product ${m['productId']} is not available in this store');
+      }
+      final qty = m['quantity'] as int;
+      final price = (product['sellingPrice'] as num).toDouble();
+      items.add({
+        'saleItemId': _nextSaleItemId++,
+        'productId': product['productId'],
+        'productName': product['name'],
+        'barcode': product['barcode'],
+        'quantity': qty,
+        'unitPrice': price,
+        'lineTotal': _money(price * qty),
+        'returnedQuantity': 0,
+        'returnableQuantity': qty,
+      });
+    }
+    final subtotal = _money(items.fold<double>(0, (a, i) => a + (i['lineTotal'] as double)));
+    final dv = (b['discountValue'] as num?)?.toDouble() ?? 0;
+    final discount = _money(b['discountType'] == 'PERCENT' ? subtotal * dv / 100 : dv);
+    if (discount > _money(subtotal * _maxDiscount(storeId) / 100)) {
+      return _error(400, 'VALIDATION_FAILED', 'Some fields are not valid',
+          {'discountValue': 'Discount cannot be more than 10% of the subtotal'});
+    }
+    final rate = _taxRate(storeId);
+    final tax = _money((subtotal - discount) * rate / 100);
+    if (complete) {
+      if (b['paymentMethod'] == null) {
+        return _error(400, 'VALIDATION_FAILED', 'Some fields are not valid',
+            {'paymentMethod': 'Choose a payment method'});
+      }
+      final shortages = <String, String>{};
+      for (final i in items) {
+        final p = rowById(i['productId'] as int)!;
+        if ((p['quantity'] as int) < (i['quantity'] as int)) {
+          shortages[i['productName'] as String] = 'Only ${p['quantity']} left in stock';
+        }
+      }
+      if (shortages.isNotEmpty) {
+        return _error(409, 'INSUFFICIENT_STOCK', 'Not enough stock', shortages);
+      }
+      for (final i in items) {
+        final p = rowById(i['productId'] as int)!;
+        _setQuantity(p, (p['quantity'] as int) - (i['quantity'] as int));
+      }
+    }
+    final number = existing?['invoiceNumber'] as String? ?? _nextInvoice(storeId);
+    final sale = {
+      'saleId': existing?['saleId'] ?? _nextSaleId++,
+      'storeId': storeId,
+      'invoiceNumber': number,
+      'status': complete ? 'COMPLETED' : 'SUSPENDED',
+      'cashierName': user['fullName'],
+      'items': items,
+      'itemCount': items.length,
+      'subtotal': subtotal,
+      'discount': discount,
+      'taxRate': rate,
+      'tax': tax,
+      'total': _money(subtotal - discount + tax),
+      'paymentMethod': complete ? b['paymentMethod'] : null,
+      'receiptCode': complete ? 'CLIXSELL-TEST${_nextSaleId.toString().padLeft(4, '0')}' : null,
+      'createdAt': existing?['createdAt'] ?? '2026-11-04T10:00:00',
+      'completedAt': complete ? '2026-11-04T10:05:00' : null,
+    };
+    if (existing != null) {
+      sales[sales.indexOf(existing)] = sale;
+    } else {
+      sales.add(sale);
+    }
+    return _json(complete || existing == null ? 201 : 200, sale);
+  }
+
+  String _nextInvoice(int storeId) {
+    final n = _invoiceCounter[storeId] ?? 1;
+    _invoiceCounter[storeId] = n + 1;
+    return 'INV-${n.toString().padLeft(6, '0')}';
+  }
+
+  void _setQuantity(Map<String, dynamic> row, int quantity) {
+    final min = row['minStock'] as int;
+    row['quantity'] = quantity;
+    row['stockStatus'] = quantity <= 0 ? 'OUT_OF_STOCK' : (quantity <= min ? 'LOW_STOCK' : 'IN_STOCK');
+    row['stockValue'] = (row['sellingPrice'] as double) * quantity;
+  }
+
+  http.Response _return(Map<String, dynamic> user, int storeId, Map<String, dynamic> b) {
+    final sale = _find(sales.where((x) => x['storeId'] == storeId).toList(), 'saleId', b['saleId'] as int);
+    if (sale == null) return _error(404, 'SALE_NOT_FOUND', 'Invoice was not found');
+    final item = (sale['items'] as List).cast<Map<String, dynamic>>()
+        .where((i) => i['saleItemId'] == b['saleItemId']).firstOrNull;
+    if (item == null) return _error(404, 'SALE_ITEM_NOT_FOUND', 'Not on the invoice');
+    final qty = b['quantity'] as int;
+    if (qty > (item['returnableQuantity'] as int)) {
+      return _error(400, 'VALIDATION_FAILED', 'Some fields are not valid',
+          {'quantity': 'Only ${item['returnableQuantity']} of this product can still be returned'});
+    }
+    item['returnedQuantity'] = (item['returnedQuantity'] as int) + qty;
+    item['returnableQuantity'] = (item['returnableQuantity'] as int) - qty;
+    final p = rowById(item['productId'] as int);
+    if (p != null) _setQuantity(p, (p['quantity'] as int) + qty);
+    final refund = _money((sale['total'] as double) * (item['lineTotal'] as double) /
+        (sale['subtotal'] as double) * qty / (item['quantity'] as int));
+    final r = {
+      'returnId': returns.length + 1,
+      'invoiceNumber': sale['invoiceNumber'],
+      'productName': item['productName'],
+      'quantity': qty,
+      'reason': b['reason'],
+      'refundAmount': refund,
+      'refundMethod': sale['paymentMethod'],
+      'returnDate': '2026-11-04T11:00:00',
+      'stillReturnable': item['returnableQuantity'],
+    };
+    returns.add(r);
+    return _json(201, r);
   }
 
   bool _barcodeTaken(List<Map<String, dynamic>> mine, String barcode, int? exceptId) =>

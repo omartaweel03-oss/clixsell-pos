@@ -223,6 +223,10 @@ void main() {
     final backend = _backend();
     await _pumpApp(tester, backend);
     await _login(tester, 'shini.cashier', 'Cashier-Pass-1');
+    // A cashier starts on the POS screen; Products is the second menu item.
+    expect(find.text('Point of Sale (POS)'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('nav-products')));
+    await tester.pumpAndSettle();
 
     expect(find.text('Milk'), findsOneWidget);
     expect(_statValue(tester, 'statTotal'), '3');
@@ -253,8 +257,10 @@ void main() {
     expect(find.byKey(const Key('loginButton')), findsOneWidget);
 
     await _login(tester, 'neshan.cashier', 'Cashier-Pass-1');
-    expect(find.text('Neshan Juice'), findsOneWidget);
+    expect(find.text('Neshan Juice'), findsOneWidget); // on the POS grid
     expect(find.text('Milk'), findsNothing);
+    await tester.tap(find.byKey(const Key('nav-products')));
+    await tester.pumpAndSettle();
     expect(_statValue(tester, 'statTotal'), '1');
   });
 

@@ -316,6 +316,11 @@ class _StoreCard extends StatelessWidget {
             detail(Icons.phone_outlined, store.phone ?? '—'),
             const SizedBox(height: 4),
             detail(
+              Icons.percent_rounded,
+              s.taxAndDiscount(store.taxRate, store.maxDiscountPercent),
+            ),
+            const SizedBox(height: 4),
+            detail(
               Icons.groups_outlined,
               '${s.adminsCount(store.adminCount)} · ${s.cashiersCount(store.cashierCount)}',
             ),
@@ -381,6 +386,21 @@ class _StoreDialogState extends State<_StoreDialog> {
     text: widget.existing?.address ?? '',
   );
   late final _phone = TextEditingController(text: widget.existing?.phone ?? '');
+  late final _tax = TextEditingController(
+    text: _num(widget.existing?.taxRate ?? 16),
+  );
+  late final _maxDiscount = TextEditingController(
+    text: _num(widget.existing?.maxDiscountPercent ?? 10),
+  );
+
+  static String _num(double v) =>
+      v == v.roundToDouble() ? v.toInt().toString() : v.toString();
+
+  String? _percentProblem(String? v, AppStrings s) {
+    final d = double.tryParse((v ?? '').trim());
+    if (d == null || d < 0 || d > 100) return s.vPercent;
+    return null;
+  }
   final Map<String, String> _serverErrors = {};
   bool _saving = false;
   String? _generalError;
@@ -390,6 +410,8 @@ class _StoreDialogState extends State<_StoreDialog> {
     _name.dispose();
     _address.dispose();
     _phone.dispose();
+    _tax.dispose();
+    _maxDiscount.dispose();
     super.dispose();
   }
 
@@ -408,12 +430,16 @@ class _StoreDialogState extends State<_StoreDialog> {
               name: _name.text.trim(),
               address: _address.text.trim(),
               phone: _phone.text.trim(),
+              taxRate: double.parse(_tax.text.trim()),
+              maxDiscountPercent: double.parse(_maxDiscount.text.trim()),
             )
           : await widget.api.updateStore(
               existing.storeId,
               name: _name.text.trim(),
               address: _address.text.trim(),
               phone: _phone.text.trim(),
+              taxRate: double.parse(_tax.text.trim()),
+              maxDiscountPercent: double.parse(_maxDiscount.text.trim()),
             );
       if (mounted) Navigator.of(context).pop(saved);
     } on ApiException catch (e) {
@@ -498,6 +524,46 @@ class _StoreDialogState extends State<_StoreDialog> {
                   }
                   return null;
                 },
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      key: const Key('storeTaxField'),
+                      controller: _tax,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: InputDecoration(
+                        labelText: s.taxRateLabel,
+                        suffixText: '%',
+                        prefixIcon: const Icon(Icons.percent_rounded),
+                      ),
+                      validator: (v) =>
+                          _serverErrors['taxRate'] ?? _percentProblem(v, s),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: TextFormField(
+                      key: const Key('storeMaxDiscountField'),
+                      controller: _maxDiscount,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: InputDecoration(
+                        labelText: s.maxDiscountLabel,
+                        suffixText: '%',
+                        prefixIcon: const Icon(Icons.discount_outlined),
+                      ),
+                      validator: (v) =>
+                          _serverErrors['maxDiscountPercent'] ??
+                          _percentProblem(v, s),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

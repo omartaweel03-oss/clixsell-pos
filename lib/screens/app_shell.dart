@@ -10,6 +10,8 @@ import '../theme/app_theme.dart';
 import '../widgets/app_sidebar.dart';
 import 'admin/staff_accounts_page.dart';
 import 'admin/stores_page.dart';
+import 'pos/pos_page.dart';
+import '../services/sales_api_client.dart';
 import 'inventory/inventory_page.dart';
 import 'inventory/product_form_page.dart';
 
@@ -144,6 +146,8 @@ class _AppShellState extends State<AppShell> {
     switch (_destination) {
       case SidebarDestination.stores:
         return StoresPage(key: const ValueKey('stores'), http: widget.http);
+      case SidebarDestination.pos:
+        return PosPage(key: const ValueKey('pos'), api: SalesApiClient(widget.http));
       case SidebarDestination.cashiers:
         return StaffAccountsPage(
           key: const ValueKey('cashiers'),
@@ -238,6 +242,7 @@ class _AppShellState extends State<AppShell> {
           SidebarDestination.addProduct => s.navAddProduct,
           SidebarDestination.editProduct => s.navEditProduct,
           SidebarDestination.cashiers => s.cashiersTitle,
+          SidebarDestination.pos => s.navPos,
         };
         return Scaffold(
           key: _scaffoldKey,
