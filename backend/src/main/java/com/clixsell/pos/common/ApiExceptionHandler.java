@@ -3,6 +3,7 @@ package com.clixsell.pos.common;
 import com.clixsell.pos.auth.LoginFailedException;
 import com.clixsell.pos.product.DuplicateBarcodeException;
 import com.clixsell.pos.product.ProductNotFoundException;
+import com.clixsell.pos.sale.InsufficientStockException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -43,6 +44,12 @@ public class ApiExceptionHandler {
     @ExceptionHandler(ConflictException.class)
     public ResponseEntity<ApiError> conflict(ConflictException e) {
         return error(HttpStatus.CONFLICT, e.getCode(), e.getMessage(), e.fieldErrors());
+    }
+
+    /** Not enough stock to complete a sale; lists each product that is short. */
+    @ExceptionHandler(InsufficientStockException.class)
+    public ResponseEntity<ApiError> insufficientStock(InsufficientStockException e) {
+        return error(HttpStatus.CONFLICT, "INSUFFICIENT_STOCK", e.getMessage(), e.getShortages());
     }
 
     @ExceptionHandler(DuplicateBarcodeException.class)

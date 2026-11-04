@@ -51,6 +51,11 @@ public abstract class ApiTestBase {
     @BeforeEach
     void cleanDatabase() {
         db.update("DELETE FROM user_sessions");
+        db.update("DELETE FROM returns");
+        db.update("DELETE FROM payments");
+        db.update("DELETE FROM receipts");
+        db.update("DELETE FROM sale_items");
+        db.update("DELETE FROM sales");
         db.update("DELETE FROM products");
         db.update("DELETE FROM suppliers");
         db.update("DELETE FROM users WHERE role <> 'SYSTEM_ADMIN'");
@@ -116,6 +121,17 @@ public abstract class ApiTestBase {
         String adminToken = login(admin, "Admin-Pass-1");
         createCashier(adminToken, cashier, "Cashier-Pass-1");
         return new StoreSetup(storeId, admin, adminToken, cashier, login(cashier, "Cashier-Pass-1"));
+    }
+
+    /** Creates a product in the Store Admin's store and returns its id. */
+    protected long createProduct(String adminToken, String name, String barcode, double price, int quantity)
+            throws Exception {
+        MvcResult r = mvc.perform(post("/api/products").header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(productJson(name, barcode, price, quantity, 2, "Main Supplier")))
+                .andExpect(status().isCreated())
+                .andReturn();
+        return jsonLong(r, "productId");
     }
 
     protected static String userJson(String username, String password) {

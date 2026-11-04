@@ -35,6 +35,7 @@ import java.util.List;
  * GET  /api/products/generate-barcode      STORE_ADMIN
  * GET  /api/products/**                    STORE_ADMIN, CASHIER
  * POST/PUT/DELETE /api/products/**         STORE_ADMIN
+ * /api/sales/**, /api/returns              STORE_ADMIN, CASHIER (POS)
  * </pre>
  * Not logged in → 401. Wrong role → 403. Which store's data a user sees is
  * decided separately, from the logged-in user (see CurrentUser).
@@ -73,6 +74,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/products/generate-barcode").hasRole("STORE_ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/products", "/api/products/**").hasAnyRole("STORE_ADMIN", "CASHIER")
                         .requestMatchers("/api/products", "/api/products/**").hasRole("STORE_ADMIN")
+                        .requestMatchers("/api/sales", "/api/sales/**", "/api/returns", "/api/returns/**")
+                        .hasAnyRole("STORE_ADMIN", "CASHIER")
                         .anyRequest().authenticated())
                 .addFilterBefore(new TokenAuthenticationFilter(authService), UsernamePasswordAuthenticationFilter.class);
         return http.build();
