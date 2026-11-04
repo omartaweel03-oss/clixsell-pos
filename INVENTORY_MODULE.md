@@ -31,10 +31,10 @@ user or store logs them out at once. Stores and users are deactivated, never del
 ## Run (Windows / macOS)
 Requires **Java JDK 17+** (backend) and **Flutter 3.38+** (frontend). Maven and SQLite need no installation.
 
-1. Choose the first System Admin password (only used when no System Admin exists yet):
-   edit `backend/src/main/resources/application.properties`
-   → `clixsell.system-admin.password=YourPassword` (at least 8 characters).
-   If you leave it empty, a random password is printed **once** in the backend console.
+1. First login: **`sysadmin` / `Admin12345`** (created on the first start, when the
+   database has no System Admin yet). To use another password, change
+   `clixsell.system-admin.password=` in `backend/src/main/resources/application.properties`
+   **before** the first start. Change the default before real use.
 2. Start the backend (terminal 1):
    ```bash
    cd backend
