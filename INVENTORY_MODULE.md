@@ -75,7 +75,20 @@ Requires **Java JDK 17+** (backend) and **Flutter 3.38+** (frontend). Maven and 
    flutter pub get
    flutter run -d chrome
    ```
-4. Log in as `sysadmin`, create a store and its Store Admin. Log in as that Store Admin to add
+4. **Demo data**: a new database is filled automatically with two Palestinian supermarkets
+   (no need to create anything to try the app):
+
+   | Store | Store Admin | Cashiers | Password (admin / cashier) |
+   |---|---|---|---|
+   | Shini Supermarket – Ramallah | `shini.admin` | `shini.cashier`, `shini.cashier2` | `Admin-Pass-1` / `Cashier-Pass-1` |
+   | Neshan Market – Nablus | `neshan.admin` | `neshan.cashier` | `Admin-Pass-1` / `Cashier-Pass-1` |
+
+   Each store has 10 products (Al-Juneidi milk, olive oil, za'atar, Nabulsi kunafa, …; some
+   low or out of stock), completed sales, a suspended invoice, and Shini has one return.
+   It runs only when the database has **no stores**. Already have a database? Stop the backend,
+   delete (or rename) `backend/clixsell.db`, and start again. For a real store, set
+   `clixsell.demo-data=false` in `application.properties` before the first start.
+5. Or log in as `sysadmin`, create a store and its Store Admin. Log in as that Store Admin to add
    products and cashiers. Log in as a cashier: the POS opens and sales can be made.
 
 ### Upgrading an existing database
@@ -132,7 +145,7 @@ Migrations: `backend/src/main/resources/db/migration/V1__initial_schema.sql` (or
 
 ## Tests
 ```bash
-cd backend && .\mvnw.cmd test     # 74 backend tests: business logic (Sale, ReturnProduct, …),
+cd backend && .\mvnw.cmd test     # 75 backend tests: business logic (Sale, ReturnProduct, …),
                                  #   API + database, two-store isolation, roles, lockout, migration
 flutter test                     # 69 Flutter tests (use a fake server), incl. POS cart + screen
 ```
@@ -168,6 +181,7 @@ flutter test                     # 69 Flutter tests (use a fake server), incl. P
 | `backend/…/product/*` | Product entity + business logic, store-scoped service and API |
 | `backend/…/sale/*` | Sale, SaleItem, Payment, Receipt business logic; sales service and API |
 | `backend/…/returns/*` | ReturnProduct business logic; returns service and API |
+| `backend/…/demo/DemoDataInitializer.java` | Demo stores, staff, products, sales (new database only) |
 | `backend/…/supplier/*` | Supplier entity (per store) |
 | `backend/…/common/*` | JSON errors, date converter, shared exceptions |
 
