@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ActiveProfiles;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -12,11 +13,9 @@ import java.nio.file.Path;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** A new database gets the demo stores, staff, products, sales and a return. */
-@SpringBootTest(properties = {
-        "spring.datasource.url=jdbc:sqlite:target/demo-clixsell.db?foreign_keys=on",
-        "clixsell.demo-data=true"
-})
+/** With the "demo" profile a new database gets the demo stores, staff, products, sales and a return. */
+@SpringBootTest(properties = "spring.datasource.url=jdbc:sqlite:target/demo-clixsell.db?foreign_keys=on")
+@ActiveProfiles("demo")
 class DemoDataTest {
 
     static {

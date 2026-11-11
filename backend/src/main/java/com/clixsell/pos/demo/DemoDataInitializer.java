@@ -40,7 +40,9 @@ import java.util.Map;
  * database). Everything is added through the normal services, so the same
  * business rules apply (BCrypt passwords, product validation, stock checks,
  * totals with discount and tax, QR receipts, stock going down and back up).
- * Turn it off with {@code clixsell.demo-data=false} in application.properties.
+ * <p>Off by default. Enabled only by the {@code demo} profile
+ * ({@code application-demo.properties}) or {@code clixsell.demo-data=true}.
+ * A database that already has stores is never changed.
  */
 @Component
 @Order(2)
@@ -60,7 +62,7 @@ public class DemoDataInitializer implements ApplicationRunner {
     private final SaleService sales;
     private final ReturnService returns;
 
-    public DemoDataInitializer(@Value("${clixsell.demo-data:true}") boolean enabled,
+    public DemoDataInitializer(@Value("${clixsell.demo-data:false}") boolean enabled,
                                StoreRepository storeRepository, UserRepository userRepository,
                                StoreService stores, StaffService staff, ProductService products,
                                SaleService sales, ReturnService returns) {
@@ -149,7 +151,7 @@ public class DemoDataInitializer implements ApplicationRunner {
                    System Admin : sysadmin (password from application.properties)
                    Shini        : shini.admin / {}   shini.cashier, shini.cashier2 / {}
                    Neshan       : neshan.admin / {}  neshan.cashier / {}
-                 Turn off: clixsell.demo-data=false
+                 (demo profile – do not use for a real store)
                 ============================================================""",
                 ADMIN_PASSWORD, CASHIER_PASSWORD, ADMIN_PASSWORD, CASHIER_PASSWORD);
     }

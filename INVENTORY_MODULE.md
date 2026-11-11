@@ -75,8 +75,12 @@ Requires **Java JDK 17+** (backend) and **Flutter 3.38+** (frontend). Maven and 
    flutter pub get
    flutter run -d chrome
    ```
-4. **Demo data**: a new database is filled automatically with two Palestinian supermarkets
-   (no need to create anything to try the app):
+4. **Demo data (optional, off by default)** – for presentations and testing only. Start the
+   backend with the `demo` profile on a **new** database (no `backend/clixsell.db` yet):
+   ```bash
+   .\mvnw.cmd spring-boot:run "-Dspring-boot.run.profiles=demo"
+   ```
+   It adds two Palestinian supermarkets:
 
    | Store | Store Admin | Cashiers | Password (admin / cashier) |
    |---|---|---|---|
@@ -85,10 +89,9 @@ Requires **Java JDK 17+** (backend) and **Flutter 3.38+** (frontend). Maven and 
 
    Each store has 10 products (Al-Juneidi milk, olive oil, za'atar, Nabulsi kunafa, …; some
    low or out of stock), completed sales, a suspended invoice, and Shini has one return.
-   It runs only when the database has **no stores**. Already have a database? Stop the backend,
-   delete (or rename) `backend/clixsell.db`, and start again. For a real store, set
-   `clixsell.demo-data=false` in `application.properties` before the first start.
-5. Or log in as `sysadmin`, create a store and its Store Admin. Log in as that Store Admin to add
+   A database that already has stores is **never changed** (nothing is added, deleted or
+   overwritten). Settings: `application-demo.properties`.
+5. Without demo data: log in as `sysadmin`, create a store and its Store Admin. Log in as that Store Admin to add
    products and cashiers. Log in as a cashier: the POS opens and sales can be made.
 
 ### Upgrading an existing database
@@ -96,7 +99,8 @@ On the first start of this version, Flyway upgrades `backend/clixsell.db` automa
 a backup `clixsell-backup-before-v2-<date>.db` is written first, and all existing products and
 suppliers are moved to a store called **"Default Store"** (rename it in the Stores page and
 give it a Store Admin). The next version adds the sales tables (`V3__sales.sql`); existing stores get tax 16% and
-maximum discount 10%. To start from an empty database instead, stop the backend and delete
+maximum discount 10%, and every existing store, user and product is kept (tested in
+`UpgradeToSalesVersionTest`). To start from an empty database instead, stop the backend and delete
 `backend/clixsell.db`.
 
 ## API
@@ -145,9 +149,9 @@ Migrations: `backend/src/main/resources/db/migration/V1__initial_schema.sql` (or
 
 ## Tests
 ```bash
-cd backend && .\mvnw.cmd test     # 75 backend tests: business logic (Sale, ReturnProduct, …),
+cd backend && .\mvnw.cmd test     # 77 backend tests: business logic (Sale, ReturnProduct, …),
                                  #   API + database, two-store isolation, roles, lockout, migration
-flutter test                     # 69 Flutter tests (use a fake server), incl. POS cart + screen
+flutter test                     # 70 Flutter tests (use a fake server), incl. POS cart + screen
 ```
 
 ## Files
@@ -181,7 +185,7 @@ flutter test                     # 69 Flutter tests (use a fake server), incl. P
 | `backend/…/product/*` | Product entity + business logic, store-scoped service and API |
 | `backend/…/sale/*` | Sale, SaleItem, Payment, Receipt business logic; sales service and API |
 | `backend/…/returns/*` | ReturnProduct business logic; returns service and API |
-| `backend/…/demo/DemoDataInitializer.java` | Demo stores, staff, products, sales (new database only) |
+| `backend/…/demo/DemoDataInitializer.java` | Demo stores, staff, products, sales (`demo` profile, new database only) |
 | `backend/…/supplier/*` | Supplier entity (per store) |
 | `backend/…/common/*` | JSON errors, date converter, shared exceptions |
 

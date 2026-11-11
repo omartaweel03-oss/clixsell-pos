@@ -209,6 +209,42 @@ void main() {
     expect(find.text('23 left'), findsOneWidget);
   });
 
+  testWidgets('return from an invoice with several products: the chosen (second) product is returned', (tester) async {
+    final backend = _backend();
+    await _openPos(tester, backend);
+    await _tap(tester, 'posProduct-1');                 // Milk ×1   ₪5.00
+    await _tap(tester, 'posProduct-2');
+    await _tap(tester, 'posProduct-2');                 // Bread ×2  ₪4.00
+    await _tap(tester, 'completeSaleButton');           // total (9.00 + 16 %) = 10.44
+    await _tap(tester, 'receiptCloseButton');
+    expect(backend.rowById(1)!['quantity'], 23);
+    expect(backend.rowById(2)!['quantity'], 1);
+
+    await _tap(tester, 'returnButton');
+    await tester.enterText(find.byKey(const Key('returnCodeField')), 'INV-000001');
+    await _tap(tester, 'returnFindButton');
+    final items = (backend.sales.single['items'] as List).cast<Map<String, dynamic>>();
+    final breadLine = items.firstWhere((i) => i['productId'] == 2)['saleItemId'];
+    expect(find.text('Sold 1 · can return 1'), findsOneWidget); // Milk (first line)
+    expect(find.text('Sold 2 · can return 2'), findsOneWidget); // Bread (second line)
+
+    await _tap(tester, 'returnLine-$breadLine');
+    await _tap(tester, 'returnQtyInc');
+    expect(_text(tester, 'returnQty'), '2');
+    await _tap(tester, 'returnQtyInc');                 // cannot go above what was sold
+    expect(_text(tester, 'returnQty'), '2');
+    await tester.enterText(find.byKey(const Key('returnReasonField')), 'Stale bread');
+    await _tap(tester, 'confirmReturnButton');
+
+    final r = backend.returns.single;
+    expect(r['productName'], 'Bread');
+    expect(r['quantity'], 2);
+    expect(r['refundAmount'], 4.64);                    // 10.44 × 4.00 / 9.00
+    expect(backend.rowById(2)!['quantity'], 3);         // bread back in stock
+    expect(backend.rowById(1)!['quantity'], 23);        // milk unchanged
+    expect(_text(tester, 'refundInfo'), 'Refund ₪ 4.64 by Cash');
+  });
+
   testWidgets('store isolation: the other store\'s cashier sees only its products and invoices', (tester) async {
     final backend = _backend();
     final neshan = backend.addStore('Neshan Supermarket');
