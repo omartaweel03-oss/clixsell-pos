@@ -387,9 +387,9 @@ class AppStrings {
   String get maxDiscountLabel => _t('Max. discount', 'أقصى خصم');
   String get vPercent => _t('Enter 0 – 100', 'أدخل رقمًا من 0 إلى 100');
   String taxAndDiscount(double tax, double maxDiscount) => _t(
-        'Tax ${_pct(tax)}% · max. discount ${_pct(maxDiscount)}%',
-        'الضريبة ${_pct(tax)}% · أقصى خصم ${_pct(maxDiscount)}%',
-      );
+    'Tax ${_pct(tax)}% · max. discount ${_pct(maxDiscount)}%',
+    'الضريبة ${_pct(tax)}% · أقصى خصم ${_pct(maxDiscount)}%',
+  );
   static String _pct(double v) =>
       v == v.roundToDouble() ? v.toInt().toString() : v.toString();
 
@@ -397,16 +397,21 @@ class AppStrings {
   String get navPos => _t('Point of Sale', 'نقطة البيع');
   String get navSectionSales => _t('SALES', 'المبيعات');
   String get posTitle => _t('Point of Sale (POS)', 'نقطة البيع (POS)');
-  String get posSubtitle =>
-      _t('Add products and complete the sale', 'أضف المنتجات وأكمل عملية البيع');
-  String get posSearchHint => _t('Search by name or barcode…', 'ابحث بالاسم أو الباركود…');
+  String get posSubtitle => _t(
+    'Add products and complete the sale',
+    'أضف المنتجات وأكمل عملية البيع',
+  );
+  String get posSearchHint =>
+      _t('Search by name or barcode…', 'ابحث بالاسم أو الباركود…');
   String get posSearchTooltip => _t(
-        'Type or scan a barcode and press Enter to add it',
-        'اكتب الباركود أو امسحه ثم اضغط Enter لإضافته',
-      );
-  String get categoriesProducts => _t('Categories / Products', 'الأصناف / المنتجات');
+    'Type or scan a barcode and press Enter to add it',
+    'اكتب الباركود أو امسحه ثم اضغط Enter لإضافته',
+  );
+  String get categoriesProducts =>
+      _t('Categories / Products', 'الأصناف / المنتجات');
   String get allTab => _t('All', 'الكل');
-  String get noProductsFound => _t('No matching products', 'لا توجد منتجات مطابقة');
+  String get noProductsFound =>
+      _t('No matching products', 'لا توجد منتجات مطابقة');
   String get outOfStockShort => _t('Out of stock', 'نفد');
   String leftInStock(int n) => _t('$n left', 'متبقٍ $n');
   String get currentInvoice => _t('Current Invoice', 'الفاتورة الحالية');
@@ -414,9 +419,9 @@ class AppStrings {
   String get colLineTotal => _t('Total', 'الإجمالي');
   String get emptyInvoiceTitle => _t('No products yet', 'لا توجد منتجات بعد');
   String get emptyInvoiceBody => _t(
-        'Tap a product or scan its barcode to add it.',
-        'اضغط على منتج أو امسح الباركود لإضافته.',
-      );
+    'Tap a product or scan its barcode to add it.',
+    'اضغط على منتج أو امسح الباركود لإضافته.',
+  );
   String get clearAll => _t('Clear all', 'مسح الكل');
   String get applyDiscount => _t('Apply discount', 'تطبيق خصم');
   String get removeItem => _t('Remove', 'حذف');
@@ -426,7 +431,8 @@ class AppStrings {
   String get itemsCount => _t('Items', 'عدد الأصناف');
   String get subtotalLabel => _t('Subtotal', 'المجموع الفرعي');
   String get discountLabel => _t('Discount', 'الخصم');
-  String taxLabel(double rate) => _t('Tax (${_pct(rate)}%)', 'الضريبة (${_pct(rate)}%)');
+  String taxLabel(double rate) =>
+      _t('Tax (${_pct(rate)}%)', 'الضريبة (${_pct(rate)}%)');
   String get totalLabel => _t('Total', 'الإجمالي');
   String get paymentMethods => _t('Payment Methods', 'طرق الدفع');
   String get payCash => _t('Cash', 'دفع نقدي');
@@ -443,10 +449,8 @@ class AppStrings {
   String invoiceTab(int n) => _t('Invoice ($n)', 'الفاتورة ($n)');
 
   // POS messages
-  String stockLimit(String name, int n) => _t(
-        'Only $n of "$name" in stock',
-        'المتوفر من "$name" هو $n فقط',
-      );
+  String stockLimit(String name, int n) =>
+      _t('Only $n of "$name" in stock', 'المتوفر من "$name" هو $n فقط');
   String outOfStockMsg(String name) =>
       _t('"$name" is out of stock', '"$name" غير متوفر في المخزون');
   String barcodeNotFound(String code) =>
@@ -461,24 +465,26 @@ class AppStrings {
       _t('Invoice $inv was canceled', 'تم إلغاء الفاتورة $inv');
   String get invoiceCleared => _t('Invoice cleared', 'تم مسح الفاتورة');
   String skippedProducts(String names) => _t(
-        'No longer available and left out: $names',
-        'لم تعد متوفرة وتم استبعادها: $names',
-      );
+    'No longer available and left out: $names',
+    'لم تعد متوفرة وتم استبعادها: $names',
+  );
   String get notEnoughStockTitle => _t('Not enough stock', 'المخزون غير كافٍ');
-  String get confirmNewInvoiceTitle => _t('Start a new invoice?', 'بدء فاتورة جديدة؟');
+  String get confirmNewInvoiceTitle =>
+      _t('Start a new invoice?', 'بدء فاتورة جديدة؟');
   String get confirmNewInvoiceBody => _t(
-        'The products on the current invoice will be removed.',
-        'سيتم حذف منتجات الفاتورة الحالية.',
-      );
-  String get confirmCancelTitle => _t('Cancel this invoice?', 'إلغاء هذه الفاتورة؟');
+    'The products on the current invoice will be removed.',
+    'سيتم حذف منتجات الفاتورة الحالية.',
+  );
+  String get confirmCancelTitle =>
+      _t('Cancel this invoice?', 'إلغاء هذه الفاتورة؟');
   String get confirmCancelBody => _t(
-        'All products on the invoice will be removed.',
-        'سيتم حذف جميع منتجات الفاتورة.',
-      );
+    'All products on the invoice will be removed.',
+    'سيتم حذف جميع منتجات الفاتورة.',
+  );
   String confirmCancelSuspendedBody(String inv) => _t(
-        'Suspended invoice $inv will be marked as canceled.',
-        'سيتم تعليم الفاتورة المعلقة $inv كملغاة.',
-      );
+    'Suspended invoice $inv will be marked as canceled.',
+    'سيتم تعليم الفاتورة المعلقة $inv كملغاة.',
+  );
   String get keepInvoice => _t('Keep invoice', 'إبقاء الفاتورة');
   String get yesContinue => _t('Yes, continue', 'نعم، متابعة');
 
@@ -488,9 +494,9 @@ class AppStrings {
   String get discountPercent => _t('Percent (%)', 'نسبة (%)');
   String get discountValueLabel => _t('Discount', 'الخصم');
   String maxDiscountHint(double pct, String amount) => _t(
-        'Maximum ${_pct(pct)}% of the subtotal ($amount)',
-        'الحد الأقصى ${_pct(pct)}% من المجموع الفرعي ($amount)',
-      );
+    'Maximum ${_pct(pct)}% of the subtotal ($amount)',
+    'الحد الأقصى ${_pct(pct)}% من المجموع الفرعي ($amount)',
+  );
   String get discountTooHigh =>
       _t('Discount is above the allowed maximum', 'الخصم أعلى من الحد المسموح');
   String get removeDiscount => _t('Remove discount', 'إزالة الخصم');
@@ -506,9 +512,9 @@ class AppStrings {
   String get replaceInvoiceTitle =>
       _t('Replace the current invoice?', 'استبدال الفاتورة الحالية؟');
   String get replaceInvoiceBody => _t(
-        'The current invoice has products. Resuming will remove them.',
-        'الفاتورة الحالية فيها منتجات، وسيتم حذفها عند الاستئناف.',
-      );
+    'The current invoice has products. Resuming will remove them.',
+    'الفاتورة الحالية فيها منتجات، وسيتم حذفها عند الاستئناف.',
+  );
 
   // Return dialog
   String get returnTitle => _t('Return Products', 'إرجاع منتجات');
@@ -516,11 +522,12 @@ class AppStrings {
       _t('Invoice number or receipt code', 'رقم الفاتورة أو رمز الإيصال');
   String get returnCodeHint => _t('e.g. INV-000012', 'مثال: INV-000012');
   String get find => _t('Find', 'بحث');
-  String get chooseProduct => _t('Choose the product to return', 'اختر المنتج المراد إرجاعه');
+  String get chooseProduct =>
+      _t('Choose the product to return', 'اختر المنتج المراد إرجاعه');
   String soldReturnable(int sold, int returnable) => _t(
-        'Sold $sold · can return $returnable',
-        'المباع $sold · يمكن إرجاع $returnable',
-      );
+    'Sold $sold · can return $returnable',
+    'المباع $sold · يمكن إرجاع $returnable',
+  );
   String get returnQuantity => _t('Quantity', 'الكمية');
   String get returnReason => _t('Reason', 'السبب');
   String get returnReasonHint =>
@@ -529,19 +536,23 @@ class AppStrings {
   String get returnDone => _t('Return completed', 'تم الإرجاع');
   String refundInfo(String amount, String method) =>
       _t('Refund $amount by $method', 'استرداد $amount عن طريق $method');
-  String get stockRestored =>
-      _t('The units were put back into stock.', 'تمت إعادة الكمية إلى المخزون.');
-  String get nothingToReturn =>
-      _t('Everything on this invoice was already returned.', 'تم إرجاع كل منتجات هذه الفاتورة.');
+  String get stockRestored => _t(
+    'The units were put back into stock.',
+    'تمت إعادة الكمية إلى المخزون.',
+  );
+  String get nothingToReturn => _t(
+    'Everything on this invoice was already returned.',
+    'تم إرجاع كل منتجات هذه الفاتورة.',
+  );
   String get searchAgain => _t('Another invoice', 'فاتورة أخرى');
   String get done => _t('Done', 'تم');
 
   // Receipt dialog
   String get receiptTitle => _t('Digital Receipt', 'الإيصال الرقمي');
   String get scanReceipt => _t(
-        'Scan the QR code to keep the receipt. Use this code for returns.',
-        'امسح رمز QR للاحتفاظ بالإيصال، واستخدم الرمز عند الإرجاع.',
-      );
+    'Scan the QR code to keep the receipt. Use this code for returns.',
+    'امسح رمز QR للاحتفاظ بالإيصال، واستخدم الرمز عند الإرجاع.',
+  );
   String get cashierLabel => _t('Cashier', 'الكاشير');
   String get paidBy => _t('Paid by', 'طريقة الدفع');
   String get close => _t('Close', 'إغلاق');
@@ -562,4 +573,144 @@ class AppStrings {
   );
   String get discard => _t('Discard', 'تجاهل');
   String get keepEditing => _t('Keep editing', 'متابعة التعديل');
+
+  // ── Reports & Sales Analytics (report Figures 3.7 / 3.8) ──────────────────
+  String get navSectionReports => _t('REPORTS', 'التقارير');
+  String get navReports => _t('Reports', 'التقارير');
+  String get navSalesAnalytics => _t('Sales Analytics', 'المبيعات');
+  String get reportsTitle => _t('Reports', 'التقارير');
+  String get reportsDescription =>
+      _t('Sales and profit report', 'تقرير المبيعات والأرباح');
+  String get analyticsTitle => _t('Sales', 'المبيعات');
+  String get analyticsDescription =>
+      _t('Complete analysis of sales performance', 'تحليل شامل لأداء المبيعات');
+  String get monthLabel => _t('Month', 'الشهر');
+  String get yearLabel => _t('Year', 'السنة');
+  List<String> get monthNames => isArabic
+      ? const [
+          'يناير',
+          'فبراير',
+          'مارس',
+          'أبريل',
+          'مايو',
+          'يونيو',
+          'يوليو',
+          'أغسطس',
+          'سبتمبر',
+          'أكتوبر',
+          'نوفمبر',
+          'ديسمبر',
+        ]
+      : const [
+          'January',
+          'February',
+          'March',
+          'April',
+          'May',
+          'June',
+          'July',
+          'August',
+          'September',
+          'October',
+          'November',
+          'December',
+        ];
+  List<String> get monthShort => isArabic
+      ? const [
+          'ينا',
+          'فبر',
+          'مار',
+          'أبر',
+          'ماي',
+          'يون',
+          'يول',
+          'أغس',
+          'سبت',
+          'أكت',
+          'نوف',
+          'ديس',
+        ]
+      : const [
+          'Jan',
+          'Feb',
+          'Mar',
+          'Apr',
+          'May',
+          'Jun',
+          'Jul',
+          'Aug',
+          'Sep',
+          'Oct',
+          'Nov',
+          'Dec',
+        ];
+  String get scopeMonth => _t('Selected month', 'الشهر المحدد');
+  String get scopeYear => _t('Whole year', 'السنة كاملة');
+  String get generateReport => _t('Generate report', 'توليد تقرير');
+  String get dailySales => _t('Daily sales', 'المبيعات اليومية');
+  String get monthlySales => _t('Monthly sales', 'المبيعات الشهرية');
+  String get bestSelling => _t('Best-selling products', 'أكثر المنتجات مبيعاً');
+  String get nearReorder =>
+      _t('Products running out', 'الأصناف التي أوشكت على النفاد');
+  String get featuredProducts => _t('Featured products', 'المنتجات المميزة');
+  String get cardTotalSales => _t('Total sales', 'إجمالي المبيعات');
+  String get cardInventoryValue => _t('Total value', 'إجمالي القيمة');
+  String get cardInvoices => _t('Invoices', 'عدد الفواتير');
+  String get cardProfit => _t('Total profit', 'إجمالي الأرباح');
+  String get vsLastMonth => _t('vs last month', 'من الشهر الماضي');
+  String get vsLastYear => _t('vs last year', 'من السنة الماضية');
+  String get noPreviousData =>
+      _t('No sales in the previous period', 'لا مبيعات في الفترة السابقة');
+  String get profitUnavailable => _t('Not available', 'غير متاح');
+  String get profitNeedsCost =>
+      _t('Needs the purchase cost of products', 'يحتاج سعر تكلفة المنتجات');
+  String inventoryValueHint(int products) =>
+      _t('Stock value · $products products', 'قيمة المخزون · $products منتج');
+  String returnsHint(String amount) =>
+      _t('After returns of $amount', 'بعد مرتجعات بقيمة $amount');
+  String get noSalesPeriod =>
+      _t('No sales in this period', 'لا توجد مبيعات في هذه الفترة');
+  String get noReorder => _t(
+    'All products are above their minimum stock level',
+    'كل المنتجات فوق الحد الأدنى للمخزون',
+  );
+  String get othersLabel => _t('Others', 'أخرى');
+  String unitsSold(int n) => _t('$n sold', '$n مباع');
+  String stockOfMin(int q, int min) =>
+      _t('$q in stock · min $min', 'المتوفر $q · الحد الأدنى $min');
+  String get lowStockShort => _t('Low stock', 'منخفض');
+  String get reportsLoadError =>
+      _t('Could not load the report.', 'تعذّر تحميل التقرير.');
+  String get inventoryReport => _t('Inventory report', 'تقرير المخزون');
+  String get invProducts => _t('Products', 'المنتجات');
+  String get invUnits => _t('Units in stock', 'الوحدات المتوفرة');
+  String get invValue => _t('Stock value', 'قيمة المخزون');
+  String get invInStock => _t('In stock', 'متوفر');
+  String get invLow => _t('Low stock', 'منخفض');
+  String get invOut => _t('Out of stock', 'نفد');
+  String get categoryColumn => _t('Category', 'التصنيف');
+  String get productsColumn => _t('Products', 'المنتجات');
+  String get unitsColumn => _t('Units', 'الوحدات');
+  String get valueColumn => _t('Value', 'القيمة');
+  String get salesValueNote => _t(
+    'Amounts include tax, after discounts and returns.',
+    'المبالغ شاملة الضريبة بعد الخصم والمرتجعات.',
+  );
+  String get reportDialogTitle => _t('Sales report', 'تقرير المبيعات');
+  String get copyReport => _t('Copy', 'نسخ');
+  String get reportCopied => _t('Report copied', 'تم نسخ التقرير');
+  String get rPeriod => _t('Period', 'الفترة');
+  String get rGross =>
+      _t('Sales (completed invoices)', 'المبيعات (فواتير مكتملة)');
+  String get rDiscounts => _t('Discounts given', 'الخصومات');
+  String get rTax => _t('Tax on sales', 'الضريبة على المبيعات');
+  String get rRefunds => _t('Refunds (returns)', 'المبالغ المرتجعة');
+  String get rNet => _t('Net sales', 'صافي المبيعات');
+  String get rInvoices => _t('Completed invoices', 'الفواتير المكتملة');
+  String get rAverage => _t('Average invoice', 'متوسط الفاتورة');
+  String get rUnits =>
+      _t('Units sold / returned', 'الوحدات المباعة / المرتجعة');
+  String get rReturns => _t('Returns', 'المرتجعات');
+  String get rProfit => _t('Profit', 'الربح');
+  String get rTop => _t('Best-selling products', 'أكثر المنتجات مبيعاً');
 }

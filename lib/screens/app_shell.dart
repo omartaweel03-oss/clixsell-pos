@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../l10n/app_strings.dart';
 import '../models/app_user.dart';
 import '../models/product.dart';
+import '../services/report_api_client.dart';
 import '../services/admin_api_clients.dart';
 import '../services/api_http.dart';
 import '../state/product_store.dart';
@@ -11,6 +12,8 @@ import '../widgets/app_sidebar.dart';
 import 'admin/staff_accounts_page.dart';
 import 'admin/stores_page.dart';
 import 'pos/pos_page.dart';
+import 'reports/reports_page.dart';
+import 'reports/sales_analytics_page.dart';
 import '../services/sales_api_client.dart';
 import 'inventory/inventory_page.dart';
 import 'inventory/product_form_page.dart';
@@ -147,7 +150,20 @@ class _AppShellState extends State<AppShell> {
       case SidebarDestination.stores:
         return StoresPage(key: const ValueKey('stores'), http: widget.http);
       case SidebarDestination.pos:
-        return PosPage(key: const ValueKey('pos'), api: SalesApiClient(widget.http));
+        return PosPage(
+          key: const ValueKey('pos'),
+          api: SalesApiClient(widget.http),
+        );
+      case SidebarDestination.reports:
+        return ReportsPage(
+          key: const ValueKey('reports'),
+          api: ReportApiClient(widget.http),
+        );
+      case SidebarDestination.salesAnalytics:
+        return SalesAnalyticsPage(
+          key: const ValueKey('salesAnalytics'),
+          api: ReportApiClient(widget.http),
+        );
       case SidebarDestination.cashiers:
         return StaffAccountsPage(
           key: const ValueKey('cashiers'),
@@ -243,6 +259,8 @@ class _AppShellState extends State<AppShell> {
           SidebarDestination.editProduct => s.navEditProduct,
           SidebarDestination.cashiers => s.cashiersTitle,
           SidebarDestination.pos => s.navPos,
+          SidebarDestination.reports => s.navReports,
+          SidebarDestination.salesAnalytics => s.navSalesAnalytics,
         };
         return Scaffold(
           key: _scaffoldKey,

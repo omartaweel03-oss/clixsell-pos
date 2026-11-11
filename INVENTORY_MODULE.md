@@ -17,7 +17,7 @@ another store's data (another store's record is answered with 404).
 | Role | Can do |
 |---|---|
 | **System Admin** (`sysadmin`) | Create / edit / activate / deactivate stores (incl. tax rate and maximum discount); create and manage each store's Store Admins |
-| **Store Admin** (report: Manager) | Products of their store (add, edit, delete); create and manage their store's Cashiers; POS |
+| **Store Admin** (report: Manager) | Products of their store (add, edit, delete); create and manage their store's Cashiers; POS; Reports and Sales Analytics |
 | **Cashier** | POS (opens first); view their store's products (read only) |
 
 Everyone uses the **same Login screen** (username + password). Usernames are unique in the
@@ -55,6 +55,29 @@ the bottom (tabs Products / Invoice on narrow screens; Arabic = right-to-left).
 
 **Not included (deferred, beyond Figure 3.2):** camera barcode scanning, AI product
 identification, offline mode / sync, receipt printing, change calculation, split payments.
+
+## Reports (Figure 3.8) and Sales Analytics (Figure 3.7)
+Store Admin only (the report's Manager), always for the logged-in user's own store.
+
+* **Reports**: cards *Total sales* (net, vs previous month), *Total value* (current stock value),
+  *Invoices* (vs previous month) and *Total profit*; daily sales chart (monthly chart for a whole
+  year); featured (best-selling) products; inventory report (UR-M8 / SR21) with stock status and
+  categories; **Generate report** shows the whole report as text that can be copied.
+* **Sales Analytics**: daily sales of the month (line), monthly sales of the year (bars),
+  best-selling products (donut with %), products near reorder level (low / out of stock).
+* Month and year selectors reload the figures.
+
+How the figures are calculated (backend `ReportService`, never in the app):
+* Only **COMPLETED** sales count (suspended and canceled never), dated by their completion time;
+  periods are whole days.
+* **Sales** = what customers paid (after the invoice discount, tax included).
+  **Net sales** = sales − refunds of the returns made in the period (on the refund's date).
+* **Best-selling products** = units sold minus units returned; value = the product's share of the
+  paid total (same proportional rule as refunds). Deleted products keep their invoice name.
+* **Near reorder level** = the existing stock rules: out of stock (quantity 0) and low stock
+  (quantity ≤ minimum stock level).
+* **Profit is "Not available"**: products have no purchase cost (`cost_price` of the report's ERD
+  is not in the database yet), so profit is never estimated.
 
 ## Run (Windows / macOS)
 Requires **Java JDK 17+** (backend) and **Flutter 3.38+** (frontend). Maven and SQLite need no installation.
@@ -119,6 +142,10 @@ maximum discount 10%, and every existing store, user and product is kept (tested
 | `DELETE /api/sales/suspended/{id}` | Store Admin, Cashier | `UPDATE` status = CANCELED |
 | `GET /api/sales/lookup?code=` (invoice number or QR code) | Store Admin, Cashier | `SELECT` completed sale |
 | `POST /api/returns` | Store Admin, Cashier | `INSERT` returns; `UPDATE` sale_items, products stock |
+| `GET /api/reports/summary?from=&to=` | Store Admin | `SELECT` sales, returns (cards, vs previous period) |
+| `GET /api/reports/daily-sales?from=&to=` · `GET /api/reports/monthly-sales?year=` | Store Admin | `SELECT` (one point per day / month, 0 when no sales) |
+| `GET /api/reports/top-products?from=&to=&limit=` | Store Admin | `SELECT` sale_items of completed sales |
+| `GET /api/reports/inventory` | Store Admin | `SELECT` products (inventory report, products to reorder) |
 
 Sale request: `{"saleId": null, "items": [{"productId": 1, "quantity": 2}], "discountType": "PERCENT",
 "discountValue": 5, "paymentMethod": "CARD"}` — the app sends only ids and quantities; prices
@@ -149,9 +176,9 @@ Migrations: `backend/src/main/resources/db/migration/V1__initial_schema.sql` (or
 
 ## Tests
 ```bash
-cd backend && .\mvnw.cmd test     # 77 backend tests: business logic (Sale, ReturnProduct, …),
+cd backend && .\mvnw.cmd test     # 90 backend tests: business logic (Sale, ReturnProduct, …),
                                  #   API + database, two-store isolation, roles, lockout, migration
-flutter test                     # 70 Flutter tests (use a fake server), incl. POS cart + screen
+flutter test                     # 81 Flutter tests (use a fake server), incl. POS cart + screen
 ```
 
 ## Files
@@ -185,6 +212,10 @@ flutter test                     # 70 Flutter tests (use a fake server), incl. P
 | `backend/…/product/*` | Product entity + business logic, store-scoped service and API |
 | `backend/…/sale/*` | Sale, SaleItem, Payment, Receipt business logic; sales service and API |
 | `backend/…/returns/*` | ReturnProduct business logic; returns service and API |
+| `backend/…/report/*` | Reports & Sales Analytics: period rules, queries, calculations, API |
+| `lib/screens/reports/*` | Reports page (Fig 3.8), Sales Analytics page (Fig 3.7), shared widgets |
+| `lib/widgets/sales_charts.dart` | Line, bar and donut charts (CustomPaint, no extra package) |
+| `lib/services/report_api_client.dart`, `lib/models/report.dart` | Reports API client and models |
 | `backend/…/demo/DemoDataInitializer.java` | Demo stores, staff, products, sales (`demo` profile, new database only) |
 | `backend/…/supplier/*` | Supplier entity (per store) |
 | `backend/…/common/*` | JSON errors, date converter, shared exceptions |

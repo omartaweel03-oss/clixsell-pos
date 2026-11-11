@@ -41,6 +41,15 @@ class FakeProductBackend {
   /// Every request received, e.g. "POST /api/products".
   final List<String> requests = [];
 
+  /// Date/time given to completed sales and returns (change it to build a history).
+  String saleTime = '2026-11-04T10:05:00';
+
+  /// When true the reports API answers 500 (to test the error state).
+  bool failReports = false;
+
+  /// Delay of the reports API answers (to see the loading state).
+  Duration? reportsDelay;
+
   /// When true, every request fails as if the server were not running.
   bool offline = false;
 
@@ -178,6 +187,13 @@ class FakeProductBackend {
     if (path.startsWith('/api/sales') || path.startsWith('/api/returns')) {
       if (role == 'SYSTEM_ADMIN') return _forbidden();
       return _pos(user, storeId!, path, method, body, request);
+    }
+    // Reports & Sales Analytics: Store Admin only, own store
+    if (path.startsWith('/api/reports')) {
+      if (role != 'STORE_ADMIN') return _forbidden();
+      if (reportsDelay != null) await Future<void>.delayed(reportsDelay!);
+      if (failReports) return _error(500, 'SERVER_ERROR', 'Report server error');
+      return _reports(storeId!, path, request.url.queryParameters);
     }
     // Products: Store Admin (all) and Cashier (read only), own store
     if (path.startsWith('/api/products')) {
@@ -501,7 +517,7 @@ class FakeProductBackend {
       'paymentMethod': complete ? b['paymentMethod'] : null,
       'receiptCode': complete ? 'CLIXSELL-TEST${_nextSaleId.toString().padLeft(4, '0')}' : null,
       'createdAt': existing?['createdAt'] ?? '2026-11-04T10:00:00',
-      'completedAt': complete ? '2026-11-04T10:05:00' : null,
+      'completedAt': complete ? saleTime : null,
     };
     if (existing != null) {
       sales[sales.indexOf(existing)] = sale;
@@ -549,11 +565,218 @@ class FakeProductBackend {
       'reason': b['reason'],
       'refundAmount': refund,
       'refundMethod': sale['paymentMethod'],
-      'returnDate': '2026-11-04T11:00:00',
+      'returnDate': saleTime,
+      'storeId': storeId,
       'stillReturnable': item['returnableQuantity'],
     };
     returns.add(r);
     return _json(201, r);
+  }
+
+  // ── Reports (same rules as the backend ReportService) ──────────────────
+
+  http.Response _reports(int storeId, String path, Map<String, String> q) {
+    double r2(num v) => (v * 100).round() / 100;
+    List<Map<String, dynamic>> done(String from, String toExcl) => sales
+        .where((x) => x['storeId'] == storeId && x['status'] == 'COMPLETED')
+        .where((x) => (x['completedAt'] as String).compareTo(from) >= 0 &&
+            (x['completedAt'] as String).compareTo(toExcl) < 0)
+        .toList();
+    List<Map<String, dynamic>> rets(String from, String toExcl) => returns
+        .where((x) => x['storeId'] == storeId)
+        .where((x) => (x['returnDate'] as String).compareTo(from) >= 0 &&
+            (x['returnDate'] as String).compareTo(toExcl) < 0)
+        .toList();
+    String iso(DateTime d) =>
+        '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    double sum(List<Map<String, dynamic>> l, String k) =>
+        l.fold<double>(0, (a, x) => a + (x[k] as num).toDouble());
+
+    if (path == '/api/reports/inventory') {
+      final mine = rows.where((r) => r['storeId'] == storeId).toList();
+      final cats = <String, List<Map<String, dynamic>>>{};
+      for (final r in mine) {
+        cats.putIfAbsent(r['category'] as String, () => []).add(r);
+      }
+      final reorder = mine.where((r) => r['stockStatus'] != 'IN_STOCK').toList()
+        ..sort((a, b) {
+          final ao = a['stockStatus'] == 'OUT_OF_STOCK' ? 0 : 1;
+          final bo = b['stockStatus'] == 'OUT_OF_STOCK' ? 0 : 1;
+          return ao != bo ? ao - bo : (a['quantity'] as int) - (b['quantity'] as int);
+        });
+      return _json(200, {
+        'totalProducts': mine.length,
+        'totalUnits': mine.fold<int>(0, (a, r) => a + (r['quantity'] as int)),
+        'inventoryValue': r2(sum(mine, 'stockValue')),
+        'inStock': mine.where((r) => r['stockStatus'] == 'IN_STOCK').length,
+        'lowStock': mine.where((r) => r['stockStatus'] == 'LOW_STOCK').length,
+        'outOfStock': mine.where((r) => r['stockStatus'] == 'OUT_OF_STOCK').length,
+        'categories': [
+          for (final e in (cats.entries.toList()..sort((a, b) => a.key.compareTo(b.key))))
+            {
+              'category': e.key,
+              'products': e.value.length,
+              'units': e.value.fold<int>(0, (a, r) => a + (r['quantity'] as int)),
+              'value': r2(sum(e.value, 'stockValue')),
+            },
+        ],
+        'reorder': [
+          for (final r in reorder)
+            {
+              'productId': r['productId'],
+              'name': r['name'],
+              'barcode': r['barcode'],
+              'category': r['category'],
+              'quantity': r['quantity'],
+              'minStock': r['minStock'],
+              'stockStatus': r['stockStatus'],
+              'supplierName': r['supplierName'],
+            },
+        ],
+      });
+    }
+
+    if (path == '/api/reports/monthly-sales') {
+      final year = int.tryParse(q['year'] ?? '');
+      if (year == null) return _error(400, 'VALIDATION_FAILED', 'Year is required');
+      final months = [
+        for (var m = 1; m <= 12; m++)
+          () {
+            final f = '$year-${m.toString().padLeft(2, '0')}-01T00:00:00';
+            final t = iso(DateTime(year, m + 1, 1));
+            final sl = done(f, '${t}T00:00:00');
+            final rl = rets(f, '${t}T00:00:00');
+            return {
+              'month': m,
+              'grossSales': r2(sum(sl, 'total')),
+              'refunds': r2(sum(rl, 'refundAmount')),
+              'netSales': r2(sum(sl, 'total') - sum(rl, 'refundAmount')),
+              'invoices': sl.length,
+            };
+          }(),
+      ];
+      return _json(200, {
+        'year': year,
+        'months': months,
+        'totalNetSales': r2(months.fold<double>(0, (a, m) => a + (m['netSales'] as double))),
+      });
+    }
+
+    final fromD = DateTime.tryParse(q['from'] ?? '');
+    final toD = DateTime.tryParse(q['to'] ?? '');
+    if (fromD == null || toD == null || toD.isBefore(fromD)) {
+      return _error(400, 'VALIDATION_FAILED', 'Invalid period');
+    }
+    final from = '${iso(fromD)}T00:00:00';
+    final toExcl = '${iso(toD.add(const Duration(days: 1)))}T00:00:00';
+
+    if (path == '/api/reports/daily-sales') {
+      return _json(200, [
+        for (var d = fromD; !d.isAfter(toD); d = DateTime(d.year, d.month, d.day + 1))
+          () {
+            final f = '${iso(d)}T00:00:00';
+            final t = '${iso(DateTime(d.year, d.month, d.day + 1))}T00:00:00';
+            final sl = done(f, t);
+            final rl = rets(f, t);
+            return {
+              'date': iso(d),
+              'grossSales': r2(sum(sl, 'total')),
+              'refunds': r2(sum(rl, 'refundAmount')),
+              'netSales': r2(sum(sl, 'total') - sum(rl, 'refundAmount')),
+              'invoices': sl.length,
+            };
+          }(),
+      ]);
+    }
+
+    if (path == '/api/reports/top-products') {
+      final limit = int.tryParse(q['limit'] ?? '7') ?? 7;
+      final byProduct = <String, Map<String, dynamic>>{};
+      for (final sale in done(from, toExcl)) {
+        for (final i in (sale['items'] as List).cast<Map<String, dynamic>>()) {
+          final kept = (i['quantity'] as int) - (i['returnedQuantity'] as int);
+          if (kept <= 0) continue;
+          final value = (sale['total'] as double) * (i['lineTotal'] as double) /
+              (sale['subtotal'] as double) * kept / (i['quantity'] as int);
+          final key = '${i['productId'] ?? 'name:${i['productName']}'}';
+          final e = byProduct.putIfAbsent(key, () =>
+              {'productId': i['productId'], 'name': i['productName'], 'units': 0, 'value': 0.0});
+          e['units'] = (e['units'] as int) + kept;
+          e['value'] = (e['value'] as double) + value;
+        }
+      }
+      final all = byProduct.values.toList()
+        ..sort((a, b) => (b['value'] as double).compareTo(a['value'] as double));
+      final total = all.fold<double>(0, (a, e) => a + (e['value'] as double));
+      final units = all.fold<int>(0, (a, e) => a + (e['units'] as int));
+      final top = all.take(limit).toList();
+      final topValue = top.fold<double>(0, (a, e) => a + (e['value'] as double));
+      return _json(200, {
+        'from': iso(fromD),
+        'to': iso(toD),
+        'totalSalesValue': r2(total),
+        'totalUnits': units,
+        'products': [
+          for (final e in top)
+            {
+              'productId': e['productId'],
+              'name': e['name'],
+              'units': e['units'],
+              'salesValue': r2(e['value'] as double),
+              'share': total == 0 ? 0.0 : r2((e['value'] as double) * 100 / total),
+            },
+        ],
+        'othersValue': r2(total - topValue),
+        'othersUnits': units - top.fold<int>(0, (a, e) => a + (e['units'] as int)),
+      });
+    }
+
+    if (path == '/api/reports/summary') {
+      final sl = done(from, toExcl);
+      final rl = rets(from, toExcl);
+      final monthly = fromD.day == 1 && toD.day == DateTime(toD.year, toD.month + 1, 0).day &&
+          fromD.month == toD.month && fromD.year == toD.year;
+      final yearly = fromD.month == 1 && fromD.day == 1 && toD.month == 12 && toD.day == 31 &&
+          fromD.year == toD.year;
+      final pf = yearly
+          ? DateTime(fromD.year - 1, 1, 1)
+          : monthly
+              ? DateTime(fromD.year, fromD.month - 1, 1)
+              : fromD.subtract(Duration(days: toD.difference(fromD).inDays + 1));
+      final pt = yearly
+          ? DateTime(fromD.year - 1, 12, 31)
+          : monthly
+              ? DateTime(fromD.year, fromD.month, 0)
+              : fromD.subtract(const Duration(days: 1));
+      final pfs = '${iso(pf)}T00:00:00';
+      final pts = '${iso(pt.add(const Duration(days: 1)))}T00:00:00';
+      final psl = done(pfs, pts);
+      final prl = rets(pfs, pts);
+      final gross = sum(sl, 'total');
+      return _json(200, {
+        'from': iso(fromD),
+        'to': iso(toD),
+        'grossSales': r2(gross),
+        'discounts': r2(sum(sl, 'discount')),
+        'tax': r2(sum(sl, 'tax')),
+        'refunds': r2(sum(rl, 'refundAmount')),
+        'netSales': r2(gross - sum(rl, 'refundAmount')),
+        'invoiceCount': sl.length,
+        'returnCount': rl.length,
+        'unitsSold': sl.fold<int>(0, (a, x) =>
+            a + (x['items'] as List).fold<int>(0, (b, i) => b + ((i as Map)['quantity'] as int))),
+        'unitsReturned': rl.fold<int>(0, (a, x) => a + (x['quantity'] as int)),
+        'averageInvoice': sl.isEmpty ? 0.0 : r2(gross / sl.length),
+        'previous': {
+          'from': iso(pf),
+          'to': iso(pt),
+          'netSales': r2(sum(psl, 'total') - sum(prl, 'refundAmount')),
+          'invoiceCount': psl.length,
+        },
+        'profit': {'available': false, 'amount': null, 'reason': 'NO_COST_PRICE'},
+      });
+    }
+    return _error(404, 'NOT_FOUND', 'Unknown report');
   }
 
   bool _barcodeTaken(List<Map<String, dynamic>> mine, String barcode, int? exceptId) =>

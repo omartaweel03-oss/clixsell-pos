@@ -12,6 +12,8 @@ enum SidebarDestination {
   addProduct,
   editProduct,
   cashiers,
+  reports,
+  salesAnalytics,
 }
 
 /// Which pages each role may open (the backend enforces the same rules).
@@ -23,6 +25,8 @@ extension RoleDestinations on UserRole {
       SidebarDestination.addProduct,
       SidebarDestination.editProduct,
       SidebarDestination.pos,
+      SidebarDestination.reports,
+      SidebarDestination.salesAnalytics,
       SidebarDestination.cashiers,
     ],
     // The cashier's home is the POS screen (report Figure 3.2).
@@ -148,6 +152,20 @@ class AppSidebar extends StatelessWidget {
             s.navEditProduct,
             caption: editingProductName,
           ),
+        // Reports and Sales Analytics are Manager features (report Figures 3.7 / 3.8).
+        section(s.navSectionReports),
+        item(
+          SidebarDestination.reports,
+          Icons.assessment_outlined,
+          Icons.assessment_rounded,
+          s.navReports,
+        ),
+        item(
+          SidebarDestination.salesAnalytics,
+          Icons.insights_outlined,
+          Icons.insights_rounded,
+          s.navSalesAnalytics,
+        ),
         section(s.navSectionStaff),
         item(
           SidebarDestination.cashiers,

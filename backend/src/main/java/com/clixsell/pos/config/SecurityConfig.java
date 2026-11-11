@@ -74,6 +74,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/products/generate-barcode").hasRole("STORE_ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/products", "/api/products/**").hasAnyRole("STORE_ADMIN", "CASHIER")
                         .requestMatchers("/api/products", "/api/products/**").hasRole("STORE_ADMIN")
+                        // Reports and Sales Analytics are Manager (Store Admin) features.
+                        .requestMatchers("/api/reports", "/api/reports/**").hasRole("STORE_ADMIN")
                         .requestMatchers("/api/sales", "/api/sales/**", "/api/returns", "/api/returns/**")
                         .hasAnyRole("STORE_ADMIN", "CASHIER")
                         .anyRequest().authenticated())

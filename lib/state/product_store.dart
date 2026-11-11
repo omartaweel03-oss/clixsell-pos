@@ -228,6 +228,11 @@ class ProductStoreScope extends InheritedNotifier<ProductStore> {
   }
 
   /// Reads the store without subscribing to updates (for callbacks).
+  /// Like [of], but null when there is no product store (e.g. in a test).
+  static ProductStore? maybeOf(BuildContext context) => context
+      .dependOnInheritedWidgetOfExactType<ProductStoreScope>()
+      ?.notifier;
+
   static ProductStore read(BuildContext context) {
     final scope = context.getInheritedWidgetOfExactType<ProductStoreScope>();
     assert(scope != null, 'ProductStoreScope not found in widget tree');
