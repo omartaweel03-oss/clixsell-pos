@@ -4,7 +4,8 @@ import java.time.LocalDateTime;
 
 /**
  * Product data returned by the API (JSON). Includes the results of the
- * business logic: {@code stockStatus} and {@code stockValue}.
+ * business logic: {@code stockStatus} and {@code stockValue}. {@code costPrice}
+ * is only filled in for Store Admins.
  */
 public record ProductResponse(
         Long productId,
@@ -22,9 +23,16 @@ public record ProductResponse(
         byte[] image,
         String imageName,
         LocalDateTime createdAt,
-        LocalDateTime updatedAt
+        LocalDateTime updatedAt,
+        Double costPrice
 ) {
+    /** Without the purchase cost (e.g. for cashiers). */
     public static ProductResponse from(Product p) {
+        return from(p, false);
+    }
+
+    /** {@code withCost} only for Store Admins: cashiers must not see purchase costs. */
+    public static ProductResponse from(Product p, boolean withCost) {
         return new ProductResponse(
                 p.getProductId(),
                 p.getStore().getStoreId(),
@@ -41,6 +49,7 @@ public record ProductResponse(
                 p.getImage(),
                 p.getImageName(),
                 p.getCreatedAt(),
-                p.getUpdatedAt());
+                p.getUpdatedAt(),
+                withCost ? p.getCostPrice() : null);
     }
 }

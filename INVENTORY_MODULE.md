@@ -59,25 +59,32 @@ identification, offline mode / sync, receipt printing, change calculation, split
 ## Reports (Figure 3.8) and Sales Analytics (Figure 3.7)
 Store Admin only (the report's Manager), always for the logged-in user's own store.
 
-* **Reports**: cards *Total sales* (net, vs previous month), *Total value* (current stock value),
-  *Invoices* (vs previous month) and *Total profit*; daily sales chart (monthly chart for a whole
-  year); featured (best-selling) products; inventory report (UR-M8 / SR21) with stock status and
-  categories; **Generate report** shows the whole report as text that can be copied.
-* **Sales Analytics**: daily sales of the month (line), monthly sales of the year (bars),
-  best-selling products (donut with %), products near reorder level (low / out of stock).
+* **Reports** (layout of Figure 3.8): cards *Net units sold*, *Net revenue*, *Invoice count* and
+  *Profit* (vs previous month); featured products and the daily sales chart (monthly chart for a
+  whole year); inventory report (UR-M8 / SR21: stock value, status, categories); **Generate
+  report** shows the whole report as text that can be copied.
+* **Sales Analytics** (layout of Figure 3.7): monthly sales (bars) and daily sales (line),
+  products near reorder level, best-selling products (donut with %).
 * Month and year selectors reload the figures.
 
 How the figures are calculated (backend `ReportService`, never in the app):
-* Only **COMPLETED** sales count (suspended and canceled never), dated by their completion time;
-  periods are whole days.
-* **Sales** = what customers paid (after the invoice discount, tax included).
-  **Net sales** = sales − refunds of the returns made in the period (on the refund's date).
-* **Best-selling products** = units sold minus units returned; value = the product's share of the
-  paid total (same proportional rule as refunds). Deleted products keep their invoice name.
+* Only **COMPLETED** sales count (suspended and canceled never). **Sales count on their
+  completion date, returns on their return date** – for every figure, so a closed month never
+  changes.
+* **Net revenue** = what customers paid (after the invoice discount, tax included) − refunds.
+  **Net units sold** = units sold − units returned.
+* **Best-selling products**: units and paid value of the period's sales minus the period's returns.
 * **Near reorder level** = the existing stock rules: out of stock (quantity 0) and low stock
   (quantity ≤ minimum stock level).
-* **Profit is "Not available"**: products have no purchase cost (`cost_price` of the report's ERD
-  is not in the database yet), so profit is never estimated.
+* **Profit** = revenue **without tax** (line total × (subtotal − discount) / subtotal, so the
+  discount is shared once and the tax never counts) − the **purchase cost saved on each sold
+  line** (`sale_items.unit_cost`, copied from `products.cost_price` when the sale is completed).
+  Returns subtract their revenue and cost on the return date.
+  * *Complete* – every line of the period has a cost.
+  * *Partial* – some lines have no cost (sold before costs were entered): the card says
+    "Profit (partial)" and the % of revenue it covers; it is never shown as a complete total.
+  * *Not available* – no line of the period has a cost.
+* **Cost price** is an optional product field for Store Admins; cashiers never receive it.
 
 ## Run (Windows / macOS)
 Requires **Java JDK 17+** (backend) and **Flutter 3.38+** (frontend). Maven and SQLite need no installation.
@@ -121,7 +128,11 @@ Requires **Java JDK 17+** (backend) and **Flutter 3.38+** (frontend). Maven and 
 On the first start of this version, Flyway upgrades `backend/clixsell.db` automatically:
 a backup `clixsell-backup-before-v2-<date>.db` is written first, and all existing products and
 suppliers are moved to a store called **"Default Store"** (rename it in the Stores page and
-give it a Store Admin). The next version adds the sales tables (`V3__sales.sql`); existing stores get tax 16% and
+give it a Store Admin). The version with profit adds `products.cost_price` and `sale_items.unit_cost`
+(`V4__cost_price.java`): only two empty columns are added, a backup
+`clixsell-backup-before-v4-<date>.db` is written first and nothing is changed or deleted; old
+sales keep an unknown cost (never guessed).
+The sales version adds the sales tables (`V3__sales.sql`); existing stores get tax 16% and
 maximum discount 10%, and every existing store, user and product is kept (tested in
 `UpgradeToSalesVersionTest`). To start from an empty database instead, stop the backend and delete
 `backend/clixsell.db`.
@@ -159,12 +170,12 @@ stores (store_id PK, name UNIQUE, address, phone, status, tax_rate, max_discount
  │          password_hash, role, status, failed_login_attempts, locked_until, created_at)
  │     └─< user_sessions (session_id PK, user_id FK, token_hash UNIQUE, created_at, expires_at)
  ├─< suppliers (supplier_id PK, store_id FK, name, …, UNIQUE(store_id, name))
- ├─< products  (product_id PK, store_id FK, supplier_id FK, name, barcode, …, UNIQUE(store_id, barcode))
+ ├─< products  (product_id PK, store_id FK, supplier_id FK, name, barcode, …, cost_price NULL, UNIQUE(store_id, barcode))
  ├─< sales (sale_id PK, store_id FK, cashier_id FK, invoice_number, status SUSPENDED|COMPLETED|CANCELED,
  │          subtotal, discount, tax_rate, tax, total, created_at, updated_at, completed_at,
  │          UNIQUE(store_id, invoice_number))
  │     ├─< sale_items (sale_item_id PK, sale_id FK, product_id FK NULL if deleted, product_name,
- │     │               barcode, quantity, unit_price, line_total, returned_quantity)
+ │     │               barcode, quantity, unit_price, line_total, returned_quantity, unit_cost NULL)
  │     ├── payments (payment_id PK, sale_id FK, payment_method, amount, payment_status, paid_at)
  │     └── receipts (receipt_id PK, sale_id FK UNIQUE, qr_code_value UNIQUE, receipt_url, issued_at)
  └─< returns (return_id PK, store_id FK, sale_id FK, sale_item_id FK, product_id FK, cashier_id FK,
@@ -172,13 +183,14 @@ stores (store_id PK, name UNIQUE, address, phone, status, tax_rate, max_discount
 ```
 Migrations: `backend/src/main/resources/db/migration/V1__initial_schema.sql` (original tables)
 , `backend/src/main/java/db/migration/V2__multi_store.java` (stores, users, store_id) and
-`V3__sales.sql` (sales, sale_items, payments, receipts, returns; store tax settings).
+`V3__sales.sql` (sales, sale_items, payments, receipts, returns; store tax settings) and
+`V4__cost_price.java` (purchase cost for profit).
 
 ## Tests
 ```bash
-cd backend && .\mvnw.cmd test     # 90 backend tests: business logic (Sale, ReturnProduct, …),
+cd backend && .\mvnw.cmd test     # 98 backend tests: business logic (Sale, ReturnProduct, …),
                                  #   API + database, two-store isolation, roles, lockout, migration
-flutter test                     # 81 Flutter tests (use a fake server), incl. POS cart + screen
+flutter test                     # 83 Flutter tests (use a fake server), incl. POS cart + screen
 ```
 
 ## Files

@@ -129,7 +129,8 @@ class _ReportsPageState extends State<ReportsPage> {
                 const SizedBox(height: AppSpacing.lg),
                 ReportGrid(
                   minItemWidth: 420,
-                  children: [_chartCard(s, data), _featuredCard(s, data)],
+                  // Figure 3.8: featured products on the start side, daily sales next to it.
+                  children: [_featuredCard(s, data), _chartCard(s, data)],
                 ),
                 const SizedBox(height: AppSpacing.lg),
                 _inventoryCard(s, data.inventory),
@@ -143,46 +144,102 @@ class _ReportsPageState extends State<ReportsPage> {
 
   // ── Summary cards (Figure 3.8, top row) ───────────────────────────────────
 
+  /// Cards in the order of Figure 3.8 (from the start side):
+  /// إجمالي مبيعات → Net units sold, إجمالي القيمة → Net revenue,
+  /// عدد الفواتير → Invoice count, إجمالي الأرباح → Profit.
   Widget _cards(AppStrings s, _ReportsData d) {
     final sum = d.summary;
     final vs = _scope == ReportScope.month ? s.vsLastMonth : s.vsLastYear;
     String vsText(num current, num previous) =>
         SalesSummary.change(current, previous) == null ? s.noPreviousData : vs;
+    Widget note(String text, {Key? key}) => Text(
+      text,
+      key: key,
+      style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+    );
+
+    final Widget profitCard = switch (sum.profitStatus) {
+      ProfitStatus.complete => _SummaryCard(
+        key: const Key('cardProfit'),
+        title: s.cardProfit,
+        value: Formatters.currency(sum.profit ?? 0),
+        icon: Icons.savings_outlined,
+        color: (sum.profit ?? 0) < 0 ? AppColors.danger : AppColors.success,
+        soft: AppColors.successSoft,
+        footer: sum.previousProfit == null
+            ? note(s.profitCompleteNote, key: const Key('profitNote'))
+            : ChangeLine(
+                key: const Key('profitNote'),
+                percent: SalesSummary.change(
+                  sum.profit ?? 0,
+                  sum.previousProfit!,
+                ),
+                suffix: vsText(sum.profit ?? 0, sum.previousProfit!),
+              ),
+      ),
+      ProfitStatus.partial => _SummaryCard(
+        key: const Key('cardProfit'),
+        title: s.profitPartialTitle,
+        value: Formatters.currency(sum.profit ?? 0),
+        icon: Icons.savings_outlined,
+        color: AppColors.warning,
+        soft: AppColors.warningSoft,
+        footer: note(
+          sum.profitCoverage == null
+              ? s.profitPartialNoteNoPct
+              : s.profitPartialNote(
+                  '${Formatters.number(sum.profitCoverage!, decimals: 1)}%',
+                ),
+          key: const Key('profitNote'),
+        ),
+      ),
+      ProfitStatus.notAvailable => _SummaryCard(
+        key: const Key('cardProfit'),
+        title: s.cardProfit,
+        value: s.profitUnavailable,
+        icon: Icons.savings_outlined,
+        color: AppColors.textMuted,
+        soft: AppColors.divider,
+        footer: note(s.profitNeedsCost, key: const Key('profitNote')),
+      ),
+    };
+
     return ReportGrid(
       minItemWidth: 240,
       maxPerRow: 4,
       children: [
         _SummaryCard(
-          key: const Key('cardSales'),
-          title: s.cardTotalSales,
-          value: Formatters.currency(sum.netSales),
+          key: const Key('cardUnits'),
+          title: s.cardNetUnits,
+          value: Formatters.integer(sum.netUnitsSold),
           icon: Icons.receipt_long_rounded,
           color: AppColors.danger,
           soft: AppColors.dangerSoft,
+          footer: ChangeLine(
+            percent: SalesSummary.change(
+              sum.netUnitsSold,
+              sum.previousNetUnitsSold,
+            ),
+            suffix: vsText(sum.netUnitsSold, sum.previousNetUnitsSold),
+          ),
+          note: s.netUnitsHint,
+        ),
+        _SummaryCard(
+          key: const Key('cardRevenue'),
+          title: s.cardNetRevenue,
+          value: Formatters.currency(sum.netSales),
+          icon: Icons.request_quote_outlined,
+          color: AppColors.success,
+          soft: AppColors.successSoft,
           footer: ChangeLine(
             percent: SalesSummary.change(sum.netSales, sum.previousNetSales),
             suffix: vsText(sum.netSales, sum.previousNetSales),
           ),
           note: sum.refunds > 0
               ? s.returnsHint(Formatters.currency(sum.refunds))
-              : null,
-        ),
-        _SummaryCard(
-          key: const Key('cardValue'),
-          title: s.cardInventoryValue,
-          value: Formatters.currency(d.inventory.inventoryValue),
-          icon: Icons.request_quote_outlined,
-          color: AppColors.success,
-          soft: AppColors.successSoft,
-          footer: Text(
-            s.inventoryValueHint(d.inventory.totalProducts),
-            style: const TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 12,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+              : s.netRevenueHint,
         ),
         _SummaryCard(
           key: const Key('cardInvoices'),
@@ -199,35 +256,24 @@ class _ReportsPageState extends State<ReportsPage> {
             suffix: vsText(sum.invoiceCount, sum.previousInvoiceCount),
           ),
         ),
-        _SummaryCard(
-          key: const Key('cardProfit'),
-          title: s.cardProfit,
-          value: sum.profitAvailable && sum.profit != null
-              ? Formatters.currency(sum.profit!)
-              : s.profitUnavailable,
-          icon: Icons.savings_outlined,
-          color: sum.profitAvailable ? AppColors.success : AppColors.textMuted,
-          soft: sum.profitAvailable ? AppColors.successSoft : AppColors.divider,
-          footer: Text(
-            sum.profitAvailable ? vs : s.profitNeedsCost,
-            key: const Key('profitNote'),
-            style: const TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 12,
-            ),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
+        profitCard,
       ],
     );
   }
 
+  /// "Generate report" and the period, at the end side as in Figure 3.8.
   Widget _actions(AppStrings s, _ReportsData d) => Wrap(
+    alignment: WrapAlignment.end,
     spacing: AppSpacing.sm,
     runSpacing: AppSpacing.sm,
     crossAxisAlignment: WrapCrossAlignment.center,
     children: [
+      FilledButton.icon(
+        key: const Key('generateReportButton'),
+        onPressed: () => _showReport(s, d),
+        icon: const Icon(Icons.description_rounded, size: 18),
+        label: Text(s.generateReport),
+      ),
       SizedBox(
         width: 170,
         child: DropdownButtonFormField<ReportScope>(
@@ -247,12 +293,6 @@ class _ReportsPageState extends State<ReportsPage> {
           ],
           onChanged: (v) => v == null ? null : _set(scope: v),
         ),
-      ),
-      FilledButton.icon(
-        key: const Key('generateReportButton'),
-        onPressed: () => _showReport(s, d),
-        icon: const Icon(Icons.description_rounded, size: 18),
-        label: Text(s.generateReport),
       ),
     ],
   );
@@ -544,8 +584,16 @@ class _ReportsPageState extends State<ReportsPage> {
       ..writeln('${s.rAverage}: ${Formatters.currency(sum.averageInvoice)}')
       ..writeln('${s.rReturns}: ${sum.returnCount}')
       ..writeln('${s.rUnits}: ${sum.unitsSold} / ${sum.unitsReturned}')
+      ..writeln('${s.rNetUnits}: ${sum.netUnitsSold}')
       ..writeln(
-        '${s.rProfit}: ${sum.profitAvailable && sum.profit != null ? Formatters.currency(sum.profit!) : '${s.profitUnavailable} (${s.profitNeedsCost})'}',
+        '${s.rRevenueExTax}: ${Formatters.currency(sum.profitRevenueExTax)}',
+      )
+      ..writeln(
+        '${s.rProfit}: ${switch (sum.profitStatus) {
+          ProfitStatus.complete => '${Formatters.currency(sum.profit ?? 0)} (${s.rCost}: ${Formatters.currency(sum.profitCostOfGoods)})',
+          ProfitStatus.partial => s.rProfitPartial(Formatters.currency(sum.profit ?? 0), sum.profitCoverage == null ? '-' : '${Formatters.number(sum.profitCoverage!, decimals: 1)}%'),
+          ProfitStatus.notAvailable => '${s.profitUnavailable} (${s.profitNeedsCost})',
+        }}',
       )
       ..writeln()
       ..writeln('${s.rTop}:');

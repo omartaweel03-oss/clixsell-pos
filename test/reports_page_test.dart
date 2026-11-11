@@ -144,13 +144,14 @@ void main() {
       'GET /api/reports/top-products',
       'GET /api/reports/inventory',
     ]));
-    expect(_text(tester, 'cardSalesValue'), '₪ 29.00');        // 34.80 − 5.80 refund
+    expect(_text(tester, 'cardUnitsValue'), '6');              // 7 sold − 1 returned
+    expect(_text(tester, 'cardRevenueValue'), '₪ 29.00');      // 34.80 − 5.80 refund
     expect(_text(tester, 'cardInvoicesValue'), '2');
-    expect(_text(tester, 'cardValueValue'), '₪ 97.00');        // 19 × 5 + 1 × 2
     expect(_text(tester, 'cardProfitValue'), 'Not available'); // no cost price: never estimated
     expect(_text(tester, 'profitNote'), 'Needs the purchase cost of products');
     expect(find.text('After returns of ₪ 5.80'), findsOneWidget);
-    expect(find.text('No sales in the previous period'), findsNWidgets(2));
+    expect(find.text('No sales in the previous period'), findsNWidgets(3));
+    expect(find.byKey(const Key('cardValue')), findsNothing); // stock value is in the inventory report
 
     final chart = tester.widget<SalesLineChart>(find.byKey(const Key('reportDailyChart')));
     expect(chart.values, hasLength(31));
@@ -176,15 +177,18 @@ void main() {
     await _open(tester, backend, page: 'reports');
 
     await _choose(tester, find.byKey(const ValueKey('monthSelect-3-true')), 'April');
-    expect(_text(tester, 'cardSalesValue'), '₪ 2.32');
+    expect(_text(tester, 'cardRevenueValue'), '₪ 2.32');
     expect(_text(tester, 'cardInvoicesValue'), '1');
+    expect(_text(tester, 'cardUnitsValue'), '1');
     expect(find.text('92.0%'), findsOneWidget);  // 2.32 vs 29.00 in March
     expect(find.text('50.0%'), findsOneWidget);  // 1 vs 2 invoices
-    expect(find.byIcon(Icons.arrow_downward_rounded), findsNWidgets(2));
+    expect(find.text('83.3%'), findsOneWidget);  // 1 vs 6 units
+    expect(find.byIcon(Icons.arrow_downward_rounded), findsNWidgets(3));
 
     await _choose(tester, find.byKey(const ValueKey('scopeSelect-ReportScope.month')), 'Whole year');
-    expect(_text(tester, 'cardSalesValue'), '₪ 31.32');
+    expect(_text(tester, 'cardRevenueValue'), '₪ 31.32');
     expect(_text(tester, 'cardInvoicesValue'), '3');
+    expect(_text(tester, 'cardUnitsValue'), '7');
     final bars = tester.widget<SalesBarChart>(find.byKey(const Key('reportMonthlyChart')));
     expect(bars.values[2], 29.00);
     expect(bars.values[3], 2.32);
@@ -205,6 +209,8 @@ void main() {
     expect(text, contains('Discounts given: ₪ 2.00'));
     expect(text, contains('Refunds (returns): ₪ 5.80'));
     expect(text, contains('Net sales: ₪ 29.00'));
+    expect(text, contains('Net units sold: 6'));
+    expect(text, contains('Revenue without tax: ₪ 25.00'));
     expect(text, contains('Profit: Not available'));
     expect(text, contains('• Milk: 5 sold · ₪ 26.68'));
 
@@ -285,9 +291,10 @@ void main() {
     backend.addUser('neshan.admin', 'Admin-Pass-1', 'STORE_ADMIN', neshan, fullName: 'Rami');
     backend.seed(name: 'Neshan Juice', barcode: '44444444', price: 8, quantity: 5, minStock: 1, storeId: neshan);
     await _open(tester, backend, user: 'neshan.admin', page: 'reports');
-    expect(_text(tester, 'cardSalesValue'), '₪ 0.00');
+    expect(_text(tester, 'cardRevenueValue'), '₪ 0.00');
     expect(_text(tester, 'cardInvoicesValue'), '0');
-    expect(_text(tester, 'cardValueValue'), '₪ 40.00');
+    expect(_text(tester, 'cardProfitValue'), '₪ 0.00'); // nothing sold: profit is exactly 0
+    expect(find.descendant(of: find.byKey(const Key('invValue')), matching: find.text('₪ 40.00')), findsOneWidget);
     expect(find.text('Milk'), findsNothing);
     expect(find.byKey(const Key('reportChartEmpty')), findsOneWidget);
 
@@ -310,24 +317,89 @@ void main() {
     await tester.pump();
     expect(find.byKey(const Key('reportsLoading')), findsOneWidget);
     await tester.pumpAndSettle();
-    expect(_text(tester, 'cardSalesValue'), '₪ 29.00');
+    expect(_text(tester, 'cardRevenueValue'), '₪ 29.00');
+  });
+
+  testWidgets('profit: complete with costs, partial when old sales have no cost (never a full total)', (tester) async {
+    // Milk ₪5 cost 3, Bread ₪2 cost 1.20, Juice ₪8 without cost.
+    final b = FakeProductBackend()
+      ..seed(name: 'Milk', barcode: '11111111', price: 5, quantity: 24, minStock: 10, cost: 3)
+      ..seed(name: 'Bread', barcode: '22222222', price: 2, quantity: 30, minStock: 1, cost: 1.2)
+      ..seed(name: 'Juice', barcode: '33333333', price: 8, quantity: 9, minStock: 1);
+    final t = await _token(b, 'shini.cashier', 'Cashier-Pass-1');
+    b.saleTime = '2026-03-05T10:00:00';
+    await _call(b, t, '/api/sales', {
+      'items': [
+        {'productId': 1, 'quantity': 2},
+        {'productId': 2, 'quantity': 1},
+      ],
+      'paymentMethod': 'CASH',
+    }); // revenue ex-tax 12.00, cost 7.20 → 4.80
+    b.saleTime = '2026-03-20T10:00:00';
+    await _call(b, t, '/api/sales', {
+      'items': [
+        {'productId': 1, 'quantity': 4},
+      ],
+      'discountType': 'PERCENT',
+      'discountValue': 10,
+      'paymentMethod': 'CARD',
+    }); // revenue 18.00 (after discount, no tax), cost 12.00 → 6.00
+    b.saleTime = '2026-04-10T10:00:00';
+    await _call(b, t, '/api/sales', {
+      'items': [
+        {'productId': 3, 'quantity': 1},
+        {'productId': 1, 'quantity': 1},
+      ],
+      'paymentMethod': 'CASH',
+    }); // juice: no cost; milk 5 − 3 = 2.00 → partial, 5 of 13 = 38.5 %
+
+    await _open(tester, b, page: 'reports');
+    expect(_text(tester, 'cardProfitValue'), '₪ 10.80');
+    expect(find.text('Profit'), findsOneWidget);
+    // February had no sales: every card (profit too) says so instead of a percentage.
+    expect(find.text('No sales in the previous period'), findsNWidgets(4));
+
+    await _choose(tester, find.byKey(const ValueKey('monthSelect-3-true')), 'April');
+    expect(find.text('Profit (partial)'), findsOneWidget);
+    expect(_text(tester, 'cardProfitValue'), '₪ 2.00');
+    expect(_text(tester, 'profitNote'),
+        'Only 38.5% of revenue has a known cost – not a complete total');
+    await tester.tap(find.byKey(const Key('generateReportButton')));
+    await tester.pumpAndSettle();
+    expect(tester.widget<SelectableText>(find.byKey(const Key('reportText'))).data,
+        contains('Profit: ₪ 2.00 (partial: only 38.5% of revenue has a known cost)'));
   });
 
   testWidgets('Arabic: both screens in Arabic, right-to-left', (tester) async {
     final backend = await _history();
     await _open(tester, backend, page: 'reports', locale: const Locale('ar'));
     expect(find.text('تقرير المبيعات والأرباح'), findsOneWidget);
-    expect(find.text('إجمالي الأرباح'), findsOneWidget);
+    expect(find.text('الربح'), findsOneWidget);
     expect(find.text('غير متاح'), findsOneWidget);
+    expect(find.text('صافي الوحدات المباعة'), findsOneWidget);
+    expect(find.text('صافي الإيراد'), findsOneWidget);
     expect(find.text('المنتجات المميزة'), findsOneWidget);
     expect(find.text('توليد تقرير'), findsOneWidget);
-    expect(Directionality.of(tester.element(find.byKey(const Key('cardSales')))), TextDirection.rtl);
+    expect(Directionality.of(tester.element(find.byKey(const Key('cardUnits')))), TextDirection.rtl);
+    // Figure 3.8 (RTL): cards from the right: units, revenue, invoices, profit;
+    // featured products on the right of the daily chart; the buttons on the left.
+    double x(String k) => tester.getCenter(find.byKey(Key(k))).dx;
+    expect(x('cardUnits'), greaterThan(x('cardRevenue')));
+    expect(x('cardRevenue'), greaterThan(x('cardInvoices')));
+    expect(x('cardInvoices'), greaterThan(x('cardProfit')));
+    expect(x('featuredCard'), greaterThan(x('reportChartCard')));
+    expect(x('generateReportButton'), lessThan(x('cardRevenue')));
 
     await _nav(tester, 'salesAnalytics');
     expect(find.text('تحليل شامل لأداء المبيعات'), findsOneWidget);
     expect(find.text('أكثر المنتجات مبيعاً'), findsOneWidget);
     expect(find.text('الأصناف التي أوشكت على النفاد'), findsOneWidget);
     expect(find.text('مارس'), findsOneWidget); // month selector
+    // Figure 3.7 (RTL): monthly on the right of daily; running-out on the right of best-selling.
+    expect(x('monthlySalesCard'), greaterThan(x('dailySalesCard')));
+    expect(x('reorderCard'), greaterThan(x('bestSellingCard')));
+    expect(tester.getCenter(find.byKey(const Key('monthlySalesCard'))).dy,
+        lessThan(tester.getCenter(find.byKey(const Key('reorderCard'))).dy));
   });
 
   for (final size in const [Size(1440, 1000), Size(1024, 768), Size(390, 844)]) {
@@ -335,7 +407,7 @@ void main() {
       final backend = await _history();
       await _open(tester, backend, page: 'reports', size: size);
       expect(tester.takeException(), isNull);
-      expect(find.byKey(const Key('cardSales')), findsOneWidget);
+      expect(find.byKey(const Key('cardUnits')), findsOneWidget);
       await _nav(tester, 'salesAnalytics');
       expect(tester.takeException(), isNull);
       expect(find.byKey(const Key('dailyChart')), findsOneWidget);

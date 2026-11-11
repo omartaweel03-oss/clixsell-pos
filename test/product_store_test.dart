@@ -97,6 +97,7 @@ void main() {
         'supplierName': 'Supplier',
         'image': 'AQID',
         'imageName': 'a.png',
+        'costPrice': null,
       });
     });
   });

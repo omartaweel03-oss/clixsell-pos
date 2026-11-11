@@ -112,11 +112,13 @@ class _SalesAnalyticsPageState extends State<SalesAnalyticsPage> {
               else
                 ReportGrid(
                   minItemWidth: 420,
+                  // Order of Figure 3.7 (start side first): monthly | daily,
+                  // products running out | best-selling products.
                   children: [
-                    _dailyCard(s, data),
                     _monthlyCard(s, data),
-                    _bestSellingCard(s, data),
+                    _dailyCard(s, data),
                     _reorderCard(s, data),
+                    _bestSellingCard(s, data),
                   ],
                 ),
             ],

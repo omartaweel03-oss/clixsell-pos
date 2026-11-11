@@ -92,6 +92,10 @@ public class Product {
     @Column(name = "min_stock", nullable = false)
     private int minStock;
 
+    /** Purchase cost per unit (report ERD); null = not known. Only Store Admins see it. */
+    @Column(name = "cost_price")
+    private Double costPrice;
+
     @Column(name = "image", columnDefinition = "BLOB")
     private byte[] image;
 
@@ -148,6 +152,7 @@ public class Product {
         this.sellingPrice = request.sellingPrice();
         this.quantity = request.quantity();
         this.minStock = request.minStock();
+        this.costPrice = request.costPrice();
         this.supplier = newSupplier;
         if (request.image() != null && request.image().length > 0) {
             this.image = request.image();
@@ -242,6 +247,17 @@ public class Product {
         else if (price > MAX_PRICE) errors.put("sellingPrice", "Price is too large");
         else if (BigDecimal.valueOf(price).stripTrailingZeros().scale() > 2) errors.put("sellingPrice", "Price can have at most 2 decimal places");
 
+        // Purchase cost (optional): unknown when empty.
+        Double cost = r.costPrice();
+        if (cost != null) {
+            if (cost.isNaN() || cost.isInfinite()) errors.put("costPrice", "Cost price must be a number");
+            else if (cost < 0) errors.put("costPrice", "Cost price cannot be negative");
+            else if (cost > MAX_PRICE) errors.put("costPrice", "Cost price is too large");
+            else if (BigDecimal.valueOf(cost).stripTrailingZeros().scale() > 2) {
+                errors.put("costPrice", "Cost price can have at most 2 decimal places");
+            }
+        }
+
         checkWholeNumber("quantity", "Quantity", r.quantity(), errors);
         checkWholeNumber("minStock", "Minimum stock level", r.minStock(), errors);
 
@@ -318,6 +334,7 @@ public class Product {
     public String getBarcode() { return barcode; }
     public String getCategory() { return category; }
     public double getSellingPrice() { return sellingPrice; }
+    public Double getCostPrice() { return costPrice; }
     public int getQuantity() { return quantity; }
     public int getMinStock() { return minStock; }
     public byte[] getImage() { return image; }

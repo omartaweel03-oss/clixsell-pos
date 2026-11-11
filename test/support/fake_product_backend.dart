@@ -16,10 +16,28 @@ import 'package:http/testing.dart';
 ///   `shini.cashier` / `Cashier-Pass-1`
 class FakeProductBackend {
   FakeProductBackend() {
-    addUser('sysadmin', 'Admin-Pass-1', 'SYSTEM_ADMIN', null, fullName: 'System Administrator');
+    addUser(
+      'sysadmin',
+      'Admin-Pass-1',
+      'SYSTEM_ADMIN',
+      null,
+      fullName: 'System Administrator',
+    );
     final shini = addStore('Shini Supermarket', address: 'Ramallah');
-    addUser('shini.admin', 'Admin-Pass-1', 'STORE_ADMIN', shini, fullName: 'Shini Manager');
-    addUser('shini.cashier', 'Cashier-Pass-1', 'CASHIER', shini, fullName: 'Ahmad Saleh');
+    addUser(
+      'shini.admin',
+      'Admin-Pass-1',
+      'STORE_ADMIN',
+      shini,
+      fullName: 'Shini Manager',
+    );
+    addUser(
+      'shini.cashier',
+      'Cashier-Pass-1',
+      'CASHIER',
+      shini,
+      fullName: 'Ahmad Saleh',
+    );
   }
 
   static const String baseUrl = 'http://fake-server/api';
@@ -32,6 +50,9 @@ class FakeProductBackend {
   /// Sales ("sales" + their lines), in SaleResponse JSON format.
   final List<Map<String, dynamic>> sales = [];
   final List<Map<String, dynamic>> returns = [];
+
+  /// saleItemId → purchase cost copied when the sale was completed (server side only).
+  final Map<int, double?> unitCosts = {};
   int _nextSaleId = 1;
   int _nextSaleItemId = 1;
   final Map<int, int> _invoiceCounter = {}; // storeId → next number
@@ -78,8 +99,14 @@ class FakeProductBackend {
     return id;
   }
 
-  int addUser(String username, String password, String role, int? storeId,
-      {String fullName = 'Test User', bool active = true}) {
+  int addUser(
+    String username,
+    String password,
+    String role,
+    int? storeId, {
+    String fullName = 'Test User',
+    bool active = true,
+  }) {
     final id = _nextUserId++;
     users.add({
       'userId': id,
@@ -104,6 +131,7 @@ class FakeProductBackend {
     required int minStock,
     String supplier = 'Dairy Co',
     int storeId = 1,
+    double? cost,
   }) {
     final row = _productRow(_nextProductId++, storeId, {
       'name': name,
@@ -113,6 +141,7 @@ class FakeProductBackend {
       'quantity': quantity,
       'minStock': minStock,
       'supplierName': supplier,
+      'costPrice': cost,
     }, createdAt: '2025-01-01T10:00:00');
     rows.add(row);
     return row;
@@ -139,7 +168,11 @@ class FakeProductBackend {
     return null;
   }
 
-  static Map<String, dynamic>? _find(List<Map<String, dynamic>> list, String key, int id) {
+  static Map<String, dynamic>? _find(
+    List<Map<String, dynamic>> list,
+    String key,
+    int id,
+  ) {
     for (final r in list) {
       if (r[key] == id) return r;
     }
@@ -153,8 +186,9 @@ class FakeProductBackend {
     final path = request.url.path; // e.g. /api/products/3
     final method = request.method;
     requests.add('$method $path');
-    Map<String, dynamic> body() =>
-        request.body.isEmpty ? {} : jsonDecode(request.body) as Map<String, dynamic>;
+    Map<String, dynamic> body() => request.body.isEmpty
+        ? {}
+        : jsonDecode(request.body) as Map<String, dynamic>;
 
     if (path == '/api/auth/login' && method == 'POST') return _login(body());
 
@@ -176,7 +210,13 @@ class FakeProductBackend {
     // Store Admin: cashiers of own store
     if (path.startsWith('/api/store/cashiers')) {
       if (role != 'STORE_ADMIN') return _forbidden();
-      return _staff(storeId!, 'CASHIER', path.substring('/api/store/cashiers'.length), method, body);
+      return _staff(
+        storeId!,
+        'CASHIER',
+        path.substring('/api/store/cashiers'.length),
+        method,
+        body,
+      );
     }
     // Own store settings
     if (path == '/api/store' && method == 'GET') {
@@ -192,16 +232,30 @@ class FakeProductBackend {
     if (path.startsWith('/api/reports')) {
       if (role != 'STORE_ADMIN') return _forbidden();
       if (reportsDelay != null) await Future<void>.delayed(reportsDelay!);
-      if (failReports) return _error(500, 'SERVER_ERROR', 'Report server error');
+      if (failReports) {
+        return _error(500, 'SERVER_ERROR', 'Report server error');
+      }
       return _reports(storeId!, path, request.url.queryParameters);
     }
     // Products: Store Admin (all) and Cashier (read only), own store
     if (path.startsWith('/api/products')) {
       if (role == 'SYSTEM_ADMIN') return _forbidden();
-      if (role == 'CASHIER' && (method != 'GET' || path.endsWith('generate-barcode'))) {
+      if (role == 'CASHIER' &&
+          (method != 'GET' || path.endsWith('generate-barcode'))) {
         return _forbidden();
       }
-      return _products(storeId!, path, method, body);
+      final response = _products(storeId!, path, method, body);
+      if (role != 'CASHIER') return response;
+      // Cashiers never receive purchase costs (same as the backend).
+      final data = jsonDecode(response.body);
+      Object strip(Object? row) => {
+        ...(row as Map<String, dynamic>),
+        'costPrice': null,
+      };
+      return _json(
+        response.statusCode,
+        data is List ? data.map(strip).toList() : strip(data),
+      );
     }
     return _error(400, 'BAD_REQUEST', 'Unexpected request');
   }
@@ -218,7 +272,8 @@ class FakeProductBackend {
     final user = _find(users, 'userId', userId);
     if (user == null || user['status'] != 'ACTIVE') return null;
     final storeId = user['storeId'] as int?;
-    if (storeId != null && _find(stores, 'storeId', storeId)?['status'] != 'ACTIVE') {
+    if (storeId != null &&
+        _find(stores, 'storeId', storeId)?['status'] != 'ACTIVE') {
       return null;
     }
     return user;
@@ -232,8 +287,13 @@ class FakeProductBackend {
     }
     final storeId = user['storeId'] as int?;
     if (user['status'] != 'ACTIVE' ||
-        (storeId != null && _find(stores, 'storeId', storeId)?['status'] != 'ACTIVE')) {
-      return _error(401, 'ACCOUNT_DISABLED', 'This account or its store has been deactivated');
+        (storeId != null &&
+            _find(stores, 'storeId', storeId)?['status'] != 'ACTIVE')) {
+      return _error(
+        401,
+        'ACCOUNT_DISABLED',
+        'This account or its store has been deactivated',
+      );
     }
     final token = 'token-${_nextToken++}';
     _sessions[token] = user['userId'] as int;
@@ -248,32 +308,46 @@ class FakeProductBackend {
     final storeId = u['storeId'] as int?;
     return {
       ...u,
-      'storeName': storeId == null ? null : _find(stores, 'storeId', storeId)?['name'],
+      'storeName': storeId == null
+          ? null
+          : _find(stores, 'storeId', storeId)?['name'],
     };
   }
 
   Map<String, dynamic> _storeJson(Map<String, dynamic> st) => {
-        'taxRate': 16.0,
-        'maxDiscountPercent': 10.0,
-        ...st,
-        'adminCount': users
-            .where((u) => u['storeId'] == st['storeId'] && u['role'] == 'STORE_ADMIN')
-            .length,
-        'cashierCount': users
-            .where((u) => u['storeId'] == st['storeId'] && u['role'] == 'CASHIER')
-            .length,
-      };
+    'taxRate': 16.0,
+    'maxDiscountPercent': 10.0,
+    ...st,
+    'adminCount': users
+        .where(
+          (u) => u['storeId'] == st['storeId'] && u['role'] == 'STORE_ADMIN',
+        )
+        .length,
+    'cashierCount': users
+        .where((u) => u['storeId'] == st['storeId'] && u['role'] == 'CASHIER')
+        .length,
+  };
 
-  http.Response _admin(String path, String method, Map<String, dynamic> Function() body) {
+  http.Response _admin(
+    String path,
+    String method,
+    Map<String, dynamic> Function() body,
+  ) {
     if (path == '/api/admin/stores' && method == 'GET') {
       return _json(200, stores.map(_storeJson).toList());
     }
     if (path == '/api/admin/stores' && method == 'POST') {
       final b = body();
       final name = (b['name'] as String? ?? '').trim();
-      if (stores.any((st) => (st['name'] as String).toLowerCase() == name.toLowerCase())) {
-        return _error(409, 'DUPLICATE_STORE_NAME', 'A store with this name already exists',
-            {'name': 'A store with this name already exists'});
+      if (stores.any(
+        (st) => (st['name'] as String).toLowerCase() == name.toLowerCase(),
+      )) {
+        return _error(
+          409,
+          'DUPLICATE_STORE_NAME',
+          'A store with this name already exists',
+          {'name': 'A store with this name already exists'},
+        );
       }
       final id = addStore(name, address: b['address'] as String?);
       _find(stores, 'storeId', id)!['phone'] = b['phone'];
@@ -283,7 +357,9 @@ class FakeProductBackend {
     if (store != null) {
       final id = int.parse(store.group(1)!);
       final st = _find(stores, 'storeId', id);
-      if (st == null) return _error(404, 'STORE_NOT_FOUND', 'Store $id was not found');
+      if (st == null) {
+        return _error(404, 'STORE_NOT_FOUND', 'Store $id was not found');
+      }
       final rest = store.group(2) ?? '';
       if (rest == '' && method == 'PUT') {
         final b = body();
@@ -297,29 +373,49 @@ class FakeProductBackend {
         return _json(200, _storeJson(st));
       }
       if (rest.startsWith('/admins')) {
-        return _staff(id, 'STORE_ADMIN', rest.substring('/admins'.length), method, body);
+        return _staff(
+          id,
+          'STORE_ADMIN',
+          rest.substring('/admins'.length),
+          method,
+          body,
+        );
       }
     }
     return _error(400, 'BAD_REQUEST', 'Unexpected request');
   }
 
-  http.Response _staff(int storeId, String role, String rest, String method,
-      Map<String, dynamic> Function() body) {
+  http.Response _staff(
+    int storeId,
+    String role,
+    String rest,
+    String method,
+    Map<String, dynamic> Function() body,
+  ) {
     if (rest == '' && method == 'GET') {
       return _json(200, [
         for (final u in users)
-          if (u['storeId'] == storeId && u['role'] == role) _userJson(u)
+          if (u['storeId'] == storeId && u['role'] == role) _userJson(u),
       ]);
     }
     if (rest == '' && method == 'POST') {
       final b = body();
       final username = (b['username'] as String? ?? '').trim().toLowerCase();
       if (userByName(username) != null) {
-        return _error(409, 'DUPLICATE_USERNAME', 'This username is already taken',
-            {'username': 'This username is already taken'});
+        return _error(
+          409,
+          'DUPLICATE_USERNAME',
+          'This username is already taken',
+          {'username': 'This username is already taken'},
+        );
       }
-      final id = addUser(username, b['password'] as String, role, storeId,
-          fullName: (b['fullName'] as String).trim());
+      final id = addUser(
+        username,
+        b['password'] as String,
+        role,
+        storeId,
+        fullName: (b['fullName'] as String).trim(),
+      );
       return _json(201, _userJson(_find(users, 'userId', id)!));
     }
     final m = RegExp(r'^/(\d+)/(status|password)$').firstMatch(rest);
@@ -341,12 +437,18 @@ class FakeProductBackend {
     return _error(400, 'BAD_REQUEST', 'Unexpected request');
   }
 
-  http.Response _products(int storeId, String path, String method,
-      Map<String, dynamic> Function() body) {
+  http.Response _products(
+    int storeId,
+    String path,
+    String method,
+    Map<String, dynamic> Function() body,
+  ) {
     final mine = rows.where((r) => r['storeId'] == storeId).toList();
     if (path == '/api/products' && method == 'GET') {
       if (productsUnavailable) throw http.ClientException('Connection reset');
-      mine.sort((a, b) => (b['productId'] as int).compareTo(a['productId'] as int));
+      mine.sort(
+        (a, b) => (b['productId'] as int).compareTo(a['productId'] as int),
+      );
       return _json(200, mine);
     }
     if (path == '/api/products/generate-barcode') {
@@ -354,7 +456,9 @@ class FakeProductBackend {
     }
     if (path == '/api/products' && method == 'POST') {
       final b = body();
-      if (_barcodeTaken(mine, b['barcode'] as String, null)) return _duplicate(b['barcode'] as String);
+      if (_barcodeTaken(mine, b['barcode'] as String, null)) {
+        return _duplicate(b['barcode'] as String);
+      }
       final row = _productRow(_nextProductId++, storeId, b);
       rows.add(row);
       return _json(201, row);
@@ -362,7 +466,11 @@ class FakeProductBackend {
     final match = RegExp(r'^/api/products/(\d+)$').firstMatch(path);
     if (match != null) {
       final id = int.parse(match.group(1)!);
-      final existing = _find(mine, 'productId', id); // other stores' products: not found
+      final existing = _find(
+        mine,
+        'productId',
+        id,
+      ); // other stores' products: not found
       if (existing == null) {
         return _error(404, 'PRODUCT_NOT_FOUND', 'Product $id was not found');
       }
@@ -372,8 +480,15 @@ class FakeProductBackend {
       }
       if (method == 'PUT') {
         final b = body();
-        if (_barcodeTaken(mine, b['barcode'] as String, id)) return _duplicate(b['barcode'] as String);
-        final row = _productRow(id, storeId, b, createdAt: existing['createdAt'] as String);
+        if (_barcodeTaken(mine, b['barcode'] as String, id)) {
+          return _duplicate(b['barcode'] as String);
+        }
+        final row = _productRow(
+          id,
+          storeId,
+          b,
+          createdAt: existing['createdAt'] as String,
+        );
         rows[rows.indexOf(existing)] = row;
         return _json(200, row);
       }
@@ -386,36 +501,67 @@ class FakeProductBackend {
   double _money(num v) => (v * 100).round() / 100;
 
   double _taxRate(int storeId) =>
-      ((_find(stores, 'storeId', storeId)?['taxRate']) as num?)?.toDouble() ?? 16.0;
+      ((_find(stores, 'storeId', storeId)?['taxRate']) as num?)?.toDouble() ??
+      16.0;
 
   double _maxDiscount(int storeId) =>
-      ((_find(stores, 'storeId', storeId)?['maxDiscountPercent']) as num?)?.toDouble() ?? 10.0;
+      ((_find(stores, 'storeId', storeId)?['maxDiscountPercent']) as num?)
+          ?.toDouble() ??
+      10.0;
 
-  Future<http.Response> _pos(Map<String, dynamic> user, int storeId, String path, String method,
-      Map<String, dynamic> Function() body, http.Request request) async {
+  Future<http.Response> _pos(
+    Map<String, dynamic> user,
+    int storeId,
+    String path,
+    String method,
+    Map<String, dynamic> Function() body,
+    http.Request request,
+  ) async {
     final mine = sales.where((x) => x['storeId'] == storeId).toList();
     if (path == '/api/sales/suspended' && method == 'GET') {
-      return _json(200, mine.where((x) => x['status'] == 'SUSPENDED').toList().reversed.toList());
+      return _json(
+        200,
+        mine
+            .where((x) => x['status'] == 'SUSPENDED')
+            .toList()
+            .reversed
+            .toList(),
+      );
     }
     if (path == '/api/sales/lookup') {
       final code = (request.url.queryParameters['code'] ?? '').trim();
       for (final x in mine) {
         if (x['status'] == 'COMPLETED' &&
-            ((x['invoiceNumber'] as String).toUpperCase() == code.toUpperCase() ||
+            ((x['invoiceNumber'] as String).toUpperCase() ==
+                    code.toUpperCase() ||
                 x['receiptCode'] == code)) {
           return _json(200, x);
         }
       }
-      return _error(404, 'SALE_NOT_FOUND', "No completed invoice or receipt '$code' in this store");
+      return _error(
+        404,
+        'SALE_NOT_FOUND',
+        "No completed invoice or receipt '$code' in this store",
+      );
     }
-    if (path == '/api/returns' && method == 'POST') return _return(user, storeId, body());
+    if (path == '/api/returns' && method == 'POST') {
+      return _return(user, storeId, body());
+    }
 
-    final suspendedId = RegExp(r'^/api/sales/suspended/(\d+)$').firstMatch(path);
+    final suspendedId = RegExp(
+      r'^/api/sales/suspended/(\d+)$',
+    ).firstMatch(path);
     if (suspendedId != null && method == 'DELETE') {
       final sale = _find(mine, 'saleId', int.parse(suspendedId.group(1)!));
-      if (sale == null) return _error(404, 'SALE_NOT_FOUND', 'Invoice was not found');
+      if (sale == null) {
+        return _error(404, 'SALE_NOT_FOUND', 'Invoice was not found');
+      }
       if (sale['status'] != 'SUSPENDED') {
-        return _error(409, 'SALE_NOT_SUSPENDED', 'Only a suspended invoice can be canceled');
+        return _error(
+          409,
+          'SALE_NOT_SUSPENDED',
+          'Only a suspended invoice can be canceled',
+        );
       }
       sale['status'] = 'CANCELED';
       return _json(200, sale);
@@ -423,39 +569,73 @@ class FakeProductBackend {
     final getId = RegExp(r'^/api/sales/(\d+)$').firstMatch(path);
     if (getId != null && method == 'GET') {
       final sale = _find(mine, 'saleId', int.parse(getId.group(1)!));
-      return sale == null ? _error(404, 'SALE_NOT_FOUND', 'Invoice was not found') : _json(200, sale);
+      return sale == null
+          ? _error(404, 'SALE_NOT_FOUND', 'Invoice was not found')
+          : _json(200, sale);
     }
     final complete = path == '/api/sales' && method == 'POST';
     final suspendNew = path == '/api/sales/suspended' && method == 'POST';
     if (complete || suspendNew || (suspendedId != null && method == 'PUT')) {
       final b = body();
-      final saleId = suspendedId != null ? int.parse(suspendedId.group(1)!) : b['saleId'] as int?;
-      return _saveSale(user, storeId, b, saleId: suspendNew ? null : saleId, complete: complete);
+      final saleId = suspendedId != null
+          ? int.parse(suspendedId.group(1)!)
+          : b['saleId'] as int?;
+      return _saveSale(
+        user,
+        storeId,
+        b,
+        saleId: suspendNew ? null : saleId,
+        complete: complete,
+      );
     }
     return _error(400, 'BAD_REQUEST', 'Unexpected request');
   }
 
-  http.Response _saveSale(Map<String, dynamic> user, int storeId, Map<String, dynamic> b,
-      {required int? saleId, required bool complete}) {
+  http.Response _saveSale(
+    Map<String, dynamic> user,
+    int storeId,
+    Map<String, dynamic> b, {
+    required int? saleId,
+    required bool complete,
+  }) {
     final lines = (b['items'] as List<dynamic>? ?? const []);
     if (lines.isEmpty) {
-      return _error(400, 'VALIDATION_FAILED', 'Some fields are not valid',
-          {'items': 'Add at least one product to the invoice'});
+      return _error(400, 'VALIDATION_FAILED', 'Some fields are not valid', {
+        'items': 'Add at least one product to the invoice',
+      });
     }
     Map<String, dynamic>? existing;
     if (saleId != null) {
-      existing = _find(sales.where((x) => x['storeId'] == storeId).toList(), 'saleId', saleId);
-      if (existing == null) return _error(404, 'SALE_NOT_FOUND', 'Invoice was not found');
+      existing = _find(
+        sales.where((x) => x['storeId'] == storeId).toList(),
+        'saleId',
+        saleId,
+      );
+      if (existing == null) {
+        return _error(404, 'SALE_NOT_FOUND', 'Invoice was not found');
+      }
       if (existing['status'] != 'SUSPENDED') {
-        return _error(409, 'SALE_NOT_SUSPENDED', 'Invoice is no longer suspended');
+        return _error(
+          409,
+          'SALE_NOT_SUSPENDED',
+          'Invoice is no longer suspended',
+        );
       }
     }
     final items = <Map<String, dynamic>>[];
     for (final l in lines) {
       final m = l as Map<String, dynamic>;
-      final product = rows.where((r) => r['productId'] == m['productId'] && r['storeId'] == storeId).firstOrNull;
+      final product = rows
+          .where(
+            (r) => r['productId'] == m['productId'] && r['storeId'] == storeId,
+          )
+          .firstOrNull;
       if (product == null) {
-        return _error(404, 'PRODUCT_NOT_FOUND', 'Product ${m['productId']} is not available in this store');
+        return _error(
+          404,
+          'PRODUCT_NOT_FOUND',
+          'Product ${m['productId']} is not available in this store',
+        );
       }
       final qty = m['quantity'] as int;
       final price = (product['sellingPrice'] as num).toDouble();
@@ -471,25 +651,32 @@ class FakeProductBackend {
         'returnableQuantity': qty,
       });
     }
-    final subtotal = _money(items.fold<double>(0, (a, i) => a + (i['lineTotal'] as double)));
+    final subtotal = _money(
+      items.fold<double>(0, (a, i) => a + (i['lineTotal'] as double)),
+    );
     final dv = (b['discountValue'] as num?)?.toDouble() ?? 0;
-    final discount = _money(b['discountType'] == 'PERCENT' ? subtotal * dv / 100 : dv);
+    final discount = _money(
+      b['discountType'] == 'PERCENT' ? subtotal * dv / 100 : dv,
+    );
     if (discount > _money(subtotal * _maxDiscount(storeId) / 100)) {
-      return _error(400, 'VALIDATION_FAILED', 'Some fields are not valid',
-          {'discountValue': 'Discount cannot be more than 10% of the subtotal'});
+      return _error(400, 'VALIDATION_FAILED', 'Some fields are not valid', {
+        'discountValue': 'Discount cannot be more than 10% of the subtotal',
+      });
     }
     final rate = _taxRate(storeId);
     final tax = _money((subtotal - discount) * rate / 100);
     if (complete) {
       if (b['paymentMethod'] == null) {
-        return _error(400, 'VALIDATION_FAILED', 'Some fields are not valid',
-            {'paymentMethod': 'Choose a payment method'});
+        return _error(400, 'VALIDATION_FAILED', 'Some fields are not valid', {
+          'paymentMethod': 'Choose a payment method',
+        });
       }
       final shortages = <String, String>{};
       for (final i in items) {
         final p = rowById(i['productId'] as int)!;
         if ((p['quantity'] as int) < (i['quantity'] as int)) {
-          shortages[i['productName'] as String] = 'Only ${p['quantity']} left in stock';
+          shortages[i['productName'] as String] =
+              'Only ${p['quantity']} left in stock';
         }
       }
       if (shortages.isNotEmpty) {
@@ -500,7 +687,14 @@ class FakeProductBackend {
         _setQuantity(p, (p['quantity'] as int) - (i['quantity'] as int));
       }
     }
-    final number = existing?['invoiceNumber'] as String? ?? _nextInvoice(storeId);
+    if (complete) {
+      for (final i in items) {
+        unitCosts[i['saleItemId'] as int] =
+            (rowById(i['productId'] as int)?['costPrice'] as num?)?.toDouble();
+      }
+    }
+    final number =
+        existing?['invoiceNumber'] as String? ?? _nextInvoice(storeId);
     final sale = {
       'saleId': existing?['saleId'] ?? _nextSaleId++,
       'storeId': storeId,
@@ -515,7 +709,9 @@ class FakeProductBackend {
       'tax': tax,
       'total': _money(subtotal - discount + tax),
       'paymentMethod': complete ? b['paymentMethod'] : null,
-      'receiptCode': complete ? 'CLIXSELL-TEST${_nextSaleId.toString().padLeft(4, '0')}' : null,
+      'receiptCode': complete
+          ? 'CLIXSELL-TEST${_nextSaleId.toString().padLeft(4, '0')}'
+          : null,
       'createdAt': existing?['createdAt'] ?? '2026-11-04T10:00:00',
       'completedAt': complete ? saleTime : null,
     };
@@ -536,27 +732,50 @@ class FakeProductBackend {
   void _setQuantity(Map<String, dynamic> row, int quantity) {
     final min = row['minStock'] as int;
     row['quantity'] = quantity;
-    row['stockStatus'] = quantity <= 0 ? 'OUT_OF_STOCK' : (quantity <= min ? 'LOW_STOCK' : 'IN_STOCK');
+    row['stockStatus'] = quantity <= 0
+        ? 'OUT_OF_STOCK'
+        : (quantity <= min ? 'LOW_STOCK' : 'IN_STOCK');
     row['stockValue'] = (row['sellingPrice'] as double) * quantity;
   }
 
-  http.Response _return(Map<String, dynamic> user, int storeId, Map<String, dynamic> b) {
-    final sale = _find(sales.where((x) => x['storeId'] == storeId).toList(), 'saleId', b['saleId'] as int);
-    if (sale == null) return _error(404, 'SALE_NOT_FOUND', 'Invoice was not found');
-    final item = (sale['items'] as List).cast<Map<String, dynamic>>()
-        .where((i) => i['saleItemId'] == b['saleItemId']).firstOrNull;
-    if (item == null) return _error(404, 'SALE_ITEM_NOT_FOUND', 'Not on the invoice');
+  http.Response _return(
+    Map<String, dynamic> user,
+    int storeId,
+    Map<String, dynamic> b,
+  ) {
+    final sale = _find(
+      sales.where((x) => x['storeId'] == storeId).toList(),
+      'saleId',
+      b['saleId'] as int,
+    );
+    if (sale == null) {
+      return _error(404, 'SALE_NOT_FOUND', 'Invoice was not found');
+    }
+    final item = (sale['items'] as List)
+        .cast<Map<String, dynamic>>()
+        .where((i) => i['saleItemId'] == b['saleItemId'])
+        .firstOrNull;
+    if (item == null) {
+      return _error(404, 'SALE_ITEM_NOT_FOUND', 'Not on the invoice');
+    }
     final qty = b['quantity'] as int;
     if (qty > (item['returnableQuantity'] as int)) {
-      return _error(400, 'VALIDATION_FAILED', 'Some fields are not valid',
-          {'quantity': 'Only ${item['returnableQuantity']} of this product can still be returned'});
+      return _error(400, 'VALIDATION_FAILED', 'Some fields are not valid', {
+        'quantity':
+            'Only ${item['returnableQuantity']} of this product can still be returned',
+      });
     }
     item['returnedQuantity'] = (item['returnedQuantity'] as int) + qty;
     item['returnableQuantity'] = (item['returnableQuantity'] as int) - qty;
     final p = rowById(item['productId'] as int);
     if (p != null) _setQuantity(p, (p['quantity'] as int) + qty);
-    final refund = _money((sale['total'] as double) * (item['lineTotal'] as double) /
-        (sale['subtotal'] as double) * qty / (item['quantity'] as int));
+    final refund = _money(
+      (sale['total'] as double) *
+          (item['lineTotal'] as double) /
+          (sale['subtotal'] as double) *
+          qty /
+          (item['quantity'] as int),
+    );
     final r = {
       'returnId': returns.length + 1,
       'invoiceNumber': sale['invoiceNumber'],
@@ -567,6 +786,8 @@ class FakeProductBackend {
       'refundMethod': sale['paymentMethod'],
       'returnDate': saleTime,
       'storeId': storeId,
+      'saleId': sale['saleId'],
+      'saleItemId': item['saleItemId'],
       'stillReturnable': item['returnableQuantity'],
     };
     returns.add(r);
@@ -579,13 +800,19 @@ class FakeProductBackend {
     double r2(num v) => (v * 100).round() / 100;
     List<Map<String, dynamic>> done(String from, String toExcl) => sales
         .where((x) => x['storeId'] == storeId && x['status'] == 'COMPLETED')
-        .where((x) => (x['completedAt'] as String).compareTo(from) >= 0 &&
-            (x['completedAt'] as String).compareTo(toExcl) < 0)
+        .where(
+          (x) =>
+              (x['completedAt'] as String).compareTo(from) >= 0 &&
+              (x['completedAt'] as String).compareTo(toExcl) < 0,
+        )
         .toList();
     List<Map<String, dynamic>> rets(String from, String toExcl) => returns
         .where((x) => x['storeId'] == storeId)
-        .where((x) => (x['returnDate'] as String).compareTo(from) >= 0 &&
-            (x['returnDate'] as String).compareTo(toExcl) < 0)
+        .where(
+          (x) =>
+              (x['returnDate'] as String).compareTo(from) >= 0 &&
+              (x['returnDate'] as String).compareTo(toExcl) < 0,
+        )
         .toList();
     String iso(DateTime d) =>
         '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -602,7 +829,9 @@ class FakeProductBackend {
         ..sort((a, b) {
           final ao = a['stockStatus'] == 'OUT_OF_STOCK' ? 0 : 1;
           final bo = b['stockStatus'] == 'OUT_OF_STOCK' ? 0 : 1;
-          return ao != bo ? ao - bo : (a['quantity'] as int) - (b['quantity'] as int);
+          return ao != bo
+              ? ao - bo
+              : (a['quantity'] as int) - (b['quantity'] as int);
         });
       return _json(200, {
         'totalProducts': mine.length,
@@ -610,13 +839,20 @@ class FakeProductBackend {
         'inventoryValue': r2(sum(mine, 'stockValue')),
         'inStock': mine.where((r) => r['stockStatus'] == 'IN_STOCK').length,
         'lowStock': mine.where((r) => r['stockStatus'] == 'LOW_STOCK').length,
-        'outOfStock': mine.where((r) => r['stockStatus'] == 'OUT_OF_STOCK').length,
+        'outOfStock': mine
+            .where((r) => r['stockStatus'] == 'OUT_OF_STOCK')
+            .length,
         'categories': [
-          for (final e in (cats.entries.toList()..sort((a, b) => a.key.compareTo(b.key))))
+          for (final e
+              in (cats.entries.toList()
+                ..sort((a, b) => a.key.compareTo(b.key))))
             {
               'category': e.key,
               'products': e.value.length,
-              'units': e.value.fold<int>(0, (a, r) => a + (r['quantity'] as int)),
+              'units': e.value.fold<int>(
+                0,
+                (a, r) => a + (r['quantity'] as int),
+              ),
               'value': r2(sum(e.value, 'stockValue')),
             },
         ],
@@ -638,7 +874,9 @@ class FakeProductBackend {
 
     if (path == '/api/reports/monthly-sales') {
       final year = int.tryParse(q['year'] ?? '');
-      if (year == null) return _error(400, 'VALIDATION_FAILED', 'Year is required');
+      if (year == null) {
+        return _error(400, 'VALIDATION_FAILED', 'Year is required');
+      }
       final months = [
         for (var m = 1; m <= 12; m++)
           () {
@@ -658,7 +896,9 @@ class FakeProductBackend {
       return _json(200, {
         'year': year,
         'months': months,
-        'totalNetSales': r2(months.fold<double>(0, (a, m) => a + (m['netSales'] as double))),
+        'totalNetSales': r2(
+          months.fold<double>(0, (a, m) => a + (m['netSales'] as double)),
+        ),
       });
     }
 
@@ -672,7 +912,11 @@ class FakeProductBackend {
 
     if (path == '/api/reports/daily-sales') {
       return _json(200, [
-        for (var d = fromD; !d.isAfter(toD); d = DateTime(d.year, d.month, d.day + 1))
+        for (
+          var d = fromD;
+          !d.isAfter(toD);
+          d = DateTime(d.year, d.month, d.day + 1)
+        )
           () {
             final f = '${iso(d)}T00:00:00';
             final t = '${iso(DateTime(d.year, d.month, d.day + 1))}T00:00:00';
@@ -692,25 +936,56 @@ class FakeProductBackend {
     if (path == '/api/reports/top-products') {
       final limit = int.tryParse(q['limit'] ?? '7') ?? 7;
       final byProduct = <String, Map<String, dynamic>>{};
+      void add(Map<String, dynamic> i, int units, double value) {
+        final key = '${i['productId'] ?? 'name:${i['productName']}'}';
+        final e = byProduct.putIfAbsent(
+          key,
+          () => {
+            'productId': i['productId'],
+            'name': i['productName'],
+            'units': 0,
+            'value': 0.0,
+          },
+        );
+        e['units'] = (e['units'] as int) + units;
+        e['value'] = (e['value'] as double) + value;
+      }
+
       for (final sale in done(from, toExcl)) {
         for (final i in (sale['items'] as List).cast<Map<String, dynamic>>()) {
-          final kept = (i['quantity'] as int) - (i['returnedQuantity'] as int);
-          if (kept <= 0) continue;
-          final value = (sale['total'] as double) * (i['lineTotal'] as double) /
-              (sale['subtotal'] as double) * kept / (i['quantity'] as int);
-          final key = '${i['productId'] ?? 'name:${i['productName']}'}';
-          final e = byProduct.putIfAbsent(key, () =>
-              {'productId': i['productId'], 'name': i['productName'], 'units': 0, 'value': 0.0});
-          e['units'] = (e['units'] as int) + kept;
-          e['value'] = (e['value'] as double) + value;
+          add(
+            i,
+            i['quantity'] as int,
+            (sale['total'] as double) *
+                (i['lineTotal'] as double) /
+                (sale['subtotal'] as double),
+          );
         }
       }
-      final all = byProduct.values.toList()
-        ..sort((a, b) => (b['value'] as double).compareTo(a['value'] as double));
-      final total = all.fold<double>(0, (a, e) => a + (e['value'] as double));
-      final units = all.fold<int>(0, (a, e) => a + (e['units'] as int));
+      for (final r in rets(from, toExcl)) {
+        final i = _itemOfReturn(r);
+        add(i, -(r['quantity'] as int), -(r['refundAmount'] as num).toDouble());
+      }
+      final rowsAll = byProduct.values.toList();
+      final total = rowsAll.fold<double>(
+        0,
+        (a, e) => a + (e['value'] as double),
+      );
+      final units = rowsAll.fold<int>(0, (a, e) => a + (e['units'] as int));
+      final all =
+          rowsAll
+              .where(
+                (e) => (e['units'] as int) > 0 && (e['value'] as double) > 0,
+              )
+              .toList()
+            ..sort(
+              (a, b) => (b['value'] as double).compareTo(a['value'] as double),
+            );
       final top = all.take(limit).toList();
-      final topValue = top.fold<double>(0, (a, e) => a + (e['value'] as double));
+      final topValue = top.fold<double>(
+        0,
+        (a, e) => a + (e['value'] as double),
+      );
       return _json(200, {
         'from': iso(fromD),
         'to': iso(toD),
@@ -723,31 +998,41 @@ class FakeProductBackend {
               'name': e['name'],
               'units': e['units'],
               'salesValue': r2(e['value'] as double),
-              'share': total == 0 ? 0.0 : r2((e['value'] as double) * 100 / total),
+              'share': total <= 0
+                  ? 0.0
+                  : r2((e['value'] as double) * 100 / total),
             },
         ],
         'othersValue': r2(total - topValue),
-        'othersUnits': units - top.fold<int>(0, (a, e) => a + (e['units'] as int)),
+        'othersUnits':
+            units - top.fold<int>(0, (a, e) => a + (e['units'] as int)),
       });
     }
 
     if (path == '/api/reports/summary') {
       final sl = done(from, toExcl);
       final rl = rets(from, toExcl);
-      final monthly = fromD.day == 1 && toD.day == DateTime(toD.year, toD.month + 1, 0).day &&
-          fromD.month == toD.month && fromD.year == toD.year;
-      final yearly = fromD.month == 1 && fromD.day == 1 && toD.month == 12 && toD.day == 31 &&
+      final monthly =
+          fromD.day == 1 &&
+          toD.day == DateTime(toD.year, toD.month + 1, 0).day &&
+          fromD.month == toD.month &&
+          fromD.year == toD.year;
+      final yearly =
+          fromD.month == 1 &&
+          fromD.day == 1 &&
+          toD.month == 12 &&
+          toD.day == 31 &&
           fromD.year == toD.year;
       final pf = yearly
           ? DateTime(fromD.year - 1, 1, 1)
           : monthly
-              ? DateTime(fromD.year, fromD.month - 1, 1)
-              : fromD.subtract(Duration(days: toD.difference(fromD).inDays + 1));
+          ? DateTime(fromD.year, fromD.month - 1, 1)
+          : fromD.subtract(Duration(days: toD.difference(fromD).inDays + 1));
       final pt = yearly
           ? DateTime(fromD.year - 1, 12, 31)
           : monthly
-              ? DateTime(fromD.year, fromD.month, 0)
-              : fromD.subtract(const Duration(days: 1));
+          ? DateTime(fromD.year, fromD.month, 0)
+          : fromD.subtract(const Duration(days: 1));
       final pfs = '${iso(pf)}T00:00:00';
       final pts = '${iso(pt.add(const Duration(days: 1)))}T00:00:00';
       final psl = done(pfs, pts);
@@ -763,47 +1048,177 @@ class FakeProductBackend {
         'netSales': r2(gross - sum(rl, 'refundAmount')),
         'invoiceCount': sl.length,
         'returnCount': rl.length,
-        'unitsSold': sl.fold<int>(0, (a, x) =>
-            a + (x['items'] as List).fold<int>(0, (b, i) => b + ((i as Map)['quantity'] as int))),
+        'unitsSold': sl.fold<int>(
+          0,
+          (a, x) =>
+              a +
+              (x['items'] as List).fold<int>(
+                0,
+                (b, i) => b + ((i as Map)['quantity'] as int),
+              ),
+        ),
         'unitsReturned': rl.fold<int>(0, (a, x) => a + (x['quantity'] as int)),
+        'netUnitsSold':
+            _units(sl) - rl.fold<int>(0, (a, x) => a + (x['quantity'] as int)),
         'averageInvoice': sl.isEmpty ? 0.0 : r2(gross / sl.length),
         'previous': {
           'from': iso(pf),
           'to': iso(pt),
           'netSales': r2(sum(psl, 'total') - sum(prl, 'refundAmount')),
           'invoiceCount': psl.length,
+          'netUnitsSold':
+              _units(psl) -
+              prl.fold<int>(0, (a, x) => a + (x['quantity'] as int)),
+          'profit':
+              _profit(sl, rl)['complete'] == true &&
+                  _profit(psl, prl)['complete'] == true
+              ? _profit(psl, prl)['amount']
+              : null,
         },
-        'profit': {'available': false, 'amount': null, 'reason': 'NO_COST_PRICE'},
+        'profit': _profit(sl, rl),
       });
     }
     return _error(404, 'NOT_FOUND', 'Unknown report');
   }
 
-  bool _barcodeTaken(List<Map<String, dynamic>> mine, String barcode, int? exceptId) =>
-      mine.any((r) => r['barcode'] == barcode && r['productId'] != exceptId);
+  int _units(List<Map<String, dynamic>> sales) => sales.fold<int>(
+    0,
+    (a, x) =>
+        a +
+        (x['items'] as List).fold<int>(
+          0,
+          (b, i) => b + ((i as Map)['quantity'] as int),
+        ),
+  );
+
+  Map<String, dynamic> _itemOfReturn(Map<String, dynamic> r) {
+    final sale = sales.firstWhere((x) => x['saleId'] == r['saleId']);
+    return (sale['items'] as List).cast<Map<String, dynamic>>().firstWhere(
+      (i) => i['saleItemId'] == r['saleItemId'],
+    );
+  }
+
+  /// Same rule as the backend: revenue without tax after the invoice discount
+  /// − the cost saved at sale time; returns subtracted on their date.
+  Map<String, dynamic> _profit(
+    List<Map<String, dynamic>> sl,
+    List<Map<String, dynamic>> rl,
+  ) {
+    double r2(num v) => (v * 100).round() / 100;
+    var lines = 0, missing = 0;
+    var revenue = 0.0, covered = 0.0, cost = 0.0;
+    void line(
+      Map<String, dynamic> sale,
+      Map<String, dynamic> i,
+      int units,
+      int sign,
+    ) {
+      lines++;
+      final rev =
+          (i['lineTotal'] as double) *
+          ((sale['subtotal'] as double) - (sale['discount'] as double)) /
+          (sale['subtotal'] as double) *
+          units /
+          (i['quantity'] as int);
+      revenue += sign * rev;
+      final c = unitCosts[i['saleItemId']];
+      if (c == null) {
+        missing++;
+      } else {
+        covered += sign * rev;
+        cost += sign * c * units;
+      }
+    }
+
+    for (final sale in sl) {
+      for (final i in (sale['items'] as List).cast<Map<String, dynamic>>()) {
+        line(sale, i, i['quantity'] as int, 1);
+      }
+    }
+    for (final r in rl) {
+      line(
+        sales.firstWhere((x) => x['saleId'] == r['saleId']),
+        _itemOfReturn(r),
+        r['quantity'] as int,
+        -1,
+      );
+    }
+    if (missing == 0) {
+      return {
+        'status': 'COMPLETE',
+        'available': true,
+        'complete': true,
+        'amount': r2(covered - cost),
+        'revenueExTax': r2(revenue),
+        'coveredRevenueExTax': r2(covered),
+        'costOfGoods': r2(cost),
+        'coveragePercent': 100.0,
+        'linesWithoutCost': 0,
+        'reason': null,
+      };
+    }
+    if (missing == lines) {
+      return {
+        'status': 'NOT_AVAILABLE',
+        'available': false,
+        'complete': false,
+        'amount': null,
+        'revenueExTax': r2(revenue),
+        'coveredRevenueExTax': 0.0,
+        'costOfGoods': 0.0,
+        'coveragePercent': 0.0,
+        'linesWithoutCost': missing,
+        'reason': 'NO_COST_PRICE',
+      };
+    }
+    return {
+      'status': 'PARTIAL',
+      'available': true,
+      'complete': false,
+      'amount': r2(covered - cost),
+      'revenueExTax': r2(revenue),
+      'coveredRevenueExTax': r2(covered),
+      'costOfGoods': r2(cost),
+      'coveragePercent': revenue > 0
+          ? r2((covered * 100 / revenue).clamp(0, 100))
+          : null,
+      'linesWithoutCost': missing,
+      'reason': 'MISSING_COST',
+    };
+  }
+
+  bool _barcodeTaken(
+    List<Map<String, dynamic>> mine,
+    String barcode,
+    int? exceptId,
+  ) => mine.any((r) => r['barcode'] == barcode && r['productId'] != exceptId);
 
   static http.Response _duplicate(String barcode) => _error(
-        409,
-        'DUPLICATE_BARCODE',
-        'Another product in this store already uses barcode $barcode',
-        {'barcode': 'Another product in this store already uses barcode $barcode'},
-      );
+    409,
+    'DUPLICATE_BARCODE',
+    'Another product in this store already uses barcode $barcode',
+    {'barcode': 'Another product in this store already uses barcode $barcode'},
+  );
 
   static http.Response _forbidden() =>
       _error(403, 'FORBIDDEN', 'You are not allowed to do this');
 
   /// Builds a ProductResponse row, including the backend's business-logic
   /// results (stockStatus, stockValue).
-  static Map<String, dynamic> _productRow(int id, int storeId, Map<String, dynamic> body,
-      {String createdAt = '2025-06-01T12:00:00'}) {
+  static Map<String, dynamic> _productRow(
+    int id,
+    int storeId,
+    Map<String, dynamic> body, {
+    String createdAt = '2025-06-01T12:00:00',
+  }) {
     final quantity = (body['quantity'] as num).toInt();
     final minStock = (body['minStock'] as num).toInt();
     final price = (body['sellingPrice'] as num).toDouble();
     final status = quantity <= 0
         ? 'OUT_OF_STOCK'
         : quantity <= minStock
-            ? 'LOW_STOCK'
-            : 'IN_STOCK';
+        ? 'LOW_STOCK'
+        : 'IN_STOCK';
     return {
       'productId': id,
       'storeId': storeId,
@@ -819,23 +1234,27 @@ class FakeProductBackend {
       'stockValue': price * quantity,
       'image': body['image'],
       'imageName': body['imageName'],
+      'costPrice': (body['costPrice'] as num?)?.toDouble(),
       'createdAt': createdAt,
       'updatedAt': '2025-06-01T12:00:00',
     };
   }
 
-  static http.Response _error(int status, String code, String message,
-          [Map<String, String> fieldErrors = const {}]) =>
-      _json(status, {
-        'status': status,
-        'code': code,
-        'message': message,
-        'fieldErrors': fieldErrors,
-      });
+  static http.Response _error(
+    int status,
+    String code,
+    String message, [
+    Map<String, String> fieldErrors = const {},
+  ]) => _json(status, {
+    'status': status,
+    'code': code,
+    'message': message,
+    'fieldErrors': fieldErrors,
+  });
 
   static http.Response _json(int status, Object body) => http.Response(
-        jsonEncode(body),
-        status,
-        headers: {'content-type': 'application/json; charset=utf-8'},
-      );
+    jsonEncode(body),
+    status,
+    headers: {'content-type': 'application/json; charset=utf-8'},
+  );
 }

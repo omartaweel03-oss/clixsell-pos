@@ -121,7 +121,9 @@ class ReportApiIntegrationTest extends ApiTestBase {
                 .andExpect(jsonPath("$.previous.to").value("2026-02-28"))
                 .andExpect(jsonPath("$.previous.netSales").value(0.0))
                 .andExpect(jsonPath("$.previous.invoiceCount").value(0))
-                // No purchase cost exists, so profit is never estimated.
+                // These products have no purchase cost, so profit is never estimated.
+                .andExpect(jsonPath("$.netUnitsSold").value(6))
+                .andExpect(jsonPath("$.profit.status").value("NOT_AVAILABLE"))
                 .andExpect(jsonPath("$.profit.available").value(false))
                 .andExpect(jsonPath("$.profit.amount").doesNotExist())
                 .andExpect(jsonPath("$.profit.reason").value("NO_COST_PRICE"));
@@ -322,7 +324,9 @@ class ReportApiIntegrationTest extends ApiTestBase {
                 .andExpect(jsonPath("$.netSales").value(0.0))
                 .andExpect(jsonPath("$.invoiceCount").value(0))
                 .andExpect(jsonPath("$.averageInvoice").value(0.0))
-                .andExpect(jsonPath("$.profit.available").value(false));
+                // nothing sold: the profit is exactly 0
+                .andExpect(jsonPath("$.profit.status").value("COMPLETE"))
+                .andExpect(jsonPath("$.profit.amount").value(0.0));
         mvc.perform(get("/api/reports/daily-sales?" + MARCH).header("Authorization", t))
                 .andExpect(jsonPath("$", hasSize(31)))
                 .andExpect(jsonPath("$[10].netSales").value(0.0));

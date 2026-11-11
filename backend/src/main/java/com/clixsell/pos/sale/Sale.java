@@ -251,6 +251,7 @@ public class Sale {
         }
         for (SaleItem item : items) {
             item.getProduct().updateStock(-item.getQuantity());
+            item.recordUnitCost(); // sale-time cost snapshot for profit
         }
         LocalDateTime now = now();
         status = SaleStatus.COMPLETED;

@@ -26,6 +26,7 @@ class Product {
     this.imageBytes,
     this.imageName,
     this.serverStockStatus,
+    this.costPrice,
   });
 
   /// Builds a product from the backend's JSON (ProductResponse).
@@ -35,7 +36,8 @@ class Product {
       id: json['productId'].toString(),
       name: json['name'] as String,
       barcode: json['barcode'] as String,
-      category: ProductCategory.values.asNameMap()[json['category']] ??
+      category:
+          ProductCategory.values.asNameMap()[json['category']] ??
           ProductCategory.other,
       price: (json['sellingPrice'] as num).toDouble(),
       quantity: (json['quantity'] as num).toInt(),
@@ -46,21 +48,23 @@ class Product {
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
       serverStockStatus: _statusFromApi[json['stockStatus']],
+      costPrice: (json['costPrice'] as num?)?.toDouble(),
     );
   }
 
   /// JSON body for POST / PUT /api/products (the backend's ProductRequest).
   Map<String, dynamic> toRequestJson() => {
-        'name': name,
-        'barcode': barcode,
-        'category': category.name,
-        'sellingPrice': price,
-        'quantity': quantity,
-        'minStock': minStockLevel,
-        'supplierName': supplier,
-        'image': hasImage ? base64Encode(imageBytes!) : null,
-        'imageName': hasImage ? imageName : null,
-      };
+    'name': name,
+    'barcode': barcode,
+    'category': category.name,
+    'sellingPrice': price,
+    'quantity': quantity,
+    'minStock': minStockLevel,
+    'supplierName': supplier,
+    'image': hasImage ? base64Encode(imageBytes!) : null,
+    'imageName': hasImage ? imageName : null,
+    'costPrice': costPrice,
+  };
 
   static const Map<String, StockStatus> _statusFromApi = {
     'IN_STOCK': StockStatus.inStock,
@@ -80,6 +84,10 @@ class Product {
   final String? imageName;
   final DateTime createdAt;
   final DateTime updatedAt;
+
+  /// Purchase cost per unit (for profit). Null when not known, and always
+  /// null for cashiers (the backend never sends it to them).
+  final double? costPrice;
 
   /// Stock status calculated by the backend's Product business logic.
   /// Null for a product that has not been saved yet.
@@ -114,6 +122,8 @@ class Product {
     String? imageName,
     bool removeImage = false,
     DateTime? updatedAt,
+    double? costPrice,
+    bool clearCost = false,
   }) {
     return Product(
       id: id,
@@ -128,6 +138,7 @@ class Product {
       imageName: removeImage ? null : (imageName ?? this.imageName),
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      costPrice: clearCost ? null : (costPrice ?? this.costPrice),
     );
   }
 

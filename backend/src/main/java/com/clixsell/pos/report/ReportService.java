@@ -43,7 +43,10 @@ import java.util.TreeMap;
  *   <li>Product performance = units sold minus units returned, valued with the same
  *       proportional rule used for refunds.</li>
  *   <li>Low / out of stock use the existing product rules (quantity ≤ minimum stock / = 0).</li>
- *   <li>Profit is not available: products have no purchase cost yet.</li>
+ *   <li>Profit = revenue without tax (after discount) − the purchase cost saved on
+ *       each line at sale time; returns subtract their revenue and cost on the return
+ *       date. Lines without a saved cost are never guessed: profit is then PARTIAL
+ *       (lines with a cost only) or NOT_AVAILABLE.</li>
  * </ul>
  */
 @Service
@@ -64,18 +67,44 @@ public class ReportService {
     public Summary summary(long storeId, ReportPeriod period) {
         SalesTotals sales = reports.salesTotals(storeId, period);
         RefundTotals refunds = reports.refundTotals(storeId, period);
+        long unitsSold = reports.unitsSold(storeId, period);
+        Profit profit = profit(reports.profitParts(storeId, period));
+
         ReportPeriod prev = period.previous();
         SalesTotals prevSales = reports.salesTotals(storeId, prev);
         RefundTotals prevRefunds = reports.refundTotals(storeId, prev);
+        Profit prevProfit = profit(reports.profitParts(storeId, prev));
         return new Summary(period.from(), period.to(),
                 round(sales.total()), round(sales.discount()), round(sales.tax()),
                 round(refunds.refunds()), round(sales.total() - refunds.refunds()),
                 sales.invoices(), refunds.returns(),
-                reports.unitsSold(storeId, period), refunds.units(),
+                unitsSold, refunds.units(), unitsSold - refunds.units(),
                 sales.invoices() == 0 ? 0 : round(sales.total() / sales.invoices()),
                 new Previous(prev.from(), prev.to(),
-                        round(prevSales.total() - prevRefunds.refunds()), prevSales.invoices()),
-                Profit.notAvailable());
+                        round(prevSales.total() - prevRefunds.refunds()), prevSales.invoices(),
+                        reports.unitsSold(storeId, prev) - prevRefunds.units(),
+                        profit.complete() && prevProfit.complete() ? prevProfit.amount() : null),
+                profit);
+    }
+
+    /** Turns the period's revenue / cost parts into a profit that never pretends to be complete. */
+    static Profit profit(ReportRepository.ProfitParts p) {
+        double revenue = round(p.revenue());
+        double covered = round(p.coveredRevenue());
+        double cost = round(p.cost());
+        if (p.linesWithoutCost() == 0) {
+            // Every line has a cost (or there was nothing to sell / return): exact profit.
+            return new Profit("COMPLETE", true, true, round(p.coveredRevenue() - p.cost()), revenue, covered, cost,
+                    100.0, 0, null);
+        }
+        if (p.linesWithoutCost() == p.lines()) {
+            return new Profit("NOT_AVAILABLE", false, false, null, revenue, 0, 0, 0.0, p.linesWithoutCost(),
+                    "NO_COST_PRICE");
+        }
+        Double coverage = p.revenue() > 0 ? round(Math.max(0, Math.min(100, p.coveredRevenue() * 100 / p.revenue())))
+                : null;
+        return new Profit("PARTIAL", true, false, round(p.coveredRevenue() - p.cost()), revenue, covered, cost,
+                coverage, p.linesWithoutCost(), "MISSING_COST");
     }
 
     public List<DayPoint> dailySales(long storeId, ReportPeriod period) {
@@ -106,15 +135,18 @@ public class ReportService {
         if (n < 1 || n > MAX_TOP) {
             throw new ValidationException(Map.of("limit", "Limit must be between 1 and " + MAX_TOP));
         }
-        List<ProductSales> all = reports.productSales(storeId, period);
-        double totalValue = all.stream().mapToDouble(ProductSales::value).sum();
-        long totalUnits = all.stream().mapToLong(ProductSales::units).sum();
+        List<ProductSales> rows = reports.productSales(storeId, period);
+        // Totals include returns of earlier sales (so they match Net Revenue / Net Units);
+        // the list shows products with units still sold in the period.
+        double totalValue = rows.stream().mapToDouble(ProductSales::value).sum();
+        long totalUnits = rows.stream().mapToLong(ProductSales::units).sum();
+        List<ProductSales> all = rows.stream().filter(r -> r.units() > 0 && r.value() > 0).toList();
         List<TopProduct> top = new ArrayList<>();
         double topValue = 0;
         long topUnits = 0;
         for (ProductSales p : all.subList(0, Math.min(n, all.size()))) {
             top.add(new TopProduct(p.productId(), p.name(), p.units(), round(p.value()),
-                    totalValue == 0 ? 0 : round(p.value() * 100 / totalValue)));
+                    totalValue <= 0 ? 0 : round(p.value() * 100 / totalValue)));
             topValue += p.value();
             topUnits += p.units();
         }

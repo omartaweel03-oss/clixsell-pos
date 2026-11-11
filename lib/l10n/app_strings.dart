@@ -574,6 +574,17 @@ class AppStrings {
   String get discard => _t('Discard', 'تجاهل');
   String get keepEditing => _t('Keep editing', 'متابعة التعديل');
 
+  // ── Purchase cost (profit) ────────────────────────────────────────────────
+  String get fieldCostPrice => _t('Cost price (₪)', 'سعر التكلفة (₪)');
+  String get fieldCostPriceHelper => _t(
+    'Optional. Used for profit reports; cashiers never see it.',
+    'اختياري. يُستخدم لتقارير الأرباح ولا يظهر للكاشير.',
+  );
+  String get costAbovePrice => _t(
+    'Cost is higher than the selling price (sold at a loss).',
+    'التكلفة أعلى من سعر البيع (بيع بخسارة).',
+  );
+
   // ── Reports & Sales Analytics (report Figures 3.7 / 3.8) ──────────────────
   String get navSectionReports => _t('REPORTS', 'التقارير');
   String get navReports => _t('Reports', 'التقارير');
@@ -653,10 +664,27 @@ class AppStrings {
   String get nearReorder =>
       _t('Products running out', 'الأصناف التي أوشكت على النفاد');
   String get featuredProducts => _t('Featured products', 'المنتجات المميزة');
-  String get cardTotalSales => _t('Total sales', 'إجمالي المبيعات');
-  String get cardInventoryValue => _t('Total value', 'إجمالي القيمة');
-  String get cardInvoices => _t('Invoices', 'عدد الفواتير');
-  String get cardProfit => _t('Total profit', 'إجمالي الأرباح');
+  // Card labels (Figure 3.8: إجمالي مبيعات · إجمالي القيمة · عدد الفواتير · إجمالي الأرباح)
+  String get cardNetUnits => _t('Net units sold', 'صافي الوحدات المباعة');
+  String get cardNetRevenue => _t('Net revenue', 'صافي الإيراد');
+  String get cardInvoices => _t('Invoice count', 'عدد الفواتير');
+  String get cardProfit => _t('Profit', 'الربح');
+  String get netUnitsHint => _t('Sold − returned', 'المباع − المرتجع');
+  String get netRevenueHint => _t(
+    'Incl. tax, after discounts and returns',
+    'شامل الضريبة بعد الخصم والمرتجعات',
+  );
+  String get profitPartialTitle => _t('Profit (partial)', 'الربح (جزئي)');
+  String profitPartialNote(String pct) => _t(
+    'Only $pct of revenue has a known cost – not a complete total',
+    'يشمل $pct فقط من الإيراد (له تكلفة معروفة) – ليس إجمالياً كاملاً',
+  );
+  String get profitPartialNoteNoPct => _t(
+    'Some sales have no known cost – not a complete total',
+    'بعض المبيعات بدون تكلفة معروفة – ليس إجمالياً كاملاً',
+  );
+  String get profitCompleteNote =>
+      _t('Revenue without tax − cost', 'الإيراد بدون ضريبة − التكلفة');
   String get vsLastMonth => _t('vs last month', 'من الشهر الماضي');
   String get vsLastYear => _t('vs last year', 'من السنة الماضية');
   String get noPreviousData =>
@@ -716,5 +744,12 @@ class AppStrings {
       _t('Units sold / returned', 'الوحدات المباعة / المرتجعة');
   String get rReturns => _t('Returns', 'المرتجعات');
   String get rProfit => _t('Profit', 'الربح');
+  String get rRevenueExTax => _t('Revenue without tax', 'الإيراد بدون ضريبة');
+  String get rCost => _t('Cost of goods sold', 'تكلفة البضاعة المباعة');
+  String get rNetUnits => _t('Net units sold', 'صافي الوحدات المباعة');
+  String rProfitPartial(String amount, String pct) => _t(
+    '$amount (partial: only $pct of revenue has a known cost)',
+    '$amount (جزئي: $pct فقط من الإيراد له تكلفة معروفة)',
+  );
   String get rTop => _t('Best-selling products', 'أكثر المنتجات مبيعاً');
 }

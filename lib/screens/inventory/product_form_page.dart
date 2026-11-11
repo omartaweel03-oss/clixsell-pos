@@ -47,6 +47,7 @@ class ProductFormPageState extends State<ProductFormPage> {
   late final TextEditingController _name;
   late final TextEditingController _barcode;
   late final TextEditingController _price;
+  late final TextEditingController _cost;
   late final TextEditingController _quantity;
   late final TextEditingController _minStock;
   late final TextEditingController _supplier;
@@ -71,6 +72,9 @@ class ProductFormPageState extends State<ProductFormPage> {
     _name = TextEditingController(text: p?.name ?? '');
     _barcode = TextEditingController(text: p?.barcode ?? '');
     _price = TextEditingController(text: p == null ? '' : _priceText(p.price));
+    _cost = TextEditingController(
+      text: p?.costPrice == null ? '' : _priceText(p!.costPrice!),
+    );
     _quantity = TextEditingController(text: p?.quantity.toString() ?? '');
     _minStock = TextEditingController(text: p?.minStockLevel.toString() ?? '');
     _supplier = TextEditingController(text: p?.supplier ?? '');
@@ -86,6 +90,10 @@ class ProductFormPageState extends State<ProductFormPage> {
     _name.addListener(() => _clearServerError('name'));
     _barcode.addListener(() => _clearServerError('barcode'));
     _price.addListener(() => _clearServerError('sellingPrice'));
+    _cost.addListener(() => _clearServerError('costPrice'));
+    // the "cost above price" hint follows both fields
+    _cost.addListener(() => setState(() {}));
+    _price.addListener(() => setState(() {}));
     _quantity.addListener(() => _clearServerError('quantity'));
     _minStock.addListener(() => _clearServerError('minStock'));
     _supplier.addListener(() => _clearServerError('supplierName'));
@@ -104,6 +112,7 @@ class ProductFormPageState extends State<ProductFormPage> {
     _name.dispose();
     _barcode.dispose();
     _price.dispose();
+    _cost.dispose();
     _quantity.dispose();
     _minStock.dispose();
     _supplier.dispose();
@@ -122,6 +131,7 @@ class ProductFormPageState extends State<ProductFormPage> {
       return _name.text.isNotEmpty ||
           _barcode.text.isNotEmpty ||
           _price.text.isNotEmpty ||
+          _cost.text.isNotEmpty ||
           _quantity.text.isNotEmpty ||
           _minStock.text.isNotEmpty ||
           _supplier.text.isNotEmpty ||
@@ -131,6 +141,8 @@ class ProductFormPageState extends State<ProductFormPage> {
     return _name.text.trim() != p.name ||
         _barcode.text.trim() != p.barcode ||
         _price.text.trim() != _priceText(p.price) ||
+        _cost.text.trim() !=
+            (p.costPrice == null ? '' : _priceText(p.costPrice!)) ||
         _quantity.text.trim() != p.quantity.toString() ||
         _minStock.text.trim() != p.minStockLevel.toString() ||
         _supplier.text.trim() != p.supplier ||
@@ -197,7 +209,8 @@ class ProductFormPageState extends State<ProductFormPage> {
     final store = ProductStoreScope.read(context);
     String code;
     try {
-      code = await store.generateBarcode(); // GET /api/products/generate-barcode
+      code = await store
+          .generateBarcode(); // GET /api/products/generate-barcode
     } on ApiException {
       code = _localBarcode(store);
     }
@@ -229,10 +242,12 @@ class ProductFormPageState extends State<ProductFormPage> {
       setState(() => _autovalidate = AutovalidateMode.onUserInteraction);
       messenger
         ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(
-          content: Text(s.vFixErrors),
-          backgroundColor: AppColors.danger,
-        ));
+        ..showSnackBar(
+          SnackBar(
+            content: Text(s.vFixErrors),
+            backgroundColor: AppColors.danger,
+          ),
+        );
       return;
     }
 
@@ -241,6 +256,7 @@ class ProductFormPageState extends State<ProductFormPage> {
       final name = _name.text.trim();
       final barcode = _barcode.text.trim();
       final price = double.parse(_price.text.trim());
+      final cost = double.tryParse(_cost.text.trim()); // empty = not known
       final quantity = int.parse(_quantity.text.trim());
       final minStock = int.parse(_minStock.text.trim());
       final supplier = _supplier.text.trim();
@@ -248,7 +264,8 @@ class ProductFormPageState extends State<ProductFormPage> {
       final Product saved;
       final existing = widget.initialProduct;
       if (existing == null) {
-        saved = await store.addProduct( // POST /api/products → INSERT
+        saved = await store.addProduct(
+          // POST /api/products → INSERT
           name: name,
           barcode: barcode,
           category: _category!,
@@ -258,6 +275,7 @@ class ProductFormPageState extends State<ProductFormPage> {
           supplier: supplier,
           imageBytes: _imageBytes,
           imageName: _imageName,
+          costPrice: cost,
         );
       } else {
         final updated = existing.copyWith(
@@ -271,8 +289,12 @@ class ProductFormPageState extends State<ProductFormPage> {
           imageBytes: _imageBytes,
           imageName: _imageName,
           removeImage: _imageBytes == null,
+          costPrice: cost,
+          clearCost: cost == null,
         );
-        saved = await store.updateProduct(updated); // PUT /api/products/{id} → UPDATE
+        saved = await store.updateProduct(
+          updated,
+        ); // PUT /api/products/{id} → UPDATE
       }
       widget.onSaved(saved);
     } on ApiException catch (e) {
@@ -284,7 +306,10 @@ class ProductFormPageState extends State<ProductFormPage> {
   /// Shows a backend error: on the matching fields when the backend names
   /// them, otherwise as a message at the bottom of the screen.
   void _showServerError(
-      ApiException e, AppStrings s, ScaffoldMessengerState messenger) {
+    ApiException e,
+    AppStrings s,
+    ScaffoldMessengerState messenger,
+  ) {
     setState(() {
       _saving = false;
       _serverErrors.clear();
@@ -315,10 +340,12 @@ class ProductFormPageState extends State<ProductFormPage> {
     }
     messenger
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(
-        content: Text(e.isNetworkError ? reason : s.saveFailed(reason)),
-        backgroundColor: AppColors.danger,
-      ));
+      ..showSnackBar(
+        SnackBar(
+          content: Text(e.isNetworkError ? reason : s.saveFailed(reason)),
+          backgroundColor: AppColors.danger,
+        ),
+      );
   }
 
   @override
@@ -362,11 +389,15 @@ class ProductFormPageState extends State<ProductFormPage> {
           onPressed: _generateBarcode,
         ),
       ),
-      validator: (value) => _serverErrors['barcode'] ?? v.barcode(
-        value,
-        isTaken: (code) =>
-            store.isBarcodeTaken(code, excludeId: widget.initialProduct?.id),
-      ),
+      validator: (value) =>
+          _serverErrors['barcode'] ??
+          v.barcode(
+            value,
+            isTaken: (code) => store.isBarcodeTaken(
+              code,
+              excludeId: widget.initialProduct?.id,
+            ),
+          ),
     );
 
     final categoryField = DropdownButtonFormField<ProductCategory>(
@@ -407,6 +438,35 @@ class ProductFormPageState extends State<ProductFormPage> {
         prefixIcon: const Icon(Icons.payments_outlined),
       ),
       validator: (value) => _serverErrors['sellingPrice'] ?? v.price(value),
+    );
+
+    final costValue = double.tryParse(_cost.text.trim());
+    final priceValue = double.tryParse(_price.text.trim());
+    final costAbovePrice =
+        costValue != null && priceValue != null && costValue > priceValue;
+    final costField = TextFormField(
+      key: const Key('costPriceField'),
+      controller: _cost,
+      textInputAction: TextInputAction.next,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: [
+        FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+        LengthLimitingTextInputFormatter(12),
+      ],
+      decoration: InputDecoration(
+        labelText: s.fieldCostPrice,
+        hintText: '0.00',
+        helperText: costAbovePrice ? s.costAbovePrice : s.fieldCostPriceHelper,
+        helperMaxLines: 2,
+        helperStyle: costAbovePrice
+            ? const TextStyle(
+                color: AppColors.warning,
+                fontWeight: FontWeight.w600,
+              )
+            : null,
+        prefixIcon: const Icon(Icons.price_change_outlined),
+      ),
+      validator: (value) => _serverErrors['costPrice'] ?? v.costPrice(value),
     );
 
     final quantityField = TextFormField(
@@ -485,7 +545,7 @@ class ProductFormPageState extends State<ProductFormPage> {
       icon: Icons.sell_outlined,
       title: s.sectionPricingStock,
       children: [
-        priceField,
+        _ResponsivePair(first: priceField, second: costField),
         _ResponsivePair(first: quantityField, second: minStockField),
       ],
     );
@@ -528,7 +588,9 @@ class ProductFormPageState extends State<ProductFormPage> {
                   width: 18,
                   height: 18,
                   child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Colors.white),
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
                 )
               : const Icon(Icons.check_rounded, size: 20),
           label: Text(editing ? s.saveChanges : s.save),
@@ -539,15 +601,20 @@ class ProductFormPageState extends State<ProductFormPage> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final wide = constraints.maxWidth >= 980;
-        final horizontal =
-            constraints.maxWidth < 600 ? AppSpacing.lg : AppSpacing.xxl;
+        final horizontal = constraints.maxWidth < 600
+            ? AppSpacing.lg
+            : AppSpacing.xxl;
 
         return Form(
           key: _formKey,
           autovalidateMode: _autovalidate,
           child: SingleChildScrollView(
             padding: EdgeInsets.fromLTRB(
-                horizontal, AppSpacing.xl, horizontal, AppSpacing.xxl),
+              horizontal,
+              AppSpacing.xl,
+              horizontal,
+              AppSpacing.xxl,
+            ),
             child: Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 1200),
@@ -725,7 +792,11 @@ class _ResponsivePair extends StatelessWidget {
         if (c.maxWidth < 480) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [first, const SizedBox(height: AppSpacing.lg + 2), second],
+            children: [
+              first,
+              const SizedBox(height: AppSpacing.lg + 2),
+              second,
+            ],
           );
         }
         return Row(
@@ -782,53 +853,54 @@ class _ImagePickerBox extends StatelessWidget {
               child: loading
                   ? const Center(child: CircularProgressIndicator())
                   : hasImage
-                      ? Padding(
-                          padding: const EdgeInsets.all(AppSpacing.md),
-                          child: ProductThumbnail(
-                            imageBytes: bytes,
-                            size: double.infinity,
-                            radius: AppSpacing.radiusSm,
+                  ? Padding(
+                      padding: const EdgeInsets.all(AppSpacing.md),
+                      child: ProductThumbnail(
+                        imageBytes: bytes,
+                        size: double.infinity,
+                        radius: AppSpacing.radiusSm,
+                      ),
+                    )
+                  : Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 60,
+                          height: 60,
+                          decoration: const BoxDecoration(
+                            color: AppColors.primarySoft,
+                            shape: BoxShape.circle,
                           ),
-                        )
-                      : Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Container(
-                              width: 60,
-                              height: 60,
-                              decoration: const BoxDecoration(
-                                color: AppColors.primarySoft,
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(
-                                Icons.cloud_upload_outlined,
-                                color: AppColors.primary,
-                                size: 30,
-                              ),
-                            ),
-                            const SizedBox(height: AppSpacing.md),
-                            Text(
-                              s.uploadImage,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.primary,
-                              ),
-                            ),
-                            const SizedBox(height: AppSpacing.xs),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: AppSpacing.lg),
-                              child: Text(
-                                s.imageHint,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: AppColors.textMuted,
-                                ),
-                              ),
-                            ),
-                          ],
+                          child: const Icon(
+                            Icons.cloud_upload_outlined,
+                            color: AppColors.primary,
+                            size: 30,
+                          ),
                         ),
+                        const SizedBox(height: AppSpacing.md),
+                        Text(
+                          s.uploadImage,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.xs),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.lg,
+                          ),
+                          child: Text(
+                            s.imageHint,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textMuted,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
             ),
           ),
         ),
@@ -849,7 +921,9 @@ class _ImagePickerBox extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                      fontSize: 12.5, color: AppColors.textSecondary),
+                    fontSize: 12.5,
+                    color: AppColors.textSecondary,
+                  ),
                 ),
               ),
               TextButton.icon(
@@ -931,11 +1005,15 @@ class _Timestamps extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('${s.createdAt}: ${Formatters.date(product.createdAt)}',
-            style: style),
+        Text(
+          '${s.createdAt}: ${Formatters.date(product.createdAt)}',
+          style: style,
+        ),
         const SizedBox(height: 2),
-        Text('${s.updatedAt}: ${Formatters.date(product.updatedAt)}',
-            style: style),
+        Text(
+          '${s.updatedAt}: ${Formatters.date(product.updatedAt)}',
+          style: style,
+        ),
       ],
     );
   }

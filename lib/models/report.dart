@@ -26,6 +26,8 @@ class ReportPeriod {
   String get query => 'from=${iso(from)}&to=${iso(to)}';
 }
 
+enum ProfitStatus { complete, partial, notAvailable }
+
 /// Report cards (Figure 3.8).
 class SalesSummary {
   const SalesSummary({
@@ -41,10 +43,16 @@ class SalesSummary {
     required this.unitsSold,
     required this.unitsReturned,
     required this.averageInvoice,
+    required this.netUnitsSold,
     required this.previousNetSales,
     required this.previousInvoiceCount,
-    required this.profitAvailable,
+    required this.previousNetUnitsSold,
+    required this.profitStatus,
+    required this.profitRevenueExTax,
+    required this.profitCostOfGoods,
     this.profit,
+    this.profitCoverage,
+    this.previousProfit,
   });
 
   factory SalesSummary.fromJson(Map<String, dynamic> j) {
@@ -62,11 +70,21 @@ class SalesSummary {
       returnCount: _i(j['returnCount']),
       unitsSold: _i(j['unitsSold']),
       unitsReturned: _i(j['unitsReturned']),
+      netUnitsSold: _i(j['netUnitsSold']),
       averageInvoice: _d(j['averageInvoice']),
       previousNetSales: _d(prev['netSales']),
       previousInvoiceCount: _i(prev['invoiceCount']),
-      profitAvailable: profit['available'] == true,
+      previousNetUnitsSold: _i(prev['netUnitsSold']),
+      previousProfit: (prev['profit'] as num?)?.toDouble(),
+      profitStatus: switch (profit['status']) {
+        'COMPLETE' => ProfitStatus.complete,
+        'PARTIAL' => ProfitStatus.partial,
+        _ => ProfitStatus.notAvailable,
+      },
       profit: (profit['amount'] as num?)?.toDouble(),
+      profitCoverage: (profit['coveragePercent'] as num?)?.toDouble(),
+      profitRevenueExTax: _d(profit['revenueExTax']),
+      profitCostOfGoods: _d(profit['costOfGoods']),
     );
   }
 
@@ -86,12 +104,26 @@ class SalesSummary {
   final int unitsSold;
   final int unitsReturned;
   final double averageInvoice;
+
+  /// Units sold minus units returned in the period.
+  final int netUnitsSold;
   final double previousNetSales;
   final int previousInvoiceCount;
+  final int previousNetUnitsSold;
 
-  /// False while products have no purchase cost: profit is then not shown.
-  final bool profitAvailable;
+  /// Previous period's profit, only when both periods are complete.
+  final double? previousProfit;
+
+  /// Complete, partial (only the lines with a known cost) or not available.
+  final ProfitStatus profitStatus;
+
+  /// Profit amount: complete total, or the partial part; null when not available.
   final double? profit;
+
+  /// Percent of the revenue (without tax) whose cost is known.
+  final double? profitCoverage;
+  final double profitRevenueExTax;
+  final double profitCostOfGoods;
 
   /// Percent change against the previous period, or null when it had nothing.
   static double? change(num current, num previous) =>

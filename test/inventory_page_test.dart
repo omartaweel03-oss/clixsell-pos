@@ -143,6 +143,61 @@ void main() {
     expect(_statValue(tester, 'statValue'), '₪ 160.00'); // 126 + 8.5*4
   });
 
+  testWidgets('cost price: optional field for the Store Admin, saved and never sent to cashiers', (tester) async {
+    final backend = _backend();
+    await _pumpAsStoreAdmin(tester, backend);
+    await tester.tap(find.byKey(const Key('headerAddProductButton')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('nameField')), 'Olive Oil');
+    await tester.enterText(find.byKey(const Key('barcodeField')), '55555555');
+    await tester.tap(find.byKey(const Key('categoryField')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Groceries').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('priceField')), '38');
+    await tester.enterText(find.byKey(const Key('quantityField')), '5');
+    await tester.enterText(find.byKey(const Key('minStockField')), '2');
+    await tester.enterText(find.byKey(const Key('supplierField')), 'Al-Zaytouna');
+
+    // Invalid cost is refused; a cost above the price only warns.
+    await tester.enterText(find.byKey(const Key('costPriceField')), '1.234');
+    await tester.ensureVisible(find.byKey(const Key('saveButton')));
+    await tester.tap(find.byKey(const Key('saveButton')));
+    await tester.pumpAndSettle();
+    expect(backend.requests.where((r) => r == 'POST /api/products'), isEmpty);
+    await tester.enterText(find.byKey(const Key('costPriceField')), '40');
+    await tester.pumpAndSettle();
+    expect(find.text('Cost is higher than the selling price (sold at a loss).'), findsOneWidget);
+    await tester.enterText(find.byKey(const Key('costPriceField')), '29.50');
+    await tester.pumpAndSettle();
+    expect(find.text('Optional. Used for profit reports; cashiers never see it.'), findsOneWidget);
+    await tester.ensureVisible(find.byKey(const Key('saveButton')));
+    await tester.tap(find.byKey(const Key('saveButton')));
+    await tester.pumpAndSettle();
+    expect(backend.rows.last['name'], 'Olive Oil');
+    expect(backend.rows.last['costPrice'], 29.5);
+
+    // Edit: the cost is shown, and clearing it means "unknown" (null).
+    final id = backend.rows.last['productId'];
+    await tester.tap(find.byKey(Key('edit-$id')));
+    await tester.pumpAndSettle();
+    expect(find.descendant(of: find.byKey(const Key('costPriceField')), matching: find.text('29.50')),
+        findsOneWidget);
+    await tester.enterText(find.byKey(const Key('costPriceField')), '');
+    await tester.ensureVisible(find.byKey(const Key('saveButton')));
+    await tester.tap(find.byKey(const Key('saveButton')));
+    await tester.pumpAndSettle();
+    expect(backend.rowById(id as int)!['costPrice'], isNull);
+
+    // Cashiers get products without any cost.
+    backend.rowById(id)!['costPrice'] = 29.5;
+    final cashier = backend.apiClient(as: 'shini.cashier');
+    final list = await cashier.fetchProducts();
+    expect(list.every((p) => p.costPrice == null), isTrue);
+    final admin = backend.apiClient();
+    expect((await admin.fetchProducts()).firstWhere((p) => p.id == '$id').costPrice, 29.5);
+  });
+
   testWidgets('edit product: pre-filled form, PUT to the server, list and stats update', (tester) async {
     final backend = _backend();
     await _pumpAsStoreAdmin(tester, backend);

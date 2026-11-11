@@ -57,6 +57,13 @@ public class SaleItem {
     @Column(name = "returned_quantity", nullable = false)
     private int returnedQuantity;
 
+    /**
+     * Purchase cost per unit copied from the product when the sale is completed
+     * (so later cost changes never change past profit). Null = cost not known.
+     */
+    @Column(name = "unit_cost")
+    private Double unitCost;
+
     protected SaleItem() {
     }
 
@@ -88,6 +95,15 @@ public class SaleItem {
             throw new ValidationException(Map.of("quantity",
                     "Quantity must be between 1 and " + MAX_QUANTITY));
         }
+    }
+
+    /** Copies the product's current purchase cost onto this line (at sale completion). */
+    void recordUnitCost() {
+        this.unitCost = product == null ? null : product.getCostPrice();
+    }
+
+    public Double getUnitCost() {
+        return unitCost;
     }
 
     /** How many units can still be returned. */

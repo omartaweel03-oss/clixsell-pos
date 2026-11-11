@@ -52,6 +52,19 @@ class ProductValidators {
     return null;
   }
 
+  /// Optional purchase cost: empty = unknown; otherwise 0 or more, 2 decimals.
+  String? costPrice(String? value) {
+    final v = value?.trim() ?? '';
+    if (v.isEmpty) return null;
+    if (!RegExp(r'^\d+(\.\d+)?$').hasMatch(v)) return s.vPriceInvalid;
+    final parsed = double.tryParse(v);
+    if (parsed == null) return s.vPriceInvalid;
+    if (parsed > maxPrice) return s.vTooLarge;
+    final dot = v.indexOf('.');
+    if (dot != -1 && v.length - dot - 1 > 2) return s.vPriceDecimals;
+    return null;
+  }
+
   String? wholeNumber(String? value) {
     final v = value?.trim() ?? '';
     if (v.isEmpty) return s.vRequired;

@@ -130,6 +130,7 @@ class ProductStore extends ChangeNotifier {
     required String supplier,
     Uint8List? imageBytes,
     String? imageName,
+    double? costPrice,
   }) async {
     final now = DateTime.now();
     final draft = Product(
@@ -145,6 +146,7 @@ class ProductStore extends ChangeNotifier {
       imageName: imageName,
       createdAt: now,
       updatedAt: now,
+      costPrice: costPrice,
     );
     final saved = await _api.createProduct(draft);
     _products.insert(0, saved); // newest first
@@ -221,17 +223,16 @@ class ProductStoreScope extends InheritedNotifier<ProductStore> {
   }) : super(notifier: store);
 
   static ProductStore of(BuildContext context) {
-    final scope =
-        context.dependOnInheritedWidgetOfExactType<ProductStoreScope>();
+    final scope = context
+        .dependOnInheritedWidgetOfExactType<ProductStoreScope>();
     assert(scope != null, 'ProductStoreScope not found in widget tree');
     return scope!.notifier!;
   }
 
   /// Reads the store without subscribing to updates (for callbacks).
   /// Like [of], but null when there is no product store (e.g. in a test).
-  static ProductStore? maybeOf(BuildContext context) => context
-      .dependOnInheritedWidgetOfExactType<ProductStoreScope>()
-      ?.notifier;
+  static ProductStore? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<ProductStoreScope>()?.notifier;
 
   static ProductStore read(BuildContext context) {
     final scope = context.getInheritedWidgetOfExactType<ProductStoreScope>();

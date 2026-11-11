@@ -79,29 +79,85 @@ public class ReportRepository {
     }
 
     /**
-     * Products of the period's completed invoices: units still kept by the
-     * customers (sold − returned) and their share of what was paid, using
-     * the same rule as refunds: total × line_total / subtotal × kept / quantity
-     * (so the invoice discount and the tax are included in proportion).
-     * Deleted products are grouped by the name stored on the invoice.
+     * Product sales of the period, by event date: units and paid value of the
+     * completed invoices of the period, minus the units and refunds of the
+     * returns made in the period. Deleted products are grouped by the name
+     * stored on the invoice line.
      */
     public List<ProductSales> productSales(long storeId, ReportPeriod p) {
-        return db.query("""
-                SELECT si.product_id,
-                       MAX(si.product_name),
-                       SUM(si.quantity - si.returned_quantity) AS units,
-                       SUM(s.total * si.line_total / s.subtotal
-                           * (si.quantity - si.returned_quantity) / si.quantity) AS value
+        Map<String, ProductSales> byKey = new java.util.LinkedHashMap<>();
+        db.query("""
+                SELECT si.product_id, si.product_name, SUM(si.quantity), SUM(s.total * si.line_total / s.subtotal)
                 FROM sale_items si JOIN sales s ON s.sale_id = si.sale_id
                 WHERE s.store_id = ? AND s.status = 'COMPLETED' AND s.completed_at >= ? AND s.completed_at < ?
                   AND s.subtotal > 0
-                GROUP BY COALESCE(CAST(si.product_id AS TEXT), 'name:' || si.product_name)
-                HAVING units > 0
-                ORDER BY value DESC, units DESC, MAX(si.product_name)""",
-                (rs, i) -> new ProductSales(
-                        rs.getObject(1) == null ? null : rs.getLong(1),
-                        rs.getString(2), rs.getLong(3), rs.getDouble(4)),
+                GROUP BY COALESCE(CAST(si.product_id AS TEXT), 'name:' || si.product_name)""",
+                rs -> {
+                    Long id = rs.getObject(1) == null ? null : rs.getLong(1);
+                    add(byKey, id, rs.getString(2), rs.getLong(3), rs.getDouble(4));
+                }, storeId, p.startText(), p.endTextExclusive());
+        db.query("""
+                SELECT si.product_id, si.product_name, SUM(r.quantity), SUM(r.refund_amount)
+                FROM returns r JOIN sale_items si ON si.sale_item_id = r.sale_item_id
+                WHERE r.store_id = ? AND r.return_date >= ? AND r.return_date < ?
+                GROUP BY COALESCE(CAST(si.product_id AS TEXT), 'name:' || si.product_name)""",
+                rs -> {
+                    Long id = rs.getObject(1) == null ? null : rs.getLong(1);
+                    add(byKey, id, rs.getString(2), -rs.getLong(3), -rs.getDouble(4));
+                }, storeId, p.startText(), p.endTextExclusive());
+        List<ProductSales> out = new java.util.ArrayList<>(byKey.values());
+        out.sort(java.util.Comparator.comparingDouble(ProductSales::value).reversed()
+                .thenComparing(java.util.Comparator.comparingLong(ProductSales::units).reversed())
+                .thenComparing(ProductSales::name));
+        return out;
+    }
+
+    private static void add(Map<String, ProductSales> m, Long id, String name, long units, double value) {
+        String key = id != null ? id.toString() : "name:" + name;
+        m.merge(key, new ProductSales(id, name, units, value),
+                (a, b) -> new ProductSales(a.productId(), a.name(), a.units() + b.units(), a.value() + b.value()));
+    }
+
+    /**
+     * Revenue without tax and purchase cost of the period, for profit.
+     * Revenue of a line = line_total × (subtotal − discount) / subtotal: the
+     * invoice discount is shared once, the tax is never included.
+     * Sales of the period count by completion date; returns of the period are
+     * subtracted by their own date, with the cost saved on the sold line.
+     * Lines without a saved cost are counted separately (never guessed).
+     */
+    public ProfitParts profitParts(long storeId, ReportPeriod p) {
+        ProfitParts sold = db.queryForObject("""
+                SELECT COUNT(*),
+                       COALESCE(SUM(CASE WHEN si.unit_cost IS NULL THEN 1 ELSE 0 END), 0),
+                       COALESCE(SUM(si.line_total * (s.subtotal - s.discount) / s.subtotal), 0),
+                       COALESCE(SUM(CASE WHEN si.unit_cost IS NOT NULL
+                                         THEN si.line_total * (s.subtotal - s.discount) / s.subtotal END), 0),
+                       COALESCE(SUM(si.unit_cost * si.quantity), 0)
+                FROM sale_items si JOIN sales s ON s.sale_id = si.sale_id
+                WHERE s.store_id = ? AND s.status = 'COMPLETED' AND s.completed_at >= ? AND s.completed_at < ?
+                  AND s.subtotal > 0""",
+                (rs, i) -> new ProfitParts(rs.getLong(1), rs.getLong(2), rs.getDouble(3), rs.getDouble(4),
+                        rs.getDouble(5)),
                 storeId, p.startText(), p.endTextExclusive());
+        ProfitParts returned = db.queryForObject("""
+                SELECT COUNT(*),
+                       COALESCE(SUM(CASE WHEN si.unit_cost IS NULL THEN 1 ELSE 0 END), 0),
+                       COALESCE(SUM(si.line_total * (s.subtotal - s.discount) / s.subtotal * r.quantity / si.quantity), 0),
+                       COALESCE(SUM(CASE WHEN si.unit_cost IS NOT NULL
+                                         THEN si.line_total * (s.subtotal - s.discount) / s.subtotal
+                                              * r.quantity / si.quantity END), 0),
+                       COALESCE(SUM(si.unit_cost * r.quantity), 0)
+                FROM returns r
+                JOIN sale_items si ON si.sale_item_id = r.sale_item_id
+                JOIN sales s ON s.sale_id = r.sale_id
+                WHERE r.store_id = ? AND r.return_date >= ? AND r.return_date < ? AND s.subtotal > 0""",
+                (rs, i) -> new ProfitParts(rs.getLong(1), rs.getLong(2), rs.getDouble(3), rs.getDouble(4),
+                        rs.getDouble(5)),
+                storeId, p.startText(), p.endTextExclusive());
+        return new ProfitParts(sold.lines() + returned.lines(), sold.linesWithoutCost() + returned.linesWithoutCost(),
+                sold.revenue() - returned.revenue(), sold.coveredRevenue() - returned.coveredRevenue(),
+                sold.cost() - returned.cost());
     }
 
     public record SalesTotals(long invoices, double total, double discount, double tax) {
@@ -111,5 +167,15 @@ public class ReportRepository {
     }
 
     public record ProductSales(Long productId, String name, long units, double value) {
+    }
+
+    /**
+     * @param lines            sold lines + return records of the period
+     * @param linesWithoutCost of those, how many have no saved purchase cost
+     * @param revenue          net revenue without tax (sales − returns)
+     * @param coveredRevenue   the part of {@code revenue} whose cost is known
+     * @param cost             purchase cost of the units sold − returned
+     */
+    public record ProfitParts(long lines, long linesWithoutCost, double revenue, double coveredRevenue, double cost) {
     }
 }

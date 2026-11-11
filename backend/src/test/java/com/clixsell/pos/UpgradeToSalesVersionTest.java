@@ -79,6 +79,13 @@ class UpgradeToSalesVersionTest {
         }
     }
 
+    @org.junit.jupiter.api.AfterAll
+    static void removeBackups() throws Exception {
+        try (var backups = Files.newDirectoryStream(Path.of("."), "clixsell-backup-before-v*.db")) {
+            for (Path p : backups) Files.delete(p);
+        }
+    }
+
     @Autowired
     MockMvc mvc;
 

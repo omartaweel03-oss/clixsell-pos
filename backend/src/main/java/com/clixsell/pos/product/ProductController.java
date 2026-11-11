@@ -1,6 +1,7 @@
 package com.clixsell.pos.product;
 
 import com.clixsell.pos.auth.CurrentUser;
+import com.clixsell.pos.user.Role;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -46,12 +47,13 @@ public class ProductController {
 
     @GetMapping
     public List<ProductResponse> list(@AuthenticationPrincipal CurrentUser user) {
-        return service.listProducts(user.requireStoreId()).stream().map(ProductResponse::from).toList();
+        return service.listProducts(user.requireStoreId()).stream()
+                .map(p -> ProductResponse.from(p, seesCost(user))).toList();
     }
 
     @GetMapping("/{id}")
     public ProductResponse get(@AuthenticationPrincipal CurrentUser user, @PathVariable long id) {
-        return ProductResponse.from(service.getProduct(user.requireStoreId(), id));
+        return ProductResponse.from(service.getProduct(user.requireStoreId(), id), seesCost(user));
     }
 
     @PostMapping
@@ -60,13 +62,13 @@ public class ProductController {
         Product saved = service.createProduct(user.requireStoreId(), request);
         return ResponseEntity
                 .created(URI.create("/api/products/" + saved.getProductId()))
-                .body(ProductResponse.from(saved));
+                .body(ProductResponse.from(saved, true));
     }
 
     @PutMapping("/{id}")
     public ProductResponse update(@AuthenticationPrincipal CurrentUser user, @PathVariable long id,
                                   @RequestBody ProductRequest request) {
-        return ProductResponse.from(service.updateProduct(user.requireStoreId(), id, request));
+        return ProductResponse.from(service.updateProduct(user.requireStoreId(), id, request), true);
     }
 
     @DeleteMapping("/{id}")
@@ -78,5 +80,10 @@ public class ProductController {
     @GetMapping("/generate-barcode")
     public Map<String, String> generateBarcode(@AuthenticationPrincipal CurrentUser user) {
         return Map.of("barcode", service.generateUniqueBarcode(user.requireStoreId()));
+    }
+
+    /** Purchase costs are for Store Admins (managers) only. */
+    private static boolean seesCost(CurrentUser user) {
+        return user.role() == Role.STORE_ADMIN;
     }
 }
