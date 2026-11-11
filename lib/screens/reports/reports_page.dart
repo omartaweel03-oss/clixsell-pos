@@ -509,7 +509,9 @@ class _ReportsPageState extends State<ReportsPage> {
                         Formatters.currency(c.value),
                       ].indexed)
                         Padding(
-                          key: i == 0 ? ValueKey('invCategory-${c.category}') : null,
+                          key: i == 0
+                              ? ValueKey('invCategory-${c.category}')
+                              : null,
                           padding: const EdgeInsets.all(8),
                           child: Text(v),
                         ),
@@ -570,41 +572,81 @@ class _ReportsPageState extends State<ReportsPage> {
 
   Future<void> _showReport(AppStrings s, _ReportsData d) async {
     final text = _reportText(s, d);
+    bool?
+    copied; // null = not tried, true = copied, false = the browser refused
     await showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        key: const Key('reportDialog'),
-        title: Text(s.reportDialogTitle),
-        content: SizedBox(
-          width: 520,
-          child: SingleChildScrollView(
-            child: SelectableText(
-              text,
-              key: const Key('reportText'),
-              style: const TextStyle(height: 1.5),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialog) => AlertDialog(
+          key: const Key('reportDialog'),
+          title: Text(s.reportDialogTitle),
+          content: SizedBox(
+            width: 520,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SelectableText(
+                    text,
+                    key: const Key('reportText'),
+                    style: const TextStyle(height: 1.5),
+                  ),
+                  if (copied != null) ...[
+                    const SizedBox(height: AppSpacing.md),
+                    Row(
+                      key: const Key('copyStatus'),
+                      children: [
+                        Icon(
+                          copied!
+                              ? Icons.check_circle_rounded
+                              : Icons.info_outline_rounded,
+                          size: 18,
+                          color: copied!
+                              ? AppColors.success
+                              : AppColors.warning,
+                        ),
+                        const SizedBox(width: AppSpacing.xs),
+                        Expanded(
+                          child: Text(
+                            copied! ? s.reportCopied : s.copyFailed,
+                            style: TextStyle(
+                              color: copied!
+                                  ? AppColors.success
+                                  : AppColors.warning,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
+          actions: [
+            TextButton.icon(
+              key: const Key('copyReportButton'),
+              onPressed: () async {
+                var ok = true;
+                try {
+                  await Clipboard.setData(ClipboardData(text: text));
+                } catch (_) {
+                  ok = false; // e.g. the browser did not allow the clipboard
+                }
+                if (ctx.mounted) setDialog(() => copied = ok);
+              },
+              icon: const Icon(Icons.copy_rounded, size: 18),
+              label: Text(s.copyReport),
+            ),
+            FilledButton(
+              key: const Key('reportCloseButton'),
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text(s.close),
+            ),
+          ],
         ),
-        actions: [
-          TextButton.icon(
-            key: const Key('copyReportButton'),
-            onPressed: () async {
-              await Clipboard.setData(ClipboardData(text: text));
-              if (ctx.mounted) {
-                ScaffoldMessenger.of(
-                  ctx,
-                ).showSnackBar(SnackBar(content: Text(s.reportCopied)));
-              }
-            },
-            icon: const Icon(Icons.copy_rounded, size: 18),
-            label: Text(s.copyReport),
-          ),
-          FilledButton(
-            key: const Key('reportCloseButton'),
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(s.close),
-          ),
-        ],
       ),
     );
   }

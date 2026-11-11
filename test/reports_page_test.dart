@@ -4,6 +4,7 @@ import 'package:clixsell_pos/main.dart';
 import 'package:clixsell_pos/screens/reports/report_widgets.dart';
 import 'package:clixsell_pos/widgets/sales_charts.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/fake_product_backend.dart';
@@ -206,6 +207,28 @@ void main() {
     expect(text, contains('Net sales: ₪ 29.00'));
     expect(text, contains('Profit: Not available'));
     expect(text, contains('• Milk: 5 sold · ₪ 26.68'));
+
+    // Clipboard refused (e.g. browser permission): a clear message, no crash.
+    final channel = tester.binding.defaultBinaryMessenger;
+    channel.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') throw PlatformException(code: 'denied');
+      return null;
+    });
+    await tester.tap(find.byKey(const Key('copyReportButton')));
+    await tester.pumpAndSettle();
+    expect(find.text('The browser did not allow copying. Select the text and copy it.'), findsOneWidget);
+
+    // Clipboard allowed: the report text is copied.
+    String? copied;
+    channel.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') copied = (call.arguments as Map)['text'] as String;
+      return null;
+    });
+    addTearDown(() => channel.setMockMethodCallHandler(SystemChannels.platform, null));
+    await tester.tap(find.byKey(const Key('copyReportButton')));
+    await tester.pumpAndSettle();
+    expect(find.text('Report copied'), findsOneWidget);
+    expect(copied, text);
     await tester.tap(find.byKey(const Key('reportCloseButton')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('reportDialog')), findsNothing);

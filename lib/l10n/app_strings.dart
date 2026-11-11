@@ -699,6 +699,10 @@ class AppStrings {
   String get reportDialogTitle => _t('Sales report', 'تقرير المبيعات');
   String get copyReport => _t('Copy', 'نسخ');
   String get reportCopied => _t('Report copied', 'تم نسخ التقرير');
+  String get copyFailed => _t(
+    'The browser did not allow copying. Select the text and copy it.',
+    'المتصفح لم يسمح بالنسخ. حدّد النص وانسخه يدوياً.',
+  );
   String get rPeriod => _t('Period', 'الفترة');
   String get rGross =>
       _t('Sales (completed invoices)', 'المبيعات (فواتير مكتملة)');
