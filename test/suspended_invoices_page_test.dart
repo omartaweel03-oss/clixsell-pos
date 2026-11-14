@@ -327,6 +327,117 @@ void main() {
   );
 
   testWidgets(
+    'resume the invoice already open in the POS: asks only when it was changed',
+    (tester) async {
+      final backend = await _history();
+      await _open(tester, backend);
+      final sale = backend.sales[1]; // milk ×2
+      final resume = find.byKey(Key('resume-${sale['saleId']}'));
+      await tester.tap(resume);
+      await tester.pumpAndSettle();
+      expect(_text(tester, 'qty-1'), '2');
+
+      // Not changed: no question, the POS opens again.
+      await _nav(tester, 'suspendedInvoices');
+      await tester.tap(resume);
+      await tester.pumpAndSettle();
+      expect(find.text('Discard your changes?'), findsNothing);
+      expect(find.byKey(const Key('posSearchField')), findsOneWidget);
+      expect(_text(tester, 'qty-1'), '2');
+
+      // Changed in the POS (not saved), then "Resume in POS" again: asks.
+      await tester.tap(find.byKey(const Key('inc-1')));
+      await tester.pumpAndSettle();
+      await _nav(tester, 'suspendedInvoices');
+      await tester.tap(resume);
+      await tester.pumpAndSettle();
+      expect(find.text('Discard your changes?'), findsOneWidget);
+      expect(
+        find.textContaining('${sale['invoiceNumber']} is already open'),
+        findsOneWidget,
+      );
+
+      // Keep my changes: the POS shows the invoice as it is.
+      await tester.tap(find.text('Keep my changes'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('posSearchField')), findsOneWidget);
+      expect(_text(tester, 'qty-1'), '3');
+      expect(find.text('#${sale['invoiceNumber']}'), findsOneWidget);
+      expect(
+        find.text('Invoice ${sale['invoiceNumber']} resumed'),
+        findsNothing,
+      );
+
+      // Discard changes: the saved version is loaded.
+      await _nav(tester, 'suspendedInvoices');
+      await tester.tap(resume);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('confirmActionButton')));
+      await tester.pumpAndSettle();
+      expect(_text(tester, 'qty-1'), '2');
+      expect(
+        find.text('Invoice ${sale['invoiceNumber']} resumed'),
+        findsOneWidget,
+      );
+      // Asking changed nothing on the server.
+      expect(sale['status'], 'SUSPENDED');
+      expect((backend.sales[1]['items'] as List).single['quantity'], 2);
+    },
+  );
+
+  testWidgets(
+    'kept changes are saved when the invoice is suspended again (same number)',
+    (tester) async {
+      final backend = await _history();
+      await _open(tester, backend);
+      final id = backend.sales[1]['saleId'];
+      final number = backend.sales[1]['invoiceNumber'];
+      await tester.tap(find.byKey(Key('resume-$id')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('inc-1')));
+      await tester.pumpAndSettle();
+      await _nav(tester, 'suspendedInvoices');
+      await tester.tap(find.byKey(Key('resume-$id')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Keep my changes'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('suspendInvoiceButton')));
+      await tester.pumpAndSettle();
+      final saved = backend.sales.firstWhere((x) => x['saleId'] == id);
+      expect(saved['status'], 'SUSPENDED');
+      expect(saved['invoiceNumber'], number);
+      expect((saved['items'] as List).single['quantity'], 3);
+      expect(backend.sales.length, 3); // no new invoice
+
+      // Now saved: resuming it again asks nothing and shows ×3.
+      await _nav(tester, 'suspendedInvoices');
+      expect(_text(tester, 'suspItems-$id'), '1');
+      await tester.tap(find.byKey(Key('resume-$id')));
+      await tester.pumpAndSettle();
+      expect(find.text('Discard your changes?'), findsNothing);
+      expect(_text(tester, 'qty-1'), '3');
+    },
+  );
+
+  testWidgets('Arabic: the discard-changes question', (tester) async {
+    final backend = await _history();
+    await _open(tester, backend, locale: const Locale('ar'));
+    final id = backend.sales[1]['saleId'];
+    await tester.tap(find.byKey(Key('resume-$id')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('inc-1')));
+    await tester.pumpAndSettle();
+    await _nav(tester, 'suspendedInvoices');
+    await tester.tap(find.byKey(Key('resume-$id')));
+    await tester.pumpAndSettle();
+    expect(find.text('تجاهل تعديلاتك؟'), findsOneWidget);
+    expect(find.text('الإبقاء على تعديلاتي'), findsOneWidget);
+    expect(find.text('تجاهل التعديلات'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
     'delete = cancel: confirmation, CANCELED on the server, record kept',
     (tester) async {
       final backend = await _history();

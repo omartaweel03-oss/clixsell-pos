@@ -162,6 +162,48 @@ void main() {
     expect(backend.sales.single['invoiceNumber'], 'INV-000001');
   });
 
+  testWidgets('resuming the invoice that is already open with changes asks first', (tester) async {
+    final backend = _backend();
+    await _openPos(tester, backend);
+    await _tap(tester, 'posProduct-1');
+    await _tap(tester, 'suspendInvoiceButton');
+    await _tap(tester, 'openSuspendedButton');
+    await _tap(tester, 'resume-1');
+    expect(_text(tester, 'qty-1'), '1');
+
+    // No changes yet: opening it again just loads it, no question.
+    await _tap(tester, 'openSuspendedButton');
+    await _tap(tester, 'resume-1');
+    expect(find.text('Discard your changes?'), findsNothing);
+    expect(_text(tester, 'qty-1'), '1');
+
+    // Changed (not saved): asks; "Keep my changes" keeps them.
+    await _tap(tester, 'inc-1');
+    await _tap(tester, 'posProduct-2');
+    await _tap(tester, 'openSuspendedButton');
+    await _tap(tester, 'resume-1');
+    expect(find.text('Discard your changes?'), findsOneWidget);
+    expect(find.textContaining('INV-000001 is already open in the POS'), findsOneWidget);
+    await tester.tap(find.text('Keep my changes'));
+    await tester.pumpAndSettle();
+    expect(_text(tester, 'qty-1'), '2');
+    expect(_text(tester, 'qty-2'), '1');
+    expect(find.text('#INV-000001'), findsOneWidget);
+
+    // "Discard changes" loads the saved version.
+    await _tap(tester, 'openSuspendedButton');
+    await _tap(tester, 'resume-1');
+    await _tap(tester, 'confirmActionButton');
+    expect(_text(tester, 'qty-1'), '1');
+    expect(find.byKey(const Key('qty-2')), findsNothing);
+    expect(find.text('Invoice INV-000001 resumed'), findsOneWidget);
+
+    // Nothing was sent to the server by asking: still the saved invoice.
+    final sale = backend.sales.single;
+    expect(sale['status'], 'SUSPENDED');
+    expect((sale['items'] as List).single['quantity'], 1);
+  });
+
   testWidgets('cancel a resumed invoice: marked CANCELED on the server', (tester) async {
     final backend = _backend();
     await _openPos(tester, backend);

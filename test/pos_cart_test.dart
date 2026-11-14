@@ -122,4 +122,88 @@ void main() {
     expect(cart.discount, 0.5);
     expect(cart.toDraft().saleId, 7);
   });
+
+  group('unsaved changes on a resumed invoice', () {
+    // INV-000007 as saved on the server: P1 ×2, P2 ×1, discount 0.
+    Sale saved({double discount = 0}) => Sale.fromJson({
+          'saleId': 7,
+          'invoiceNumber': 'INV-000007',
+          'status': 'SUSPENDED',
+          'cashierName': 'Ahmad',
+          'items': [
+            {'saleItemId': 1, 'productId': 1, 'productName': 'P1', 'quantity': 2, 'unitPrice': 5.0,
+             'lineTotal': 10.0, 'returnedQuantity': 0, 'returnableQuantity': 2},
+            {'saleItemId': 2, 'productId': 2, 'productName': 'P2', 'quantity': 1, 'unitPrice': 2.0,
+             'lineTotal': 2.0, 'returnedQuantity': 0, 'returnableQuantity': 1},
+          ],
+          'subtotal': 12.0, 'discount': discount, 'taxRate': 16, 'tax': 1.92, 'total': 13.92,
+          'createdAt': '2026-11-04T10:00:00',
+        });
+
+    test('a new invoice or a just-resumed one has no unsaved changes', () {
+      cart.add(milk);
+      expect(cart.hasUnsavedChanges, isFalse); // not a resumed invoice
+      cart.resume(saved(), [milk, bread]);
+      expect(cart.hasUnsavedChanges, isFalse);
+    });
+
+    test('quantity, added or removed products and clearing count as changes', () {
+      void check(void Function() edit) {
+        cart.resume(saved(), [milk, bread]);
+        edit();
+        expect(cart.hasUnsavedChanges, isTrue);
+      }
+
+      check(() => cart.increment('1'));
+      check(() => cart.decrement('1'));
+      check(() => cart.decrement('2')); // line removed at zero
+      check(() => cart.remove('1'));
+      check(() => cart.add(_p('3', 1, 5)));
+      check(() => cart.clearLines());
+    });
+
+    test('changing the discount counts; the payment method does not', () {
+      cart.resume(saved(), [milk, bread]);
+      cart.setPaymentMethod(PaymentMethod.card);
+      expect(cart.hasUnsavedChanges, isFalse); // not saved with a suspended invoice
+      expect(cart.setDiscount(DiscountType.amount, 1), isTrue);
+      expect(cart.hasUnsavedChanges, isTrue);
+      expect(cart.setDiscount(DiscountType.amount, 0), isTrue);
+      expect(cart.hasUnsavedChanges, isFalse); // back to the saved discount
+
+      cart.resume(saved(discount: 0.5), [milk, bread]);
+      expect(cart.hasUnsavedChanges, isFalse);
+      expect(cart.setDiscount(DiscountType.percent, 0.5), isTrue);
+      expect(cart.hasUnsavedChanges, isTrue); // 0.5 % is not ₪ 0.50
+    });
+
+    test('changing back to the saved quantities is not a change', () {
+      cart.resume(saved(), [milk, bread]);
+      cart.increment('1');
+      cart.decrement('1');
+      expect(cart.hasUnsavedChanges, isFalse);
+    });
+
+    test('new prices from the server are not a change', () {
+      cart.resume(saved(), [milk, bread]);
+      cart.refreshProducts([_p('1', 6, 10), _p('2', 2, 3)]);
+      expect(cart.hasUnsavedChanges, isFalse);
+    });
+
+    test('loading again or starting a new invoice clears it', () {
+      cart.resume(saved(), [milk, bread]);
+      cart.increment('1');
+      cart.resume(saved(), [milk, bread]);
+      expect(cart.hasUnsavedChanges, isFalse);
+      expect(cart.lineFor('1')!.quantity, 2);
+      cart.increment('1');
+      cart.reset();
+      expect(cart.hasUnsavedChanges, isFalse);
+    });
+
+    test('a product deleted since it was suspended is not a change', () {
+      cart.resume(saved(), [milk]); // P2 no longer exists
+      expect(cart.hasUnsavedChanges, isFalse);
+    });
+  });
 }

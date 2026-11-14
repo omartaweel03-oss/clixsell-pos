@@ -42,6 +42,13 @@ class PosCart extends ChangeNotifier {
   int? _resumedSaleId;
   String? _resumedInvoiceNumber;
 
+  /// The resumed invoice as it was loaded (= as saved on the server), to know
+  /// whether the cashier has changed it since: product id → quantity, and the
+  /// discount.
+  Map<String, int>? _savedLines;
+  DiscountType _savedDiscountType = DiscountType.amount;
+  double _savedDiscountValue = 0;
+
   List<CartLine> get lines => List.unmodifiable(_lines);
   bool get isEmpty => _lines.isEmpty;
   int get lineCount => _lines.length;
@@ -52,6 +59,22 @@ class PosCart extends ChangeNotifier {
   PaymentMethod get paymentMethod => _paymentMethod;
   int? get resumedSaleId => _resumedSaleId;
   String? get invoiceNumber => _resumedInvoiceNumber;
+
+  /// True when the resumed invoice was changed after it was loaded (products,
+  /// quantities or discount) and the change is not saved yet. The payment
+  /// method is not saved with a suspended invoice, so it does not count.
+  bool get hasUnsavedChanges {
+    final saved = _savedLines;
+    if (_resumedSaleId == null || saved == null) return false;
+    final sameDiscount =
+        _discountValue == _savedDiscountValue &&
+        (_discountValue == 0 || _discountType == _savedDiscountType);
+    if (!sameDiscount || saved.length != _lines.length) return true;
+    for (final l in _lines) {
+      if (saved[l.product.id] != l.quantity) return true;
+    }
+    return false;
+  }
 
   // ── Totals (in cents to avoid floating-point errors) ────────────────────
 
@@ -142,6 +165,7 @@ class PosCart extends ChangeNotifier {
     _paymentMethod = PaymentMethod.cash;
     _resumedSaleId = null;
     _resumedInvoiceNumber = null;
+    _savedLines = null;
     notifyListeners();
   }
 
@@ -204,6 +228,9 @@ class PosCart extends ChangeNotifier {
     _resumedInvoiceNumber = sale.invoiceNumber;
     _discountType = DiscountType.amount;
     _discountValue = sale.discount;
+    _savedLines = {for (final l in _lines) l.product.id: l.quantity};
+    _savedDiscountType = _discountType;
+    _savedDiscountValue = _discountValue;
     notifyListeners();
     return missing;
   }

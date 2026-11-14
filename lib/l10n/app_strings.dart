@@ -515,6 +515,17 @@ class AppStrings {
     'The current invoice has products. Resuming will remove them.',
     'الفاتورة الحالية فيها منتجات، وسيتم حذفها عند الاستئناف.',
   );
+  String get discardChangesTitle =>
+      _t('Discard your changes?', 'تجاهل تعديلاتك؟');
+  String discardChangesBody(String inv) => _t(
+    'Invoice $inv is already open in the POS and has changes that are not '
+        'saved. Opening it again loads the saved version, and your changes '
+        'will be lost.',
+    'الفاتورة $inv مفتوحة في نقطة البيع وفيها تعديلات غير محفوظة. فتحها من '
+        'جديد يحمّل النسخة المحفوظة، وستضيع تعديلاتك.',
+  );
+  String get discardChanges => _t('Discard changes', 'تجاهل التعديلات');
+  String get keepMyChanges => _t('Keep my changes', 'الإبقاء على تعديلاتي');
 
   // Return dialog
   String get returnTitle => _t('Return Products', 'إرجاع منتجات');

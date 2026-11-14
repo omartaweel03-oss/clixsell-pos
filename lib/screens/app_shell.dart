@@ -6,6 +6,7 @@ import '../models/product.dart';
 import '../services/report_api_client.dart';
 import '../services/admin_api_clients.dart';
 import '../services/api_http.dart';
+import '../state/pos_cart.dart';
 import '../state/product_store.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_sidebar.dart';
@@ -151,8 +152,14 @@ class _AppShellState extends State<AppShell> {
   Future<void> _resumeInPos(Sale sale) async {
     final s = AppStrings.of(context);
     final missing = await loadSuspendedIntoCart(context, sale);
-    if (missing == null || !mounted) return;
-    _posMessage = resumedMessage(s, sale, missing);
+    if (!mounted) return;
+    if (missing == null) {
+      // "Keep my changes" for this same invoice: it is already open, so the
+      // POS shows it as it is. (Keeping a DIFFERENT open invoice stays here.)
+      if (PosCartScope.read(context).resumedSaleId != sale.saleId) return;
+    } else {
+      _posMessage = resumedMessage(s, sale, missing);
+    }
     // Clear this screen's messages so none covers the POS buttons.
     ScaffoldMessenger.of(context).removeCurrentSnackBar();
     await _navigate(SidebarDestination.pos);

@@ -71,6 +71,10 @@ actions; pages (10 / 20 / 50 per page); month filter (default: all months).
   not recorded in the system (not in the ERD either).
 * **Resume** opens the invoice in the POS with the existing rules (asks before replacing an open
   invoice, current prices, deleted products left out); completing keeps its number.
+* Resuming the invoice that is **already open** in the POS with changes that are not saved asks
+  first ("Discard your changes?"): *Keep my changes* keeps them (from this screen the POS opens
+  with the invoice as it is); *Discard changes* loads the saved version. Without changes nothing
+  is asked. Same rule in the POS "Suspended" window.
 * **Delete** = cancel: after a confirmation the invoice is marked `CANCELED` and kept in the
   database (`DELETE /api/sales/suspended/{id}`).
 * Uses the existing API only (`GET /api/sales/suspended`, `DELETE …/{id}`); no database change.
@@ -222,7 +226,7 @@ Migrations: `backend/src/main/resources/db/migration/V1__initial_schema.sql` (or
 ```bash
 cd backend && .\mvnw.cmd test     # 105 backend tests: business logic (Sale, ReturnProduct, …),
                                  #   API + database, two-store isolation, roles, lockout, migration
-flutter test                     # 107 Flutter tests (use a fake server), incl. POS cart + screen
+flutter test                     # 119 Flutter tests (use a fake server), incl. POS cart + screen
 ```
 
 ## Files

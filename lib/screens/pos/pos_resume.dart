@@ -4,15 +4,20 @@ import '../../l10n/app_strings.dart';
 import '../../models/sale.dart';
 import '../../state/pos_cart.dart';
 import '../../state/product_store.dart';
+import '../../theme/app_theme.dart';
 import '../../widgets/page_header.dart';
 
 /// Loads a suspended invoice into the POS cart – shared by the POS
 /// "Suspended" window and the Suspended Invoices screen (Figure 3.6), so both
-/// follow the same rules: if another invoice is open it asks first; current
-/// prices are used; products deleted since are left out.
+/// follow the same rules:
+/// * another invoice is open → asks before replacing it;
+/// * the SAME invoice is already open and was changed → asks before loading
+///   the saved version again (the changes would be lost);
+/// * current prices are used; products deleted since are left out.
 ///
-/// Returns null when the user keeps the current invoice, otherwise the names
-/// of the products that could not be loaded (usually empty).
+/// Returns null when the user keeps what is open (nothing is loaded),
+/// otherwise the names of the products that could not be loaded (usually
+/// empty).
 Future<List<String>?> loadSuspendedIntoCart(
   BuildContext context,
   Sale sale,
@@ -20,7 +25,17 @@ Future<List<String>?> loadSuspendedIntoCart(
   final s = AppStrings.of(context);
   final cart = PosCartScope.read(context);
   final store = ProductStoreScope.read(context);
-  if (!cart.isEmpty && cart.resumedSaleId != sale.saleId) {
+  if (cart.resumedSaleId == sale.saleId && cart.hasUnsavedChanges) {
+    final ok = await confirmAction(
+      context,
+      title: s.discardChangesTitle,
+      body: s.discardChangesBody(sale.invoiceNumber),
+      confirmLabel: s.discardChanges,
+      cancelLabel: s.keepMyChanges,
+      color: AppColors.danger,
+    );
+    if (!ok || !context.mounted) return null;
+  } else if (!cart.isEmpty && cart.resumedSaleId != sale.saleId) {
     final ok = await confirmAction(
       context,
       title: s.replaceInvoiceTitle,
