@@ -445,6 +445,27 @@ class PosInvoicePanel extends StatelessWidget {
   }
 }
 
+/// An amount on one line ("₪ 12.00" never splits); shrinks a little if the
+/// column is too narrow.
+class _Money extends StatelessWidget {
+  const _Money(this.text, {required this.style, this.end = false});
+
+  final String text;
+  final TextStyle style;
+  final bool end;
+
+  @override
+  Widget build(BuildContext context) => Align(
+    alignment: end
+        ? AlignmentDirectional.centerEnd
+        : AlignmentDirectional.centerStart,
+    child: FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Text(text, maxLines: 1, softWrap: false, style: style),
+    ),
+  );
+}
+
 class _InvoiceLine extends StatelessWidget {
   const _InvoiceLine({
     required this.line,
@@ -483,27 +504,36 @@ class _InvoiceLine extends StatelessWidget {
         children: [
           Expanded(
             flex: 5,
-            child: Row(
-              children: [
-                ProductThumbnail(imageBytes: line.product.imageBytes, size: 34),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: Text(
-                    line.product.name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13,
+            // When the invoice column is narrow the picture is left out, so
+            // the name is not cut in the middle of a word.
+            child: LayoutBuilder(
+              builder: (context, c) => Row(
+                children: [
+                  if (c.maxWidth >= 150) ...[
+                    ProductThumbnail(
+                      imageBytes: line.product.imageBytes,
+                      size: 34,
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                  ],
+                  Expanded(
+                    child: Text(
+                      line.product.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
           Expanded(
             flex: 2,
-            child: Text(
+            child: _Money(
               Formatters.currency(line.product.price),
               style: const TextStyle(
                 fontSize: 13,
@@ -543,9 +573,9 @@ class _InvoiceLine extends StatelessWidget {
           ),
           Expanded(
             flex: 2,
-            child: Text(
+            child: _Money(
               Formatters.currency(line.lineTotal),
-              textAlign: TextAlign.end,
+              end: true,
               style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
             ),
           ),

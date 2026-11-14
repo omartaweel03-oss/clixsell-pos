@@ -255,8 +255,9 @@ class _SuspendedInvoicesPageState extends State<SuspendedInvoicesPage> {
           value: oldest == null
               ? s.suspNone
               : s.ageText(ReportClock.now().difference(oldest.createdAt)),
+          // Always a subtitle, so the three cards stay aligned when empty.
           subtitle: oldest == null
-              ? null
+              ? s.suspOldestNone
               : s.suspOldestHint(oldest.invoiceNumber),
           icon: Icons.schedule_rounded,
           color: AppColors.warning,
@@ -442,6 +443,12 @@ class _SuspendedInvoicesPageState extends State<SuspendedInvoicesPage> {
       ),
     );
 
+    const window = 5;
+    final first = (page - window ~/ 2).clamp(
+      0,
+      (pages - window).clamp(0, pages),
+    );
+    final last = (first + window - 1).clamp(0, pages - 1);
     final footer = Wrap(
       alignment: WrapAlignment.spaceBetween,
       crossAxisAlignment: WrapCrossAlignment.center,
@@ -483,7 +490,9 @@ class _SuspendedInvoicesPageState extends State<SuspendedInvoicesPage> {
                 icon: Icons.chevron_left_rounded,
               ),
             ),
-            for (var i = 0; i < pages; i++)
+            // At most 5 page numbers, around the current page, so many pages
+            // never overflow the row.
+            for (var i = first; i <= last; i++)
               pageButton(
                 '${i + 1}',
                 i,

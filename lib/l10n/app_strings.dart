@@ -583,11 +583,11 @@ class AppStrings {
   String get suspCount => _t('Total invoices', 'إجمالي الفواتير');
   String get suspCountHint => _t('Currently suspended', 'فاتورة معلقة حالياً');
   String get suspValue => _t('Total value', 'إجمالي القيمة');
-  String get suspValueHint => _t(
-    'Value of all suspended invoices (prices when suspended)',
-    'قيمة جميع الفواتير المعلقة (بأسعار وقت التعليق)',
-  );
+  String get suspValueHint =>
+      _t('Value of all suspended invoices', 'قيمة جميع الفواتير المعلقة');
   String get suspOldest => _t('Oldest suspended', 'أقدم فاتورة معلقة');
+  String get suspOldestNone =>
+      _t('No invoice is waiting', 'لا توجد فاتورة بالانتظار');
   String suspOldestHint(String inv) => _t('Invoice $inv', 'الفاتورة $inv');
   String get suspNone => _t('–', '–');
   String ageText(Duration d) {

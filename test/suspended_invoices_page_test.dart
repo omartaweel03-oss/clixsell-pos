@@ -235,6 +235,31 @@ void main() {
     expect(_rows(), 23);
   });
 
+  testWidgets('many pages: at most 5 page numbers, no overflow', (
+    tester,
+  ) async {
+    final backend = _backend();
+    final t = await _token(backend, 'shini.cashier', 'Cashier-Pass-1');
+    for (var i = 0; i < 95; i++) {
+      await _suspend(backend, t, 2, 1, '2026-11-10T10:00:00');
+    }
+    await _open(tester, backend, size: const Size(1024, 768));
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const Key('page-5')), findsOneWidget);
+    expect(find.byKey(const Key('page-6')), findsNothing);
+    for (var i = 0; i < 9; i++) {
+      await tester.ensureVisible(find.byKey(const Key('pageNext')));
+      await tester.tap(find.byKey(const Key('pageNext')));
+      await tester.pumpAndSettle();
+    }
+    expect(_text(tester, 'suspShowing'), 'Showing 91 – 95 of 95 invoices');
+    expect(_rows(), 5);
+    expect(find.byKey(const Key('page-10')), findsOneWidget);
+    expect(find.byKey(const Key('page-6')), findsOneWidget);
+    expect(find.byKey(const Key('page-5')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'resume: opens the POS with the invoice, then completes with the same number',
     (tester) async {
@@ -417,6 +442,7 @@ void main() {
   ) async {
     await _open(tester, _backend());
     expect(find.text('There are no suspended invoices.'), findsOneWidget);
+    expect(_in('suspOldest', 'No invoice is waiting'), findsOneWidget);
     expect(_in('suspCount', '0'), findsOneWidget);
     expect(_in('suspValue', '₪ 0.00'), findsOneWidget);
   });
