@@ -1,0 +1,587 @@
+=====================================================================
+          تحليل كامل لمشروع ClixSell POS
+          (Complete Project Analysis)
+=====================================================================
+
+كيف تم هذا التحليل:
+- قرأت الكود على الفرع feature/demo-data (وهو main + البيانات التجريبية).
+- قرأت التقرير كاملاً (58 صفحة)، بما فيه صور الـ ERD والـ Class Diagram.
+  أرقام الصفحات هنا هي المطبوعة أسفل صفحات التقرير.
+- لم أعدّل أي ملف في المشروع، ولم أشغّل الاختبارات أثناء التحليل لأن تشغيلها
+  يكتب ملفات. نتائج الاختبارات المذكورة من آخر تشغيل: 2026-11-04 و 2026-11-09.
+
+الحالات المستخدمة:
+  [FULL]     Fully implemented      = منفّذ بالكامل
+  [PARTIAL]  Partially implemented  = منفّذ جزئياً
+  [MISSING]  Missing                = غير موجود
+  [UNKNOWN]  Unable to verify       = لا أستطيع التأكد منه
+
+
+=====================================================================
+الخلاصة بسرعة
+=====================================================================
+
+الجزء الأساسي جاهز ومختبَر ويعمل فعلاً من الشاشة حتى قاعدة البيانات:
+  - تسجيل الدخول والصلاحيات
+  - تعدد المتاجر
+  - إدارة المنتجات
+  - شاشة البيع POS: البيع، التعليق، المرتجع، إيصال QR
+
+الناقص بالكامل:
+  - التقارير والتحليلات
+  - Guardian Mode والذكاء الاصطناعي
+  - أوامر الشراء وواتساب
+  - العمل بدون إنترنت
+  - كاميرا الباركود
+  - تطبيق Android
+
+ثلاث ملاحظات مهمة:
+1) البنية تختلف عن التقرير. التقرير (ص 8-9، و 56) يتكلم عن Firebase مع SQLite
+   محلي ومزامنة. المشروع الحالي Spring Boot مع SQLite على السيرفر، حسب طلب
+   الدكتور: "Product Screen <-> API <-> business logic <-> DB".
+   لازم تكون جاهز تشرح هذا الفرق للدكتور.
+2) الـ ERD (ص 46) فيه حقل cost_price للمنتج، وهو غير موجود عندنا.
+   بدونه لا يمكن حساب الربح المطلوب في شاشة التقارير (Fig 3.8).
+3) لا يوجد مجلد android/ ولا ios/ في المشروع. الموجود فقط web/ و macos/،
+   بينما التقرير (ص 27، Portability) يقول إن التطبيق يجب أن يعمل على Android.
+
+
+=====================================================================
+1. هيكل المشروع (Project Structure)
+=====================================================================
+
+clixsell-pos/
+ |-- lib/                 تطبيق Flutter (الواجهة)
+ |-- test/                اختبارات Flutter
+ |-- backend/             Spring Boot API + business logic + SQLite
+ |-- web/, macos/         المنصات الموجودة (لا يوجد android/ios)
+ |-- pubspec.yaml         مكتبات Flutter (http, file_picker, qr_flutter, flutter_localizations)
+ |-- INVENTORY_MODULE.md  توثيق المشروع (تشغيل، API، جداول، اختبارات)
+ |-- FUTURE_WORK.md       الميزات المؤجلة الأربع
+ |-- README.md            الملف الافتراضي من Flutter (غير محدّث)
+
+--- Flutter (lib/) ---
+main.dart
+    نقطة البداية. يعرض Login حتى يسجّل المستخدم دخوله، ثم الشاشات حسب دوره.
+    يدعم EN/AR (RTL). ينشئ ProductStore و PosCart ويحمّل إعدادات المتجر.
+config/api_config.dart
+    عنوان الـ API، الافتراضي http://localhost:8080/api (يتغير بـ API_BASE_URL).
+l10n/app_strings.dart
+    كل نصوص الواجهة بالإنجليزي والعربي.
+models/
+    app_user.dart (المستخدم والدور)، product.dart، product_category.dart،
+    sale.dart (الفاتورة، طرق الدفع، المرتجع)، store_info.dart.
+services/
+    api_http.dart (طلبات JSON مع token و ApiException)، auth_api_client.dart،
+    admin_api_clients.dart (المتاجر، المدراء، الكاشيرية)، product_api_client.dart،
+    sales_api_client.dart.
+state/
+    auth_session.dart (من مسجّل الدخول)، product_store.dart (المنتجات والإحصائيات)،
+    pos_cart.dart (الفاتورة الحالية والمجاميع).
+screens/
+    الشاشات (القسم 2).
+widgets/
+    app_sidebar.dart (القائمة الجانبية حسب الدور)، page_header.dart، stat_card.dart،
+    stock_status_badge.dart، product_thumbnail.dart.
+theme/, utils/
+    الألوان والخطوط، وتنسيق العملة والتاريخ.
+
+--- Backend (backend/src/main/java/com/clixsell/pos/) ---
+auth/                       تسجيل الدخول، الجلسات، فلتر الـ token، إنشاء أول System Admin
+config/SecurityConfig.java  قواعد الصلاحيات لكل رابط، CORS، BCrypt
+store/                      المتاجر: entity + service + API
+user/                       المستخدمون، مدراء المتاجر والكاشيرية
+product/                    المنتجات وقواعدها
+supplier/                   المورّدون (بدون API، يُنشؤون تلقائياً من اسم المورّد عند حفظ منتج)
+sale/                       البيع، الدفع، الإيصال
+returns/                    المرتجعات
+common/                     أخطاء JSON موحّدة، تحويل التواريخ لـ SQLite
+demo/                       البيانات التجريبية (على فرع feature/demo-data فقط)
+db/migration                ملفات Flyway: V1، V2، V3
+application.properties      المنفذ 8080، ملف clixsell.db، الجلسة 12 ساعة،
+                            كلمة سر sysadmin، المرتجع 14 يوم، البيانات التجريبية
+
+
+=====================================================================
+2. Frontend: كل الشاشات
+=====================================================================
+
+(1) Login - screens/auth/login_page.dart                              [FULL]
+    دخول باسم مستخدم وكلمة سر، رسائل للأخطاء (كلمة سر خاطئة، حساب مقفل،
+    متجر معطّل)، زر تبديل اللغة. للجميع.
+
+(2) App Shell - screens/app_shell.dart + widgets/app_sidebar.dart     [FULL]
+    الإطار العام: القائمة الجانبية حسب الدور، اسم المستخدم ومتجره، اللغة،
+    Log out، قائمة منسدلة على الشاشات الصغيرة.
+
+(3) Stores - screens/admin/stores_page.dart                           [FULL]
+    إنشاء وتعديل وتفعيل وتعطيل المتاجر، مع الضريبة وأقصى خصم. System Admin.
+
+(4) Staff Accounts - screens/admin/staff_accounts_page.dart           [FULL]
+    نفس الشاشة لحالتين: مدراء متجر (يفتحها System Admin) وكاشيرية (يفتحها
+    Store Admin). إنشاء حساب، تعطيل/تفعيل، تغيير كلمة السر.
+
+(5) Inventory - screens/inventory/inventory_page.dart
+                + widgets/product_table.dart                          [PARTIAL]
+    4 بطاقات إحصاء (إجمالي، منخفض، نافد، قيمة المخزون)، بحث، فلترة بالصنف
+    والحالة، جدول مع صفحات، تعديل وحذف مع Undo.
+    Store Admin كامل، Cashier قراءة فقط.
+    مقارنة بـ Fig 3.3: ينقصه Import/Export.
+
+(6) Add/Edit Product - screens/inventory/product_form_page.dart
+                       + product_validators.dart                       [FULL]
+    الاسم، الباركود (مع توليد تلقائي)، الصنف، السعر، الكمية، الحد الأدنى،
+    المورّد، الصورة. تحقق من الحقول وتحذير عند الخروج بدون حفظ. Store Admin.
+
+(7) POS (Cashier Dashboard) - screens/pos/pos_page.dart + pos_widgets.dart [FULL]
+    شاشة البيع حسب Fig 3.2 (التفاصيل في القسم 7). Cashier و Store Admin.
+
+(8) Dialogs داخل POS - screens/pos/pos_dialogs.dart                    [FULL]
+    DiscountDialog، SuspendedInvoicesDialog، ReturnDialog، ReceiptDialog (QR).
+
+(-) Confirm dialogs - screens/inventory/widgets/confirm_dialogs.dart  [FULL]
+    تأكيد الحذف، وتأكيد الخروج بدون حفظ.
+
+القائمة الجانبية لكل دور (app_sidebar.dart):
+  - System Admin: Stores فقط
+  - Store Admin: Products، Add، Edit، POS، Cashiers
+  - Cashier: POS (يفتح أولاً)، Products (للعرض فقط)
+
+
+=====================================================================
+3. Backend: Controllers, Services, Business Logic, Endpoints
+=====================================================================
+
+--- Endpoints ---
+auth/AuthController
+  POST /api/auth/login                      الجميع       يقرأ users، ينشئ user_sessions
+  POST /api/auth/logout، GET /api/auth/me   مسجّل دخول   يحذف الجلسة / بيانات المستخدم
+
+store/StoreController (System Admin)
+  GET, POST /api/admin/stores
+  GET, PUT  /api/admin/stores/{id}
+  PUT       /api/admin/stores/{id}/status                جدول stores
+
+user/StoreAdminController (System Admin)
+  GET, POST /api/admin/stores/{storeId}/admins
+  PUT       .../admins/{userId}/status
+  PUT       .../admins/{userId}/password                 جدول users
+
+store/MyStoreController (Store Admin، Cashier)
+  GET /api/store                                         متجر المستخدم
+
+user/CashierController (Store Admin)
+  GET, POST /api/store/cashiers
+  PUT       /api/store/cashiers/{id}/status
+  PUT       /api/store/cashiers/{id}/password            جدول users
+
+product/ProductController
+  GET  /api/products، GET /api/products/{id}   Store Admin، Cashier   SELECT
+  POST /api/products                           Store Admin            INSERT
+  PUT  /api/products/{id}                      Store Admin            UPDATE
+  DELETE /api/products/{id}                    Store Admin            DELETE
+  GET  /api/products/generate-barcode          Store Admin
+
+sale/SaleController (Store Admin، Cashier)
+  POST   /api/sales                    إتمام البيع: INSERT sales, sale_items,
+                                       payments, receipts + UPDATE المخزون
+  POST   /api/sales/suspended          تعليق فاتورة جديدة
+  PUT    /api/sales/suspended/{id}     تعليق فاتورة مستأنفة مرة أخرى
+  GET    /api/sales/suspended          قائمة المعلّقة
+  GET    /api/sales/{id}               فاتورة واحدة
+  DELETE /api/sales/suspended/{id}     الحالة تصبح CANCELED
+  GET    /api/sales/lookup?code=       بحث برقم الفاتورة أو كود QR
+
+returns/ReturnController (Store Admin، Cashier)
+  POST /api/returns                    INSERT returns + UPDATE sale_items والمخزون
+
+--- Services ---
+AuthService، StoreService، StaffService، ProductService،
+SupplierService (يبحث عن المورّد أو ينشئه)، SaleService، ReturnService.
+
+--- Business logic (داخل الـ entities، كما في Class Diagram ص 45) ---
+Product:   create، updateDetails، validate، updateStock (لا ينزل تحت الصفر)،
+           generateBarcode (EAN-13). الحالة: نافد إذا 0، منخفض إذا <= الحد الأدنى.
+Store:     takeNextInvoiceNumber (INV-000001 لكل متجر)، setStatus،
+           التحقق من نسبة الضريبة والخصم.
+User:      التحقق من الحساب وكلمة السر، isLocked (قفل بعد 5 محاولات لمدة 5 دقائق)،
+           canWork.
+Sale:      start، addItem (يدمج المكرر ويرفض منتجات متجر آخر)، calculateTotal،
+           suspend، cancel، completeSale (يفحص كل المخزون أولاً، ثم ينقصه،
+           ثم يسجّل الدفع والإيصال).
+SaleItem:  updateQuantity، calculateLineTotal، recordReturn.
+Payment:   PaymentMethod = CASH، CARD، WALLET، BANK_TRANSFER.
+Receipt:   generateQRCode بصيغة CLIXSELL- + 16 حرف hex.
+ReturnProduct: process و validateReturn (خلال 14 يوماً، ولا يتجاوز المتاح
+           للإرجاع)، calculateRefund (حصة المنتج من المدفوع فعلاً)، restoreStock.
+
+
+=====================================================================
+4. Database (SQLite: backend/clixsell.db)
+=====================================================================
+
+stores
+  store_id، name (فريد)، address، phone، status، tax_rate (افتراضي 16)،
+  max_discount_percent (افتراضي 10)، next_invoice_number، created_at
+  -> الأب لكل الجداول الأخرى
+
+users
+  user_id، store_id، username (فريد)، full_name، password_hash،
+  role (SYSTEM_ADMIN / STORE_ADMIN / CASHIER)، status، failed_login_attempts،
+  locked_until، created_at
+  -> store_id فارغ فقط للـ SYSTEM_ADMIN (CHECK)
+
+user_sessions
+  session_id، user_id، token_hash (فريد)، created_at، expires_at
+  -> users
+
+suppliers
+  supplier_id، store_id، name، phone، whatsapp_number، address
+  UNIQUE(store_id, name)  -> stores
+
+products
+  product_id، store_id، supplier_id، name، barcode، category، selling_price،
+  quantity، min_stock، image (BLOB)، image_name، created_at، updated_at
+  UNIQUE(store_id, barcode)  -> stores، suppliers
+
+sales  (هذا هو جدول الفواتير، لا يوجد جدول اسمه invoices)
+  sale_id، store_id، cashier_id، invoice_number،
+  status (SUSPENDED / COMPLETED / CANCELED)، subtotal، discount، tax_rate، tax،
+  total، created_at، updated_at، completed_at
+  UNIQUE(store_id, invoice_number)  -> stores، users
+
+sale_items
+  sale_item_id، sale_id، product_id، product_name، barcode، quantity،
+  unit_price، line_total، returned_quantity
+  -> sales. عند حذف المنتج يصبح product_id فارغاً (SET NULL)
+
+payments
+  payment_id، sale_id، payment_method، amount، payment_status، paid_at  -> sales
+
+receipts
+  receipt_id، sale_id (فريد)، qr_code_value (فريد)، receipt_url، issued_at
+  -> sales (1 إلى 1)
+
+returns
+  return_id، store_id، sale_id، sale_item_id، product_id، cashier_id، quantity،
+  reason، refund_amount، refund_method، return_date
+  -> sales، sale_items، products، users
+
+flyway_schema_history  سجل الـ migrations
+
+Migrations:
+  V1__initial_schema.sql : المنتجات والمورّدين
+  V2__multi_store.java   : المتاجر، المستخدمون، الجلسات، نقل البيانات القديمة
+                           إلى "Default Store" مع نسخة احتياطية
+  V3__sales.sql          : جداول المبيعات
+
+--- مقارنة مع الـ ERD في التقرير (ص 46) ---
+  USERS.email                -> [MISSING] الدخول باسم المستخدم فقط
+  PRODUCTS.cost_price        -> [MISSING] ضروري لحساب الربح
+  SALES.sale_date            -> [PARTIAL] موجود باسم created_at / completed_at
+  ALERTS                     -> [MISSING]
+  PURCHASE_RECOMMENDATIONS   -> [MISSING]
+  PURCHASE_ORDERS            -> [MISSING]
+  SYNC_QUEUE                 -> [MISSING]
+  STORES، USER_SESSIONS      -> إضافات جديدة (من متطلب تعدد المتاجر)
+
+
+=====================================================================
+5. تسجيل الدخول (Authentication)
+=====================================================================
+
+1) الجميع يستخدم نفس شاشة Login. يتحقق AuthService من اسم المستخدم وكلمة
+   السر المخزّنة كـ BCrypt hash.
+2) عند النجاح يُنشأ token عشوائي 256-bit. يُخزَّن فقط الـ SHA-256 hash،
+   والجلسة صالحة 12 ساعة.
+3) التطبيق يرسل الـ token مع كل طلب:  Authorization: Bearer <token>
+   يقرأه TokenAuthenticationFilter ويحوّله إلى CurrentUser
+   (userId، role، storeId).
+4) إذا رجع السيرفر 401، يرجع التطبيق تلقائياً لشاشة Login (auth_session.dart).
+
+حماية الحسابات:
+  - 5 محاولات خاطئة تقفل الحساب 5 دقائق.
+  - تعطيل المستخدم أو متجره يُخرجه فوراً.
+  - تغيير كلمة السر يُنهي كل جلساته.
+
+أول System Admin: يُنشئه SystemAdminInitializer عند أول تشغيل:
+  sysadmin / Admin12345
+
+صلاحيات كل دور (مفروضة في SecurityConfig.java وليس في الواجهة فقط):
+  - System Admin : المتاجر ومدراؤها فقط، بدون منتجات أو بيع
+  - Store Admin  : المنتجات، الكاشيرية، البيع
+  - Cashier      : البيع، وقراءة المنتجات فقط
+
+مقارنة مع التقرير:
+  SR1 (username/email) -> [PARTIAL] باسم المستخدم فقط
+  SR2 (تحديد الدور)     -> [FULL] مع توسيع: Manager = Store Admin، وأضفنا System Admin
+
+
+=====================================================================
+6. تعدد المتاجر (Multi-Store)
+=====================================================================
+
+- كل منتج ومورّد ومستخدم وفاتورة ومرتجع مرتبط بـ store_id.
+- المتجر يُؤخذ دائماً من المستخدم المسجّل دخوله (CurrentUser.storeId)، ولا
+  يُؤخذ من الطلب أبداً. لو أُرسل storeId مختلف يتم تجاهله
+  (اختبار storeIdInTheRequestBodyIsIgnored).
+- الوصول لسجل من متجر آخر يرد 404، فلا يعرف المستخدم حتى أنه موجود.
+- الباركود واسم المورّد فريدان داخل المتجر فقط. وكل متجر له ترقيم فواتير
+  خاص يبدأ من INV-000001.
+- الكاشير الجديد ينضم دائماً لمتجر المدير الذي أنشأه.
+
+الحالة: [FULL]. مطلب جديد منك وليس من التقرير، لكنه يحقق "multiple branches"
+الموجودة في Future Work (ص 55).
+
+
+=====================================================================
+7. الميزات المنفّذة وكيف تعمل
+=====================================================================
+
+[FULL]    إدارة المتاجر: إضافة، تعديل، تعطيل (المتجر المعطّل يمنع دخول مستخدميه).
+[FULL]    إدارة مدراء المتاجر والكاشيرية: إنشاء، تعطيل، تغيير كلمة السر.
+[FULL]    إضافة/تعديل/حذف منتج: تحقق في الواجهة والسيرفر، باركود فريد، صورة،
+          المورّد يُنشأ تلقائياً.
+[FULL]    توليد باركود: EAN-13 فريد داخل المتجر.
+[FULL]    حالة المخزون والإحصائيات: نافد/منخفض/متوفر، قيمة المخزون، فلترة بالبطاقة.
+[FULL]    بحث وفلترة المنتجات: بالاسم والباركود والصنف.
+[FULL]    POS - إضافة منتج: بالضغط على البطاقة، أو كتابة الباركود ثم Enter.
+[FULL]    POS - تعديل الكمية وحذف سطر: لا تتجاوز المخزون، والنافد لا يُضاف.
+[FULL]    المجاميع: المجموع -> الخصم -> الضريبة على الباقي -> الإجمالي.
+          السيرفر يعيد الحساب بأسعار قاعدة البيانات ولا يثق بأسعار الشاشة.
+[FULL]    الخصم: مبلغ أو نسبة، لا يتجاوز الحد الأقصى للمتجر.
+[FULL]    الضريبة لكل متجر: يضبطها System Admin، الافتراضي 16%.
+[FULL]    طرق الدفع: 4 طرق، واحدة لكل فاتورة.
+[FULL]    إتمام البيع: يفحص كل المخزون أولاً (إذا نقص: 409 ولا يحفظ شيئاً)،
+          وكل الحفظ في transaction واحدة.
+[PARTIAL] إيصال QR: يُعرض على الشاشة ويُستخدم للمرتجع. لا طباعة، ولا receipt_url حقيقي.
+[FULL]    تعليق واستئناف: مشتركة بين كاشيرية المتجر، لا تحجز المخزون، تستخدم
+          الأسعار الحالية عند الاستئناف.
+[FULL]    إلغاء الفاتورة: تُفرَّغ، والمعلّقة تصبح CANCELED.
+[FULL]    المرتجع: برقم الفاتورة أو كود QR، خلال 14 يوماً، نفس طريقة الدفع،
+          والمخزون يرجع.
+[FULL]    العربية و RTL في كل الشاشات.
+[FULL]    Responsive: كمبيوتر، تابلت، موبايل (في المتصفح).
+[FULL]    البيانات التجريبية: متجران فلسطينيان، 20 منتجاً، فواتير ومرتجع
+          (على فرع غير مدموج).
+[FULL]    ترقية قاعدة البيانات القديمة: Flyway مع نسخة احتياطية.
+
+
+=====================================================================
+8. الربط: ما هو متصل فعلاً بالـ API وقاعدة البيانات؟
+=====================================================================
+
+Login            -> /api/auth/*                         users، user_sessions
+                    [FULL] تم التحقق في المتصفح ضد السيرفر الحقيقي
+Stores           -> /api/admin/stores*                  stores
+                    [FULL] تم التحقق في المتصفح
+Staff Accounts   -> /api/admin/stores/{id}/admins*، /api/store/cashiers*   users
+                    [FULL] تم التحقق في المتصفح
+Inventory        -> GET /api/products                   products، suppliers   [FULL]
+Add/Edit Product -> POST/PUT/DELETE /api/products، generate-barcode           [FULL]
+POS              -> /api/products، /api/store، /api/sales*، /api/returns
+                    كل جداول المبيعات
+                    [FULL] تم التحقق في المتصفح يوم 2026-11-04 مع متجرين،
+                    وفحصت الجداول مباشرة
+
+ملاحظات:
+- لا توجد في المشروع أي شاشة "شكلية" بدون backend.
+- بيانات موجودة في قاعدة البيانات بدون واجهة:
+  suppliers.phone / whatsapp_number / address (بدون API أو شاشة)،
+  و receipts.receipt_url.
+
+
+=====================================================================
+9. الناقص: مقارنة شاملة مع التقرير
+=====================================================================
+
+--- شاشات التقرير (Table 3.7 ص 29، والأشكال 3.1-3.10 ص 30-39) ---
+Fig 3.1  Guardian Mode (ص 30)            [MISSING]
+Fig 3.2  POS (ص 31)                      [FULL]    ينقص: الكاميرا (SR4) و AI (SR14)
+Fig 3.3  Inventory (ص 32)                [PARTIAL] ينقص Import/Export
+Fig 3.4  Product Details (ص 33)          [PARTIAL] لا توجد شاشة عرض مستقلة؛ التفاصيل
+                                                   في الجدول ونموذج التعديل
+Fig 3.5  Stock Alerts (ص 34)             [PARTIAL] بطاقات وفلتر في Inventory فقط؛
+                                                   لا شاشة تنبيهات ولا "Purchase request"
+Fig 3.6  Suspended Invoices (ص 35)       [PARTIAL] نافذة داخل POS وليست شاشة؛
+                                                   لا "اسم الزبون"
+Fig 3.7  Sales Analytics (ص 36)          [MISSING]
+Fig 3.8  Reports (ص 37)                  [MISSING] الربح يحتاج cost_price
+Fig 3.9  Settings (ص 38)                 [PARTIAL] الضريبة في Stores، اللغة في القائمة،
+                                                   المستخدمون في Staff؛ لا Profile ولا
+                                                   Printer ولا Backups ولا AI Mobile
+Fig 3.10 AI Product Identification (ص 39) [MISSING]
+
+--- متطلبات الكاشير (Table 3.2 ص 21) ---
+UR-C1  Login                     [FULL]
+UR-C2  New sale                  [FULL]
+UR-C3  Scan barcode              [PARTIAL] قارئ USB / كتابة + Enter تعمل؛ الكاميرا لا
+UR-C4  Search                    [FULL]
+UR-C5  Add item                  [FULL]
+UR-C6  Remove item               [FULL]
+UR-C7  Quantity                  [FULL]
+UR-C8  Suspend/Resume            [FULL]
+UR-C9  Payment methods           [FULL]
+UR-C10 QR receipt                [FULL] على الشاشة
+UR-C11 Return                    [FULL]
+UR-C12 Camera identification     [MISSING]
+
+--- متطلبات المدير (Table 3.3 ص 22) ---
+UR-M1           Login                        [FULL]
+UR-M2, M3, M4   Add/Edit/Delete product      [FULL]
+UR-M5           Product details              [PARTIAL]
+UR-M6           Manage quantities            [PARTIAL] بالتعديل فقط، بدون سجل تعديلات
+UR-M7           Sales reports                [MISSING]
+UR-M8           Inventory reports            [PARTIAL] الإحصائيات الأربع فقط
+UR-M9           Low-stock alerts             [PARTIAL]
+UR-M10          Suspended invoices           [FULL] عبر POS
+UR-M11          Import/Export                [MISSING]
+UR-M12          Settings                     [PARTIAL]
+UR-M13..M15     AI purchase orders, WhatsApp [MISSING]
+UR-M16, M17     Guardian Mode, AI alerts     [MISSING]
+
+--- متطلبات الزبون (Table 3.4 ص 23) ---
+UR-U1  Digital receipt   [PARTIAL] يُعرض على شاشة الكاشير ولا يُرسل للزبون
+UR-U2  Return request    [FULL]
+
+--- متطلبات النظام (Table 3.5 ص 24-26) ---
+SR1          [PARTIAL] بدون email
+SR2          [FULL]
+SR3          [PARTIAL] السجل يُنشأ عند أول حفظ (قرار وافقت عليه)
+SR4          [MISSING]
+SR5..SR13    [FULL] (SR12 على الشاشة)
+SR14         [MISSING]
+SR15..SR17   [FULL]
+SR18         [PARTIAL]
+SR19         [PARTIAL] البيع والمرتجع نعم، التعديل اليدوي بدون سجل
+SR20         [MISSING]
+SR21         [PARTIAL]
+SR22         [PARTIAL]
+SR23         [FULL]
+SR24         [MISSING]
+SR25         [PARTIAL] لا Backups
+SR26..SR31   [MISSING]
+SR32, SR33   [MISSING] Offline/Sync
+
+--- المتطلبات غير الوظيفية (Table 3.6 ص 27-28) ---
+Security                    [FULL]
+Data Integrity              [FULL] (transactions وفحص المخزون)
+Maintainability             [FULL] (modules)
+Scalability                 [FULL] (تعدد المتاجر)
+Availability offline        [MISSING]
+Reliability (حفظ محلي)      [MISSING]
+Synchronization             [MISSING]
+Portability (Android)       [MISSING] لا يوجد مجلد android
+Usability (تدريب 20 دقيقة)  [UNKNOWN]
+Performance (3 ثوانٍ)       [UNKNOWN] لم يُقَس
+Accuracy, Intelligence (AI) [MISSING]
+Integration (WhatsApp)      [MISSING]
+
+--- المخططات (ص 41-52) ---
+Use Case Diagram (ص 41-44)          حالات الكاشير [FULL]؛ AI/الشراء/Guardian [MISSING]
+Class Diagram (ص 45)                [PARTIAL] البيع والمنتجات موجودة؛ AI، Guardian،
+                                    PurchaseOrder، WhatsApp، Sync غير موجودة
+Activity: Manage sale (3.14)        [FULL]
+Activity: Return product (3.15)     [FULL]
+Activity: Offline sync (3.16)       [MISSING]
+Sequence: Complete sale (3.17)      [FULL]
+Sequence: Guardian (3.18)           [MISSING]
+Sequence: AI (3.19)                 [MISSING]
+State: Purchase Order (3.20، ص 52)  [MISSING]
+
+--- أشياء في الفصل الأول ليست في جداول المتطلبات ---
+"customer records" (ص 7-9) و "basic sales prediction" (ص 8): [MISSING].
+لم يتحول أي منهما إلى متطلب رسمي في الجداول.
+
+
+=====================================================================
+10. الاختبارات (Testing)
+=====================================================================
+
+--- المختبَر آلياً ---
+Backend: 75 اختبار، كلها نجحت (74 على main + 1 للبيانات التجريبية)
+  AuthAndRolesTest (14)          الدخول، BCrypt، القفل، التعطيل، صلاحيات الأدوار
+  MultiStoreIsolationTest (7)    عزل المتاجر
+  MigrationTest (2)              ترقية V1 -> V2، وقاعدة جديدة فارغة
+  ProductTest (11)               قواعد المنتج
+  ProductApiIntegrationTest (14) الـ API مع فحص قاعدة البيانات
+  SaleTest (9)                   البيع
+  ReturnProductTest (4)          المرتجع
+  PosApiIntegrationTest (13)     البيع، التعليق، المرتجع، المخزون، الترقيم، العزل
+  DemoDataTest (1)               البيانات التجريبية
+
+Flutter: 69 اختبار، كلها نجحت
+  auth_session_test، product_store_test، pos_cart_test  منطق الحالة والـ API clients
+  inventory_page_test، pos_page_test                    الشاشات: Login، المخزون،
+                                                        الإدارة، POS، العربي، الأحجام
+
+--- المختبَر يدوياً (End-to-end) ---
+تشغيل حقيقي في Chromium ضد السيرفر الحقيقي، مع متجرين، وفحص الجداول مباشرة.
+تم للـ multi-store وللـ POS.
+
+--- غير المختبَر / لا أستطيع التأكد منه [UNKNOWN] ---
+- اختبارات Flutter تعمل ضد Fake backend (test/support/fake_product_backend.dart)
+  وليس السيرفر الحقيقي. لا توجد integration tests آلية تجمع الطرفين؛ التحقق
+  المشترك تم يدوياً فقط.
+- ترقية قاعدة بيانات موجودة من V2 إلى V3: لا يوجد اختبار مخصص.
+- البيانات التجريبية من خلال الواجهة: فحصتها بالـ API وقاعدة البيانات فقط.
+- التشغيل على جهازك (Windows) لنسخة الـ POS: لم يصلني تأكيد منك.
+- قارئ باركود حقيقي (USB): لم يُختبر بجهاز فعلي (المفروض يعمل لأنه يكتب
+  الكود ويضغط Enter).
+- الأداء ومدة التدريب (NFR): لم تُقَس.
+- Android و iOS: المنصات غير موجودة.
+- الاستخدام من جهاز آخر على الشبكة: الـ API على localhost، والـ CORS مختبَر
+  لـ localhost فقط.
+
+
+=====================================================================
+11. الخطوات القادمة (بالترتيب)
+=====================================================================
+
+0) دمج feature/demo-data في main.
+   السبب: البيانات جاهزة ومختبرة.
+
+1) إضافة cost_price للمنتج (migration V4 + حقل في النموذج)، ثم شاشتا
+   Reports و Sales Analytics.
+   السبب: البيانات موجودة الآن، وهذا أكبر ناقص ظاهر عند العرض، ولا يحتاج
+   خدمات خارجية.
+   يغطي: Fig 3.7، Fig 3.8، SR20، SR21، UR-M7، UR-M8
+
+2) شاشة Stock Alerts.
+   السبب: سهلة ومبنية على بيانات موجودة، وتمهّد لأوامر الشراء.
+   يغطي: Fig 3.5، SR22، UR-M9
+
+3) Product Details و Import/Export (CSV).
+   السبب: يكمل شاشات المخزون.
+   يغطي: Fig 3.4، SR18، SR24، UR-M5، UR-M11
+
+4) إدارة المورّدين (هاتف، واتساب).
+   السبب: شرط لازم قبل أوامر الشراء.
+   يغطي: ERD، وجزء من SR28
+
+5) Purchase Recommendations + موافقة/رفض + إرسال WhatsApp
+   (نبدأ بقواعد بسيطة: المخزون + معدل البيع، ورابط wa.me).
+   السبب: قلب "الذكاء" في التقرير، ويتبع الـ State Diagram.
+   يغطي: SR26-SR29، UR-M13-M15، Fig 3.18، Fig 3.20
+
+6) Guardian Mode + جدول ALERTS.
+   السبب: تجمع المبيعات والتنبيهات والتوصيات في شاشة واحدة.
+   يغطي: Fig 3.1، SR30، SR31، UR-M16، UR-M17
+
+7) شاشة Settings موحّدة (Profile، Backups) + دعم الدخول بالـ email.
+   يغطي: Fig 3.9، SR25، SR1
+
+8) Android (إنشاء المنصة + ضبط عنوان الـ API)، ثم مسح الباركود بالكاميرا.
+   يغطي: Portability، SR4
+
+9) المؤجلات في FUTURE_WORK.md:
+   AI identification (SR14، Fig 3.10)، Offline/Sync (SR32، SR33)،
+   طباعة الإيصال.
+   السبب: الأصعب، وتحتاج قرارات تقنية كبيرة.
+
+التوصية: البدء بالأولوية 0 ثم 1. البيانات التجريبية ستجعل التقارير مليئة
+وواضحة عند العرض على الدكتور.
+
+لن يتم تنفيذ أي شيء قبل قول "START".
+
+=====================================================================

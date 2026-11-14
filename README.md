@@ -17,6 +17,7 @@ independent stores in one system.
 * **POS – Cashier Dashboard**: add products by tap or barcode, quantities, discount,
   per-store tax, 4 payment methods, complete sale with a QR digital receipt,
   suspend / resume invoices, cancel, and product returns.
+* **Suspended Invoices**, **Stock Alerts**, **Reports** and **Sales Analytics** screens.
 
 ## Run (Windows)
 Requires **Java JDK 17+** and **Flutter**. Maven and SQLite need no installation.
@@ -62,5 +63,9 @@ flutter test           # app: screens and state (with a fake server)
 ```
 
 ## More
+* `PROGRESS.md` – **current state, decisions and what to do next (start here)**.
+* `docs/REQUIREMENTS_STATUS.md` – every report requirement and its status.
 * `INVENTORY_MODULE.md` – architecture, API list, database tables, files.
 * `FUTURE_WORK.md` – features postponed for later.
+* `docs/plans/`, `docs/reports/` – plans and results reports (Arabic); `docs/screenshots/`.
+* `tools/e2e/` – real API and browser check scripts (demo database only).
