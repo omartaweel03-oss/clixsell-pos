@@ -15,6 +15,7 @@ enum SidebarDestination {
   reports,
   salesAnalytics,
   stockAlerts,
+  suspendedInvoices,
 }
 
 /// Which pages each role may open (the backend enforces the same rules).
@@ -27,6 +28,7 @@ extension RoleDestinations on UserRole {
       SidebarDestination.editProduct,
       SidebarDestination.stockAlerts,
       SidebarDestination.pos,
+      SidebarDestination.suspendedInvoices,
       SidebarDestination.reports,
       SidebarDestination.salesAnalytics,
       SidebarDestination.cashiers,
@@ -34,6 +36,7 @@ extension RoleDestinations on UserRole {
     // The cashier's home is the POS screen (report Figure 3.2).
     UserRole.cashier => const [
       SidebarDestination.pos,
+      SidebarDestination.suspendedInvoices,
       SidebarDestination.products,
     ],
   };
@@ -135,6 +138,13 @@ class AppSidebar extends StatelessWidget {
           Icons.point_of_sale_outlined,
           Icons.point_of_sale_rounded,
           s.navPos,
+        ),
+        // Suspended Invoices (Figure 3.6): Cashier and Store Admin.
+        item(
+          SidebarDestination.suspendedInvoices,
+          Icons.pause_circle_outline_rounded,
+          Icons.pause_circle_filled_rounded,
+          s.navSuspended,
         ),
         section(s.navSectionInventory),
         item(

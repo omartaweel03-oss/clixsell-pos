@@ -12,6 +12,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/min_width_scroll.dart';
 import '../../widgets/page_header.dart';
 import 'pos_dialogs.dart';
+import 'pos_resume.dart';
 import 'pos_widgets.dart';
 
 /// Cashier Dashboard / POS screen (report Figure 3.2).
@@ -21,9 +22,12 @@ import 'pos_widgets.dart';
 /// to the backend, which checks stock, calculates the totals and saves
 /// everything for this store only.
 class PosPage extends StatefulWidget {
-  const PosPage({super.key, required this.api});
+  const PosPage({super.key, required this.api, this.message});
 
   final SalesApiClient api;
+
+  /// Shown once when the page opens (e.g. "Invoice INV-000003 resumed").
+  final String? message;
 
   @override
   State<PosPage> createState() => _PosPageState();
@@ -38,6 +42,17 @@ class _PosPageState extends State<PosPage> {
   /// The POS has its own messenger so messages appear above the action bar
   /// instead of covering its buttons.
   final _messengerKey = GlobalKey<ScaffoldMessengerState>();
+
+  @override
+  void initState() {
+    super.initState();
+    final message = widget.message;
+    if (message != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _toast(message);
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -224,7 +239,6 @@ class _PosPageState extends State<PosPage> {
   Future<void> _openSuspended() async {
     final s = AppStrings.of(context);
     final cart = PosCartScope.read(context);
-    final store = ProductStoreScope.read(context);
     final sale = await showDialog<Sale>(
       context: context,
       builder: (_) => SuspendedInvoicesDialog(
@@ -235,22 +249,9 @@ class _PosPageState extends State<PosPage> {
       ),
     );
     if (sale == null || !mounted) return;
-    if (!cart.isEmpty && cart.resumedSaleId != sale.saleId) {
-      final ok = await confirmAction(
-        context,
-        title: s.replaceInvoiceTitle,
-        body: s.replaceInvoiceBody,
-        confirmLabel: s.yesContinue,
-        cancelLabel: s.keepInvoice,
-      );
-      if (!ok || !mounted) return;
-    }
-    final missing = cart.resume(sale, store.products);
-    _toast(
-      missing.isEmpty
-          ? s.invoiceResumed(sale.invoiceNumber)
-          : s.skippedProducts(missing.join(', ')),
-    );
+    final missing = await loadSuspendedIntoCart(context, sale);
+    if (missing == null || !mounted) return;
+    _toast(resumedMessage(s, sale, missing));
   }
 
   Future<void> _newInvoice() async {

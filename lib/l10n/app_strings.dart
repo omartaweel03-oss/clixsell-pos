@@ -574,6 +574,61 @@ class AppStrings {
   String get discard => _t('Discard', 'تجاهل');
   String get keepEditing => _t('Keep editing', 'متابعة التعديل');
 
+  // ── Suspended Invoices screen (report Figure 3.6, UR-C8 / UR-M10, SR9 / SR23) ─
+  String get navSuspended => _t('Suspended Invoices', 'الفواتير المعلقة');
+  String get suspDescription => _t(
+    'All suspended invoices that have not been completed',
+    'جميع الفواتير المعلقة التي لم يتم إكمالها',
+  );
+  String get suspCount => _t('Total invoices', 'إجمالي الفواتير');
+  String get suspCountHint => _t('Currently suspended', 'فاتورة معلقة حالياً');
+  String get suspValue => _t('Total value', 'إجمالي القيمة');
+  String get suspValueHint => _t(
+    'Value of all suspended invoices (prices when suspended)',
+    'قيمة جميع الفواتير المعلقة (بأسعار وقت التعليق)',
+  );
+  String get suspOldest => _t('Oldest suspended', 'أقدم فاتورة معلقة');
+  String suspOldestHint(String inv) => _t('Invoice $inv', 'الفاتورة $inv');
+  String get suspNone => _t('–', '–');
+  String ageText(Duration d) {
+    if (d.inMinutes < 1) {
+      return _t('Just now', 'الآن');
+    }
+    if (d.inHours < 1) {
+      return _t('${d.inMinutes} min ago', 'منذ ${d.inMinutes} دقيقة');
+    }
+    if (d.inDays < 1) {
+      return _t('${d.inHours} h ago', 'منذ ${d.inHours} ساعة');
+    }
+    return _t('${d.inDays} days ago', 'منذ ${d.inDays} يوم');
+  }
+
+  String get colInvoice => _t('Invoice', 'رمز الفاتورة');
+  String get colCashier => _t('Cashier', 'الكاشير');
+  String get colAmount => _t('Amount', 'المبلغ');
+  String get colItems => _t('Items', 'العناصر');
+  String get colDate => _t('Date', 'التاريخ');
+  String get cashierColumnNote => _t(
+    'The "Cashier" column shows who suspended the invoice: customers are not recorded in the system.',
+    'عمود "الكاشير" يعرض من علّق الفاتورة: النظام لا يسجّل بيانات الزبائن.',
+  );
+  String get allMonths => _t('All months', 'كل الأشهر');
+  String get resumeInPos => _t('Resume in POS', 'استكمال في نقطة البيع');
+  String get deleteSuspendedTip => _t('Delete (cancel)', 'حذف (إلغاء)');
+  String get deleteSuspendedTitle =>
+      _t('Delete this suspended invoice?', 'حذف هذه الفاتورة المعلقة؟');
+  String deleteSuspendedBody(String inv) => _t(
+    'Invoice $inv will be marked as canceled and kept in the records. It can no longer be resumed.',
+    'سيتم إلغاء الفاتورة $inv وتبقى محفوظة في السجلات، ولا يمكن استكمالها بعد ذلك.',
+  );
+  String get deleteLabel => _t('Delete', 'حذف');
+  String showingInvoices(int a, int b, int n) =>
+      _t('Showing $a – $b of $n invoices', 'عرض $a - $b من $n فاتورة');
+  String perPage(int n) => _t('$n per page', '$n لكل صفحة');
+  String get noSuspendedInMonth => _t(
+    'No suspended invoices in this month.',
+    'لا توجد فواتير معلقة في هذا الشهر.',
+  );
   // ── Stock Alerts (report Figure 3.5, UR-M9 / SR22) ─────────────────────────
   String get navStockAlerts => _t('Stock Alerts', 'تنبيهات المخزون');
   String get alertsTitle => _t('Stock Alerts', 'تنبيهات المخزون');

@@ -63,6 +63,19 @@ the bottom (tabs Products / Invoice on narrow screens; Arabic = right-to-left).
 **Not included (deferred, beyond Figure 3.2):** camera barcode scanning, AI product
 identification, offline mode / sync, receipt printing, change calculation, split payments.
 
+## Suspended Invoices (Figure 3.6, UR-C8 / UR-M10, SR9 / SR23)
+Store Admin and Cashier, own store. Cards *Oldest suspended* (how long ago), *Total value*
+(prices when suspended) and *Total invoices*; table Invoice · **Cashier** · Amount · Items · Date ·
+actions; pages (10 / 20 / 50 per page); month filter (default: all months).
+* The report's "Customer" column shows the **cashier** who suspended the invoice: customers are
+  not recorded in the system (not in the ERD either).
+* **Resume** opens the invoice in the POS with the existing rules (asks before replacing an open
+  invoice, current prices, deleted products left out); completing keeps its number.
+* **Delete** = cancel: after a confirmation the invoice is marked `CANCELED` and kept in the
+  database (`DELETE /api/sales/suspended/{id}`).
+* Uses the existing API only (`GET /api/sales/suspended`, `DELETE …/{id}`); no database change.
+  The POS "Suspended" window still works as before.
+
 ## Stock Alerts (Figure 3.5, UR-M9 / SR22)
 Store Admin only, own store. Cards *Total alerts*, *Out of stock*, *Low stock* (tap to filter), a
 table of the products at or below their alert level (minimum stock): product, supplier,
@@ -207,9 +220,9 @@ Migrations: `backend/src/main/resources/db/migration/V1__initial_schema.sql` (or
 
 ## Tests
 ```bash
-cd backend && .\mvnw.cmd test     # 101 backend tests: business logic (Sale, ReturnProduct, …),
+cd backend && .\mvnw.cmd test     # 105 backend tests: business logic (Sale, ReturnProduct, …),
                                  #   API + database, two-store isolation, roles, lockout, migration
-flutter test                     # 94 Flutter tests (use a fake server), incl. POS cart + screen
+flutter test                     # 107 Flutter tests (use a fake server), incl. POS cart + screen
 ```
 
 ## Files
@@ -244,6 +257,7 @@ flutter test                     # 94 Flutter tests (use a fake server), incl. P
 | `backend/…/sale/*` | Sale, SaleItem, Payment, Receipt business logic; sales service and API |
 | `backend/…/returns/*` | ReturnProduct business logic; returns service and API |
 | `backend/…/report/*` | Reports & Sales Analytics: period rules, queries, calculations, API |
+| `lib/screens/pos/suspended_invoices_page.dart`, `pos_resume.dart` | Suspended Invoices (Fig 3.6), shared resume |
 | `lib/screens/inventory/stock_alerts_page.dart` | Stock Alerts (Fig 3.5) |
 | `lib/screens/reports/*` | Reports page (Fig 3.8), Sales Analytics page (Fig 3.7), shared widgets |
 | `lib/widgets/sales_charts.dart` | Line, bar and donut charts (CustomPaint, no extra package) |

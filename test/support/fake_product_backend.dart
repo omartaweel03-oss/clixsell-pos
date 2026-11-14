@@ -712,7 +712,7 @@ class FakeProductBackend {
       'receiptCode': complete
           ? 'CLIXSELL-TEST${_nextSaleId.toString().padLeft(4, '0')}'
           : null,
-      'createdAt': existing?['createdAt'] ?? '2026-11-04T10:00:00',
+      'createdAt': existing?['createdAt'] ?? saleTime,
       'completedAt': complete ? saleTime : null,
     };
     if (existing != null) {

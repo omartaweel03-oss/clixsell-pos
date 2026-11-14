@@ -12,6 +12,9 @@ import '../widgets/app_sidebar.dart';
 import 'admin/staff_accounts_page.dart';
 import 'admin/stores_page.dart';
 import 'pos/pos_page.dart';
+import 'pos/pos_resume.dart';
+import 'pos/suspended_invoices_page.dart';
+import '../models/sale.dart';
 import 'reports/reports_page.dart';
 import 'reports/sales_analytics_page.dart';
 import '../services/sales_api_client.dart';
@@ -51,6 +54,9 @@ class _AppShellState extends State<AppShell> {
 
   late SidebarDestination _destination = widget.user.role.home;
   String? _editingProductId;
+
+  /// Shown once by the POS when it opens (e.g. after resuming an invoice).
+  String? _posMessage;
 
   /// Where the product form returns to (inventory, or Stock Alerts).
   SidebarDestination _formReturn = SidebarDestination.products;
@@ -140,6 +146,18 @@ class _AppShellState extends State<AppShell> {
       );
   }
 
+  /// Resume from the Suspended Invoices screen: the same rules as the POS
+  /// window (loadSuspendedIntoCart), then the POS opens with the invoice.
+  Future<void> _resumeInPos(Sale sale) async {
+    final s = AppStrings.of(context);
+    final missing = await loadSuspendedIntoCart(context, sale);
+    if (missing == null || !mounted) return;
+    _posMessage = resumedMessage(s, sale, missing);
+    // Clear this screen's messages so none covers the POS buttons.
+    ScaffoldMessenger.of(context).removeCurrentSnackBar();
+    await _navigate(SidebarDestination.pos);
+  }
+
   void _backToList() {
     setState(() {
       _destination = _formReturn;
@@ -153,9 +171,18 @@ class _AppShellState extends State<AppShell> {
       case SidebarDestination.stores:
         return StoresPage(key: const ValueKey('stores'), http: widget.http);
       case SidebarDestination.pos:
+        final message = _posMessage;
+        _posMessage = null;
         return PosPage(
           key: const ValueKey('pos'),
           api: SalesApiClient(widget.http),
+          message: message,
+        );
+      case SidebarDestination.suspendedInvoices:
+        return SuspendedInvoicesPage(
+          key: const ValueKey('suspendedInvoices'),
+          api: SalesApiClient(widget.http),
+          onResume: _resumeInPos,
         );
       case SidebarDestination.reports:
         return ReportsPage(
