@@ -574,6 +574,40 @@ class AppStrings {
   String get discard => _t('Discard', 'تجاهل');
   String get keepEditing => _t('Keep editing', 'متابعة التعديل');
 
+  // ── Stock Alerts (report Figure 3.5, UR-M9 / SR22) ─────────────────────────
+  String get navStockAlerts => _t('Stock Alerts', 'تنبيهات المخزون');
+  String get alertsTitle => _t('Stock Alerts', 'تنبيهات المخزون');
+  String get alertsDescription => _t(
+    'Products that need to be reordered',
+    'المنتجات التي تحتاج إلى إضافة طلب',
+  );
+  String get alertsTotal => _t('Total alerts', 'إجمالي التنبيهات');
+  String get alertsOut => _t('Out of stock', 'نفدت بالفعل');
+  String get alertsLow => _t('Low stock', 'منخفضة المخزون');
+  String get alertsTotalHint => _t('Low + out of stock', 'المنخفضة + النافدة');
+  String get alertsOutHint => _t('Quantity is zero', 'الكمية صفر');
+  String get alertsLowHint =>
+      _t('At or below the alert level', 'عند الحد التنبيهي أو أقل');
+  String get colCurrent => _t('Current stock', 'الحد الحالي');
+  String get colAlertLevel => _t('Alert level', 'الحد التنبيهي');
+  String get updateStock => _t('Update stock', 'تحديث المخزون');
+  String get noAlerts => _t(
+    'No alerts: every product is above its alert level.',
+    'لا توجد تنبيهات: كل المنتجات فوق الحد التنبيهي.',
+  );
+  String get createPurchaseRequest =>
+      _t('Create purchase request', 'إنشاء طلب شراء');
+  String get purchaseNotAvailable => _t(
+    'Purchase requests are not available yet: purchase orders (approval and sending to '
+        'suppliers by WhatsApp, SR26–SR29) are not built.',
+    'طلبات الشراء غير متاحة بعد: لم يتم بناء أوامر الشراء (الموافقة والإرسال '
+        'للمورّد عبر واتساب، SR26–SR29).',
+  );
+  String get refresh => _t('Refresh', 'تحديث');
+  String alertsShowing(int n, int total) =>
+      _t('Showing $n of $total alerts', 'عرض $n من $total تنبيه');
+  String get showAll => _t('Show all', 'عرض الكل');
+
   // ── Purchase cost (profit) ────────────────────────────────────────────────
   String get fieldCostPrice => _t('Cost price (₪)', 'سعر التكلفة (₪)');
   String get fieldCostPriceHelper => _t(

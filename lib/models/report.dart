@@ -240,6 +240,7 @@ class ReorderItem {
     required this.minStock,
     required this.outOfStock,
     this.supplierName,
+    this.category,
   });
 
   final int productId;
@@ -249,6 +250,9 @@ class ReorderItem {
   final int minStock;
   final bool outOfStock;
   final String? supplierName;
+
+  /// Category name as stored by the backend (e.g. `dairy`).
+  final String? category;
 }
 
 /// Inventory report (UR-M8 / SR21).
@@ -290,6 +294,7 @@ class InventoryReport {
           minStock: _i(r['minStock']),
           outOfStock: r['stockStatus'] == 'OUT_OF_STOCK',
           supplierName: r['supplierName'] as String?,
+          category: r['category'] as String?,
         ),
     ],
   );

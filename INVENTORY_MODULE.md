@@ -56,6 +56,18 @@ the bottom (tabs Products / Invoice on narrow screens; Arabic = right-to-left).
 **Not included (deferred, beyond Figure 3.2):** camera barcode scanning, AI product
 identification, offline mode / sync, receipt printing, change calculation, split payments.
 
+## Stock Alerts (Figure 3.5, UR-M9 / SR22)
+Store Admin only, own store. Cards *Total alerts*, *Out of stock*, *Low stock* (tap to filter), a
+table of the products at or below their alert level (minimum stock): product, supplier,
+category, current stock, alert level, status and **Update stock** (opens the product form and
+comes back here). The sidebar shows the live alert count. Data: `GET /api/reports/inventory`
+with the existing rules (out of stock = quantity 0, low = quantity ≤ minimum stock), so alerts
+follow every sale, return and restock.
+
+**Not built yet:** the report's *Create purchase request* needs purchase orders (SR26–SR29:
+recommendation, manager approval, WhatsApp to the supplier, new database tables). The button is
+shown disabled with this reason – no fake action.
+
 ## Reports (Figure 3.8) and Sales Analytics (Figure 3.7)
 Store Admin only (the report's Manager), always for the logged-in user's own store.
 
@@ -188,9 +200,9 @@ Migrations: `backend/src/main/resources/db/migration/V1__initial_schema.sql` (or
 
 ## Tests
 ```bash
-cd backend && .\mvnw.cmd test     # 98 backend tests: business logic (Sale, ReturnProduct, …),
+cd backend && .\mvnw.cmd test     # 101 backend tests: business logic (Sale, ReturnProduct, …),
                                  #   API + database, two-store isolation, roles, lockout, migration
-flutter test                     # 83 Flutter tests (use a fake server), incl. POS cart + screen
+flutter test                     # 94 Flutter tests (use a fake server), incl. POS cart + screen
 ```
 
 ## Files
@@ -225,6 +237,7 @@ flutter test                     # 83 Flutter tests (use a fake server), incl. P
 | `backend/…/sale/*` | Sale, SaleItem, Payment, Receipt business logic; sales service and API |
 | `backend/…/returns/*` | ReturnProduct business logic; returns service and API |
 | `backend/…/report/*` | Reports & Sales Analytics: period rules, queries, calculations, API |
+| `lib/screens/inventory/stock_alerts_page.dart` | Stock Alerts (Fig 3.5) |
 | `lib/screens/reports/*` | Reports page (Fig 3.8), Sales Analytics page (Fig 3.7), shared widgets |
 | `lib/widgets/sales_charts.dart` | Line, bar and donut charts (CustomPaint, no extra package) |
 | `lib/services/report_api_client.dart`, `lib/models/report.dart` | Reports API client and models |

@@ -17,6 +17,7 @@ import 'reports/sales_analytics_page.dart';
 import '../services/sales_api_client.dart';
 import 'inventory/inventory_page.dart';
 import 'inventory/product_form_page.dart';
+import 'inventory/stock_alerts_page.dart';
 
 /// Main layout after login: navy sidebar + content area.
 ///
@@ -52,6 +53,9 @@ class _AppShellState extends State<AppShell> {
 
   late SidebarDestination _destination = widget.user.role.home;
   String? _editingProductId;
+
+  /// Where the product form returns to (inventory, or Stock Alerts).
+  SidebarDestination _formReturn = SidebarDestination.products;
   GlobalKey<ProductFormPageState> _formKey = GlobalKey<ProductFormPageState>();
 
   bool get _onForm =>
@@ -88,6 +92,14 @@ class _AppShellState extends State<AppShell> {
     if (!await _canLeaveForm() || !mounted) return;
 
     setState(() {
+      if (destination == SidebarDestination.addProduct ||
+          destination == SidebarDestination.editProduct) {
+        if (!_onForm) {
+          _formReturn = _destination == SidebarDestination.stockAlerts
+              ? SidebarDestination.stockAlerts
+              : SidebarDestination.products;
+        }
+      }
       _destination = destination;
       if (destination == SidebarDestination.editProduct) {
         _editingProductId = product?.id ?? _editingProductId;
@@ -109,7 +121,7 @@ class _AppShellState extends State<AppShell> {
   void _onSaved(Product product, {required bool wasEditing}) {
     final s = AppStrings.of(context);
     setState(() {
-      _destination = SidebarDestination.products;
+      _destination = _formReturn;
       _editingProductId = null;
     });
     ScaffoldMessenger.of(context)
@@ -139,7 +151,7 @@ class _AppShellState extends State<AppShell> {
 
   void _backToList() {
     setState(() {
-      _destination = SidebarDestination.products;
+      _destination = _formReturn;
       _editingProductId = null;
     });
   }
@@ -158,6 +170,17 @@ class _AppShellState extends State<AppShell> {
         return ReportsPage(
           key: const ValueKey('reports'),
           api: ReportApiClient(widget.http),
+        );
+      case SidebarDestination.stockAlerts:
+        return StockAlertsPage(
+          key: const ValueKey('stockAlerts'),
+          api: ReportApiClient(widget.http),
+          onUpdateStock: (id) {
+            final product = store?.findById(id);
+            if (product != null) {
+              _navigate(SidebarDestination.editProduct, product: product);
+            }
+          },
         );
       case SidebarDestination.salesAnalytics:
         return SalesAnalyticsPage(
@@ -234,6 +257,9 @@ class _AppShellState extends State<AppShell> {
           selected: _destination,
           compact: compact,
           editingProductName: editingName,
+          alertCount: store == null
+              ? 0
+              : store.stats.lowStock + store.stats.outOfStock,
           onSelect: (d) => _navigate(d),
           onToggleLanguage: widget.onToggleLanguage,
           onLogout: _logout,
@@ -261,6 +287,7 @@ class _AppShellState extends State<AppShell> {
           SidebarDestination.pos => s.navPos,
           SidebarDestination.reports => s.navReports,
           SidebarDestination.salesAnalytics => s.navSalesAnalytics,
+          SidebarDestination.stockAlerts => s.navStockAlerts,
         };
         return Scaffold(
           key: _scaffoldKey,

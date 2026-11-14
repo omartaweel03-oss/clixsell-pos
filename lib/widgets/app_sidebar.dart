@@ -14,6 +14,7 @@ enum SidebarDestination {
   cashiers,
   reports,
   salesAnalytics,
+  stockAlerts,
 }
 
 /// Which pages each role may open (the backend enforces the same rules).
@@ -24,6 +25,7 @@ extension RoleDestinations on UserRole {
       SidebarDestination.products,
       SidebarDestination.addProduct,
       SidebarDestination.editProduct,
+      SidebarDestination.stockAlerts,
       SidebarDestination.pos,
       SidebarDestination.reports,
       SidebarDestination.salesAnalytics,
@@ -60,6 +62,7 @@ class AppSidebar extends StatelessWidget {
     required this.onLogout,
     this.compact = false,
     this.editingProductName,
+    this.alertCount = 0,
   });
 
   final AppUser user;
@@ -73,6 +76,9 @@ class AppSidebar extends StatelessWidget {
 
   /// When not null an "Edit Product" entry is shown for the product being edited.
   final String? editingProductName;
+
+  /// Low + out-of-stock products, shown as a badge on "Stock Alerts".
+  final int alertCount;
 
   @override
   Widget build(BuildContext context) {
@@ -99,12 +105,14 @@ class AppSidebar extends StatelessWidget {
       IconData selectedIcon,
       String label, {
       String? caption,
+      int badge = 0,
     }) => _NavItem(
       key: Key('nav-${d.name}'),
       icon: icon,
       selectedIcon: selectedIcon,
       label: label,
       caption: caption,
+      badge: badge,
       compact: compact,
       selected: selected == d,
       onTap: () => onSelect(d),
@@ -152,6 +160,14 @@ class AppSidebar extends StatelessWidget {
             s.navEditProduct,
             caption: editingProductName,
           ),
+        // Stock Alerts (Figure 3.5): Manager feature, with the live alert count.
+        item(
+          SidebarDestination.stockAlerts,
+          Icons.notifications_none_rounded,
+          Icons.notifications_active_rounded,
+          s.navStockAlerts,
+          badge: alertCount,
+        ),
         // Reports and Sales Analytics are Manager features (report Figures 3.7 / 3.8).
         section(s.navSectionReports),
         item(
@@ -427,8 +443,10 @@ class _NavItem extends StatelessWidget {
     required this.onTap,
     required this.compact,
     this.caption,
+    this.badge = 0,
   });
 
+  final int badge;
   final IconData icon;
   final IconData selectedIcon;
   final String label;
@@ -457,7 +475,12 @@ class _NavItem extends StatelessWidget {
             : null,
       ),
       child: compact
-          ? Icon(selected ? selectedIcon : icon, color: fg, size: 22)
+          ? Badge(
+              isLabelVisible: badge > 0,
+              label: Text('$badge'),
+              backgroundColor: AppColors.danger,
+              child: Icon(selected ? selectedIcon : icon, color: fg, size: 22),
+            )
           : Row(
               children: [
                 Icon(selected ? selectedIcon : icon, color: fg, size: 21),
@@ -492,6 +515,26 @@ class _NavItem extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (badge > 0)
+                  Container(
+                    key: const Key('alertBadge'),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.danger,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '$badge',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
               ],
             ),
     );
