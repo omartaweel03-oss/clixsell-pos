@@ -282,18 +282,23 @@ void main() {
     expect(dir, TextDirection.rtl);
   });
 
-  for (final size in const [Size(900, 900), Size(390, 844)]) {
-    testWidgets('POS without overflow at $size (tabs on narrow screens)', (tester) async {
+  for (final size in const [Size(1024, 768), Size(900, 900), Size(390, 844)]) {
+    testWidgets('POS keeps the desktop layout of Figure 3.2 at $size, without overflow', (tester) async {
       final backend = _backend();
       await _openPos(tester, backend, size: size);
       expect(tester.takeException(), isNull);
+      // Same three columns as on a wide screen (no tabs): summary, invoice, products.
+      expect(find.byKey(const Key('posInvoiceTab')), findsNothing);
+      expect(find.byKey(const Key('completeSaleButton')), findsOneWidget);
+      expect(find.byKey(const Key('posProduct-1')), findsOneWidget);
+      expect(find.byKey(const Key('nav-pos')), findsOneWidget); // sidebar, no drawer
+      // Narrower than the desktop design: the columns scroll sideways.
+      expect(find.byKey(const Key('minWidthScroll')), findsOneWidget);
       await _tap(tester, 'posProduct-1');
-      await tester.tap(find.byKey(const Key('posInvoiceTab')));
-      await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull);
       expect(_text(tester, 'qty-1'), '1');
       await _tap(tester, 'completeSaleButton');
       expect(find.byKey(const Key('receiptDialog')), findsOneWidget);
+      expect(backend.sales.single['status'], 'COMPLETED');
       expect(tester.takeException(), isNull);
     });
   }

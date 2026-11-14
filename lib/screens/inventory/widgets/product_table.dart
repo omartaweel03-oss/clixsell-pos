@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../l10n/app_strings.dart';
 import '../../../models/product.dart';
 import '../../../theme/app_theme.dart';
+import '../../../widgets/min_width_scroll.dart';
 import '../../../utils/formatters.dart';
 import '../../../widgets/product_thumbnail.dart';
 import '../../../widgets/stock_status_badge.dart';
@@ -25,34 +26,15 @@ class ProductTable extends StatelessWidget {
   final ValueChanged<Product>? onEdit;
   final ValueChanged<Product>? onDelete;
 
-  static const double wideBreakpoint = 960;
+  /// Narrowest width at which every column (incl. the actions) fits.
+  static const double wideBreakpoint = 1100;
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        if (constraints.maxWidth >= wideBreakpoint) {
-          return _WideTable(
-            products: products,
-            onEdit: onEdit,
-            onDelete: onDelete,
-          );
-        }
-        return Column(
-          children: [
-            for (var i = 0; i < products.length; i++) ...[
-              if (i > 0) const SizedBox(height: AppSpacing.md),
-              _ProductCard(
-                product: products[i],
-                onEdit: onEdit == null ? null : () => onEdit!(products[i]),
-                onDelete: onDelete == null
-                    ? null
-                    : () => onDelete!(products[i]),
-              ),
-            ],
-          ],
-        );
-      },
+    // Desktop table (Figure 3.3) at every size; narrow screens scroll sideways.
+    return MinWidthScroll(
+      minWidth: wideBreakpoint,
+      child: _WideTable(products: products, onEdit: onEdit, onDelete: onDelete),
     );
   }
 }
@@ -340,139 +322,3 @@ class _ActionIcon extends StatelessWidget {
 }
 
 /// Compact representation used on narrow screens.
-class _ProductCard extends StatelessWidget {
-  const _ProductCard({required this.product, this.onEdit, this.onDelete});
-
-  final Product product;
-  final VoidCallback? onEdit;
-  final VoidCallback? onDelete;
-
-  @override
-  Widget build(BuildContext context) {
-    final s = AppStrings.of(context);
-    final p = product;
-
-    Widget info(String label, String value, {Color? color}) => Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          value,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: 13.5,
-            fontWeight: FontWeight.w600,
-            color: color ?? AppColors.textPrimary,
-          ),
-        ),
-      ],
-    );
-
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              ProductThumbnail(imageBytes: p.imageBytes, size: 56),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      p.name,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${p.barcode} · ${p.category.label(arabic: s.isArabic)}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 12.5,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    StockStatusBadge(status: p.stockStatus),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-          const Divider(height: 1),
-          const SizedBox(height: AppSpacing.md),
-          Wrap(
-            spacing: AppSpacing.xl,
-            runSpacing: AppSpacing.md,
-            children: [
-              info(s.colPrice, Formatters.currency(p.price)),
-              info(
-                s.colQuantity,
-                Formatters.integer(p.quantity),
-                color: switch (p.stockStatus) {
-                  StockStatus.outOfStock => AppColors.danger,
-                  StockStatus.lowStock => AppColors.warning,
-                  StockStatus.inStock => null,
-                },
-              ),
-              info(s.colMinStock, Formatters.integer(p.minStockLevel)),
-              info(s.colSupplier, p.supplier, color: AppColors.primary),
-            ],
-          ),
-          if (onEdit != null && onDelete != null) ...[
-            const SizedBox(height: AppSpacing.md),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    key: Key('edit-${p.id}'),
-                    onPressed: onEdit,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.primary,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    icon: const Icon(Icons.edit_outlined, size: 18),
-                    label: Text(s.edit),
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    key: Key('delete-${p.id}'),
-                    onPressed: onDelete,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.danger,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    icon: const Icon(Icons.delete_outline_rounded, size: 18),
-                    label: Text(s.delete),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}

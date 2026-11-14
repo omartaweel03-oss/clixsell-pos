@@ -26,10 +26,8 @@ import 'inventory/stock_alerts_page.dart';
 /// * Store Admin  → Products, Add / Edit Product, Cashiers
 /// * Cashier      → Products (view only)
 ///
-/// Adapts to the screen size:
-/// * ≥ 1100 px: full sidebar
-/// * ≥ 720 px: compact icon sidebar
-/// * < 720 px: top app bar with a drawer
+/// Desktop layout at every size: full sidebar from 1100 px, a compact icon
+/// sidebar on narrower screens (no separate mobile layout).
 class AppShell extends StatefulWidget {
   const AppShell({
     super.key,
@@ -73,10 +71,6 @@ class _AppShellState extends State<AppShell> {
     SidebarDestination destination, {
     Product? product,
   }) async {
-    // Close the drawer on small screens.
-    if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
-      Navigator.of(context).pop();
-    }
     // A role can only open its own pages.
     if (!widget.user.role.destinations.contains(destination)) return;
 
@@ -111,9 +105,6 @@ class _AppShellState extends State<AppShell> {
   }
 
   Future<void> _logout() async {
-    if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
-      Navigator.of(context).pop();
-    }
     if (!await _canLeaveForm() || !mounted) return;
     widget.onLogout();
   }
@@ -227,7 +218,6 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
-    final s = AppStrings.of(context);
     final store = widget.user.role.worksInStore
         ? ProductStoreScope.of(context)
         : null;
@@ -265,46 +255,18 @@ class _AppShellState extends State<AppShell> {
           onLogout: _logout,
         );
 
-        if (width >= 720) {
-          return Scaffold(
-            key: _scaffoldKey,
-            body: Row(
-              children: [
-                sidebar(compact: width < 1100),
-                Expanded(child: content),
-              ],
-            ),
-          );
-        }
-
-        // Small screens: AppBar + Drawer.
-        final title = switch (_destination) {
-          SidebarDestination.stores => s.storesTitle,
-          SidebarDestination.products => s.inventoryTitle,
-          SidebarDestination.addProduct => s.navAddProduct,
-          SidebarDestination.editProduct => s.navEditProduct,
-          SidebarDestination.cashiers => s.cashiersTitle,
-          SidebarDestination.pos => s.navPos,
-          SidebarDestination.reports => s.navReports,
-          SidebarDestination.salesAnalytics => s.navSalesAnalytics,
-          SidebarDestination.stockAlerts => s.navStockAlerts,
-        };
+        // Desktop dashboard (report Figures 3.2–3.9) at every size: the
+        // sidebar always stays on screen; it shrinks to icons when space is
+        // tight. No separate mobile layout (only AI Product Identification,
+        // Figure 3.10, will have one).
         return Scaffold(
           key: _scaffoldKey,
-          appBar: AppBar(
-            backgroundColor: AppColors.sidebar,
-            foregroundColor: Colors.white,
-            title: Text(
-              title,
-              style: const TextStyle(fontWeight: FontWeight.w700),
-            ),
+          body: Row(
+            children: [
+              sidebar(compact: width < 1100),
+              Expanded(child: content),
+            ],
           ),
-          drawer: Drawer(
-            width: 260,
-            backgroundColor: AppColors.sidebar,
-            child: sidebar(compact: false),
-          ),
-          body: content,
         );
       },
     );

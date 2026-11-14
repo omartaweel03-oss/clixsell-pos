@@ -212,10 +212,14 @@ void main() {
   });
 
   for (final size in const [Size(1440, 1000), Size(1024, 768), Size(390, 844)]) {
-    testWidgets('Stock Alerts without overflow at $size', (tester) async {
+    testWidgets('Stock Alerts keeps the desktop table at $size, without overflow', (tester) async {
       await _open(tester, _backend(), size: size);
       expect(tester.takeException(), isNull);
       expect(find.byKey(const Key('alert-3')), findsOneWidget);
+      // Desktop design of Figure 3.5 at every size: the table with its columns, sidebar (no drawer).
+      expect(find.text('Alert level'), findsOneWidget);
+      expect(find.byKey(const Key('nav-stockAlerts')), findsOneWidget);
+      expect(find.byTooltip('Open navigation menu'), findsNothing);
     });
   }
 }

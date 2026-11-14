@@ -8,6 +8,13 @@ InventoryPage, ProductFormPage, PosPage      (role rules)         Sale, SaleItem
 ApiHttp → Product/Auth/Stores/Sales clients  *Controller          Receipt, ReturnProduct   products, suppliers, sales, …
 ```
 
+## Screen design
+All screens follow the **desktop dashboard designs** of the report (Figures 3.1–3.9): sidebar,
+same columns and tables at every size. On narrower screens the sidebar shrinks to icons and wide
+parts (POS columns, tables) scroll sideways instead of overflowing – there is no separate
+mobile layout. Only **AI Product Identification (Figure 3.10)** will have a dedicated mobile
+screen (not built yet).
+
 ## Stores and roles
 Several independent stores share one database. Every Store Admin, Cashier, Product and
 Supplier belongs to exactly one store (`store_id`). The store a request works on is always

@@ -9,6 +9,7 @@ import '../../services/sales_api_client.dart';
 import '../../state/pos_cart.dart';
 import '../../state/product_store.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/min_width_scroll.dart';
 import '../../widgets/page_header.dart';
 import 'pos_dialogs.dart';
 import 'pos_widgets.dart';
@@ -312,7 +313,6 @@ class _PosPageState extends State<PosPage> {
 
   @override
   Widget build(BuildContext context) {
-    final s = AppStrings.of(context);
     final store = ProductStoreScope.of(context);
     final cart = PosCartScope.of(context);
     final products = _visibleProducts(store.products);
@@ -373,9 +373,13 @@ class _PosPageState extends State<PosPage> {
           onSuspended: _openSuspended,
         );
 
-        if (c.maxWidth >= 1100) {
-          return page(
-            Column(
+        // Figure 3.2 at every size: summary | invoice | products. On narrow
+        // screens the three columns keep their size and scroll sideways.
+        return page(
+          MinWidthScroll(
+            minWidth: 1100,
+            fillHeight: true,
+            child: Column(
               children: [
                 header,
                 const SizedBox(height: AppSpacing.lg),
@@ -391,48 +395,6 @@ class _PosPageState extends State<PosPage> {
                       Expanded(flex: 5, child: invoicePanel()),
                       const SizedBox(width: AppSpacing.lg),
                       Expanded(flex: 6, child: productsPanel),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          );
-        }
-
-        // Narrow screens: products and invoice on two tabs.
-        return DefaultTabController(
-          length: 2,
-          child: page(
-            Column(
-              children: [
-                header,
-                const SizedBox(height: AppSpacing.sm),
-                TabBar(
-                  labelColor: AppColors.primary,
-                  indicatorColor: AppColors.primary,
-                  tabs: [
-                    Tab(key: const Key('posProductsTab'), text: s.productsTab),
-                    Tab(
-                      key: const Key('posInvoiceTab'),
-                      text: s.invoiceTab(cart.unitCount),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                Expanded(
-                  child: TabBarView(
-                    children: [
-                      productsPanel,
-                      SingleChildScrollView(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            invoicePanel(shrink: true),
-                            const SizedBox(height: AppSpacing.md),
-                            summary,
-                          ],
-                        ),
-                      ),
                     ],
                   ),
                 ),

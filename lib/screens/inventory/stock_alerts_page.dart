@@ -8,6 +8,7 @@ import '../../services/report_api_client.dart';
 import '../../state/product_store.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/formatters.dart';
+import '../../widgets/min_width_scroll.dart';
 import '../../widgets/product_thumbnail.dart';
 import '../../widgets/stat_card.dart';
 import '../../widgets/stock_status_badge.dart';
@@ -286,123 +287,78 @@ class _StockAlertsPageState extends State<StockAlertsPage> {
         text: s.noAlerts,
       );
     } else {
-      body = LayoutBuilder(
-        builder: (context, c) {
-          if (c.maxWidth < 720) {
-            // Narrow screens: one card per product.
-            return Column(
+      // Desktop table (Figure 3.5) at every size; narrow screens scroll sideways.
+      body = MinWidthScroll(
+        minWidth: 720,
+        child: Table(
+          columnWidths: const {
+            0: FlexColumnWidth(4),
+            1: FlexColumnWidth(2.4),
+            2: FlexColumnWidth(1.6),
+            3: FlexColumnWidth(1.6),
+            4: FlexColumnWidth(2),
+            5: FlexColumnWidth(1.3),
+          },
+          defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+          children: [
+            TableRow(
+              decoration: BoxDecoration(
+                color: AppColors.background,
+                borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+              ),
               children: [
-                for (final r in items)
-                  Container(
-                    key: Key('alert-${r.productId}'),
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    decoration: const BoxDecoration(
-                      border: Border(
-                        bottom: BorderSide(color: AppColors.divider),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(child: productCell(r)),
-                            action(r),
-                          ],
-                        ),
-                        const SizedBox(height: AppSpacing.sm),
-                        Wrap(
-                          spacing: AppSpacing.md,
-                          runSpacing: AppSpacing.xs,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            badge(r),
-                            Text(_category(s, r.category)),
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [Text('${s.colCurrent}: '), qty(r)],
-                            ),
-                            Text('${s.colAlertLevel}: ${r.minStock}'),
-                          ],
-                        ),
-                      ],
-                    ),
+                for (final h in [
+                  s.colProduct,
+                  s.colCategory,
+                  s.colCurrent,
+                  s.colAlertLevel,
+                  s.colStatus,
+                  s.colActions,
+                ])
+                  Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: Text(h, style: head),
                   ),
               ],
-            );
-          }
-          return Table(
-            columnWidths: const {
-              0: FlexColumnWidth(4),
-              1: FlexColumnWidth(2.4),
-              2: FlexColumnWidth(1.6),
-              3: FlexColumnWidth(1.6),
-              4: FlexColumnWidth(2),
-              5: FlexColumnWidth(1.3),
-            },
-            defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-            children: [
+            ),
+            for (final r in items)
               TableRow(
-                decoration: BoxDecoration(
-                  color: AppColors.background,
-                  borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                decoration: const BoxDecoration(
+                  border: Border(bottom: BorderSide(color: AppColors.divider)),
                 ),
                 children: [
-                  for (final h in [
-                    s.colProduct,
-                    s.colCategory,
-                    s.colCurrent,
-                    s.colAlertLevel,
-                    s.colStatus,
-                    s.colActions,
-                  ])
-                    Padding(
-                      padding: const EdgeInsets.all(10),
-                      child: Text(h, style: head),
-                    ),
-                ],
-              ),
-              for (final r in items)
-                TableRow(
-                  decoration: const BoxDecoration(
-                    border: Border(
-                      bottom: BorderSide(color: AppColors.divider),
+                  Padding(
+                    key: Key('alert-${r.productId}'),
+                    padding: const EdgeInsets.all(10),
+                    child: productCell(r),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: Text(_category(s, r.category)),
+                  ),
+                  Padding(padding: const EdgeInsets.all(10), child: qty(r)),
+                  Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: Text(Formatters.integer(r.minStock)),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: badge(r),
                     ),
                   ),
-                  children: [
-                    Padding(
-                      key: Key('alert-${r.productId}'),
-                      padding: const EdgeInsets.all(10),
-                      child: productCell(r),
+                  Padding(
+                    padding: const EdgeInsets.all(6),
+                    child: Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: action(r),
                     ),
-                    Padding(
-                      padding: const EdgeInsets.all(10),
-                      child: Text(_category(s, r.category)),
-                    ),
-                    Padding(padding: const EdgeInsets.all(10), child: qty(r)),
-                    Padding(
-                      padding: const EdgeInsets.all(10),
-                      child: Text(Formatters.integer(r.minStock)),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.all(10),
-                      child: Align(
-                        alignment: AlignmentDirectional.centerStart,
-                        child: badge(r),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.all(6),
-                      child: Align(
-                        alignment: AlignmentDirectional.centerStart,
-                        child: action(r),
-                      ),
-                    ),
-                  ],
-                ),
-            ],
-          );
-        },
+                  ),
+                ],
+              ),
+          ],
+        ),
       );
     }
 

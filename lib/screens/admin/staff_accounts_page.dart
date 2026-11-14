@@ -6,6 +6,7 @@ import '../../services/admin_api_clients.dart';
 import '../../services/api_http.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/formatters.dart';
+import '../../widgets/min_width_scroll.dart';
 import '../../widgets/page_header.dart';
 
 /// Lists and manages staff accounts through a [StaffAccountsApi]:
@@ -275,121 +276,74 @@ class _AccountsList extends StatelessWidget {
       inactiveLabel: s.statusInactive,
     );
 
-    return LayoutBuilder(
-      builder: (context, c) {
-        if (c.maxWidth < 760) {
-          return Column(
-            children: [
-              for (var i = 0; i < accounts.length; i++) ...[
-                if (i > 0) const Divider(height: AppSpacing.xl),
-                Row(
-                  children: [
-                    const CircleAvatar(
-                      backgroundColor: AppColors.primarySoft,
-                      child: Icon(
-                        Icons.person_rounded,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.md),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            accounts[i].fullName,
-                            style: const TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                          Text(
-                            accounts[i].username,
-                            style: const TextStyle(
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    pill(accounts[i]),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.md),
-                Align(
-                  alignment: AlignmentDirectional.centerStart,
-                  child: actions(accounts[i]),
-                ),
+    // Desktop table at every size; narrow screens scroll sideways.
+    return MinWidthScroll(
+      minWidth: 760,
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+            decoration: BoxDecoration(
+              color: AppColors.background,
+              borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+            ),
+            child: Row(
+              children: [
+                Expanded(flex: 3, child: Text(s.colFullName, style: header)),
+                Expanded(flex: 3, child: Text(s.colUsername, style: header)),
+                Expanded(flex: 2, child: Text(s.colStatus, style: header)),
+                Expanded(flex: 2, child: Text(s.colCreated, style: header)),
+                Expanded(flex: 5, child: Text(s.colActions, style: header)),
               ],
-            ],
-          );
-        }
-        return Column(
-          children: [
+            ),
+          ),
+          for (final u in accounts)
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-              decoration: BoxDecoration(
-                color: AppColors.background,
-                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+              key: ValueKey('account-${u.userId}'),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: AppColors.divider)),
               ),
               child: Row(
                 children: [
-                  Expanded(flex: 3, child: Text(s.colFullName, style: header)),
-                  Expanded(flex: 3, child: Text(s.colUsername, style: header)),
-                  Expanded(flex: 2, child: Text(s.colStatus, style: header)),
-                  Expanded(flex: 2, child: Text(s.colCreated, style: header)),
-                  Expanded(flex: 5, child: Text(s.colActions, style: header)),
+                  Expanded(
+                    flex: 3,
+                    child: Text(
+                      u.fullName,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Expanded(
+                    flex: 3,
+                    child: Text(
+                      u.username,
+                      style: const TextStyle(color: AppColors.textSecondary),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Expanded(
+                    flex: 2,
+                    child: Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: pill(u),
+                    ),
+                  ),
+                  Expanded(
+                    flex: 2,
+                    child: Text(
+                      u.createdAt == null
+                          ? '—'
+                          : Formatters.date(u.createdAt!).split(' ').first,
+                      style: const TextStyle(color: AppColors.textSecondary),
+                    ),
+                  ),
+                  Expanded(flex: 5, child: actions(u)),
                 ],
               ),
             ),
-            for (final u in accounts)
-              Container(
-                key: ValueKey('account-${u.userId}'),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
-                decoration: const BoxDecoration(
-                  border: Border(bottom: BorderSide(color: AppColors.divider)),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      flex: 3,
-                      child: Text(
-                        u.fullName,
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    Expanded(
-                      flex: 3,
-                      child: Text(
-                        u.username,
-                        style: const TextStyle(color: AppColors.textSecondary),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: Align(
-                        alignment: AlignmentDirectional.centerStart,
-                        child: pill(u),
-                      ),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        u.createdAt == null
-                            ? '—'
-                            : Formatters.date(u.createdAt!).split(' ').first,
-                        style: const TextStyle(color: AppColors.textSecondary),
-                      ),
-                    ),
-                    Expanded(flex: 5, child: actions(u)),
-                  ],
-                ),
-              ),
-          ],
-        );
-      },
+        ],
+      ),
     );
   }
 }
