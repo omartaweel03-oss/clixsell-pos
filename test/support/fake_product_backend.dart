@@ -62,6 +62,9 @@ class FakeProductBackend {
   /// Every request received, e.g. "POST /api/products".
   final List<String> requests = [];
 
+  /// The body of the last PUT /api/store/settings (to check what was sent).
+  Map<String, dynamic>? lastStoreSettingsBody;
+
   /// Database backups made through Settings → Backup (newest first).
   final List<Map<String, dynamic>> backups = [];
 
@@ -387,25 +390,26 @@ class FakeProductBackend {
   }
 
   http.Response _storeSettings(int storeId, Map<String, dynamic> b) {
+    // Same rules as the backend: only the values sent change.
+    lastStoreSettingsBody = Map.of(b);
     final errors = <String, String>{};
-    double? percent(String key, String label) {
+    void percent(String key, String label) {
       final v = (b[key] as num?)?.toDouble();
-      if (v == null) {
-        errors[key] = '$label is required';
-      } else if (v < 0 || v > 100) {
+      if (v != null && (v < 0 || v > 100)) {
         errors[key] = '$label must be between 0 and 100';
       }
-      return v;
     }
 
-    final tax = percent('taxRate', 'Tax rate');
-    final max = percent('maxDiscountPercent', 'Maximum discount');
-    final address = (b['address'] as String? ?? '').trim();
-    final phone = (b['phone'] as String? ?? '').trim();
-    if (address.length > 120) {
+    percent('taxRate', 'Tax rate');
+    percent('maxDiscountPercent', 'Maximum discount');
+    final address = (b['address'] as String?)?.trim();
+    final phone = (b['phone'] as String?)?.trim();
+    if (address != null && address.length > 120) {
       errors['address'] = 'Address must be 120 characters or fewer';
     }
-    if (phone.isNotEmpty && !RegExp(r'^[0-9+()\- ]{1,30}$').hasMatch(phone)) {
+    if (phone != null &&
+        phone.isNotEmpty &&
+        !RegExp(r'^[0-9+()\- ]{1,30}$').hasMatch(phone)) {
       errors['phone'] =
           'Phone may contain only digits, spaces, +, - and brackets';
     }
@@ -418,10 +422,12 @@ class FakeProductBackend {
       );
     }
     final st = _find(stores, 'storeId', storeId)!;
-    st['taxRate'] = tax;
-    st['maxDiscountPercent'] = max;
-    st['address'] = address.isEmpty ? null : address;
-    st['phone'] = phone.isEmpty ? null : phone;
+    if (b['taxRate'] != null) st['taxRate'] = (b['taxRate'] as num).toDouble();
+    if (b['maxDiscountPercent'] != null) {
+      st['maxDiscountPercent'] = (b['maxDiscountPercent'] as num).toDouble();
+    }
+    if (address != null) st['address'] = address.isEmpty ? null : address;
+    if (phone != null) st['phone'] = phone.isEmpty ? null : phone;
     return _json(200, _storeJson(st));
   }
 

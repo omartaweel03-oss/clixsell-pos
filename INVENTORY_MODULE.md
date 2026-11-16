@@ -96,6 +96,8 @@ System Admin and the Store Admin open it; the backend refuses Cashiers every set
 | AI Mobile | "Not available yet" (needs AI Product Identification, Figure 3.10) | same |
 | Backup | "System Admin only" | create a checked backup, list backups |
 
+* **Only the values sent change:** Taxes sends tax and discount, General sends address and
+  phone, so two dialogs (or two managers) saving one after the other never undo each other.
 * **Tax / discount:** new sales (and suspended invoices completed later) use the new values;
   completed sales keep the tax rate, tax, discount and total saved on them. The POS reads the
   store's settings again each time it opens.
@@ -210,7 +212,7 @@ maximum discount 10%, and every existing store, user and product is kept (tested
 | `GET, POST /api/admin/stores`, `GET, PUT /api/admin/stores/{id}`, `PUT …/{id}/status` | System Admin | `stores` |
 | `GET, POST /api/admin/stores/{id}/admins`, `PUT …/admins/{userId}/status`, `PUT …/admins/{userId}/password` | System Admin | `users` |
 | `GET /api/store` (own store) | Store Admin, Cashier | `stores` |
-| `PUT /api/store/settings` (own store: tax, max. discount, address, phone) | Store Admin | `UPDATE stores` |
+| `PUT /api/store/settings` (own store: tax, max. discount, address, phone; only the values sent change) | Store Admin | `UPDATE stores` |
 | `PUT /api/auth/me/password` (own password) | System Admin, Store Admin (Cashier 403) | `UPDATE users`; `DELETE` other `user_sessions` |
 | `GET, POST /api/admin/backups` (list / create a checked backup) | System Admin | `VACUUM INTO` a file (read only) |
 | `GET, POST /api/store/cashiers`, `PUT …/cashiers/{id}/status`, `PUT …/cashiers/{id}/password` | Store Admin | `users` |
@@ -257,10 +259,10 @@ Migrations: `backend/src/main/resources/db/migration/V1__initial_schema.sql` (or
 
 ## Tests
 ```bash
-cd backend && .\mvnw.cmd test     # 124 backend tests: business logic (Sale, ReturnProduct, …),
+cd backend && .\mvnw.cmd test     # 125 backend tests: business logic (Sale, ReturnProduct, …),
                                  #   API + database, two-store isolation, roles, lockout, migration,
                                  #   settings, own password, backups
-flutter test                     # 137 Flutter tests (use a fake server), incl. POS cart + screens
+flutter test                     # 138 Flutter tests (use a fake server), incl. POS cart + screens
 ```
 
 ## Files

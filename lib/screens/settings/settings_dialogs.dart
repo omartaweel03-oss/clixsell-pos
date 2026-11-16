@@ -47,7 +47,7 @@ Widget _note(String text, {Key? key}) => Container(
 
 /// Taxes ([general] false: tax rate, maximum discount) or General ([general]
 /// true: store name read-only, address, phone) of the Store Admin's own store.
-/// Both save through PUT /api/store/settings with the other values unchanged.
+/// Both save through PUT /api/store/settings, sending only their own values.
 /// Pops the saved [StoreInfo].
 class StoreSettingsDialog extends StatefulWidget {
   const StoreSettingsDialog({
@@ -126,12 +126,17 @@ class _StoreSettingsDialogState extends State<StoreSettingsDialog> {
       _error = null;
     });
     try {
-      final saved = await widget.api.updateStoreSettings(
-        address: _address.text.trim(),
-        phone: _phone.text.trim(),
-        taxRate: double.parse(_tax.text.trim()),
-        maxDiscountPercent: double.parse(_maxDiscount.text.trim()),
-      );
+      // Only this dialog's own values: the other settings stay as they are
+      // on the server even if they changed since this dialog was opened.
+      final saved = widget.general
+          ? await widget.api.updateStoreSettings(
+              address: _address.text.trim(),
+              phone: _phone.text.trim(),
+            )
+          : await widget.api.updateStoreSettings(
+              taxRate: double.parse(_tax.text.trim()),
+              maxDiscountPercent: double.parse(_maxDiscount.text.trim()),
+            );
       if (mounted) Navigator.of(context).pop(saved);
     } on ApiException catch (e) {
       if (!mounted) return;

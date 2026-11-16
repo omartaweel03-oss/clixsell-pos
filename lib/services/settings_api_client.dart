@@ -20,18 +20,20 @@ class SettingsApiClient {
   Future<StoreInfo> myStore() async =>
       StoreInfo.fromJson(await _http.get('/store') as Map<String, dynamic>);
 
-  /// Tax rate, maximum discount, address and phone of the user's own store.
+  /// Settings of the user's own store. Only the values given are sent and
+  /// changed (Taxes sends tax and discount, General address and phone), so
+  /// two dialogs never undo each other. An empty address or phone clears it.
   Future<StoreInfo> updateStoreSettings({
-    required String? address,
-    required String? phone,
-    required double taxRate,
-    required double maxDiscountPercent,
+    String? address,
+    String? phone,
+    double? taxRate,
+    double? maxDiscountPercent,
   }) async => StoreInfo.fromJson(
     await _http.put('/store/settings', {
-          'address': address,
-          'phone': phone,
-          'taxRate': taxRate,
-          'maxDiscountPercent': maxDiscountPercent,
+          'address': ?address,
+          'phone': ?phone,
+          'taxRate': ?taxRate,
+          'maxDiscountPercent': ?maxDiscountPercent,
         })
         as Map<String, dynamic>,
   );

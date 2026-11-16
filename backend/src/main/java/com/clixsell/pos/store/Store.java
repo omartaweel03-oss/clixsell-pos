@@ -85,29 +85,25 @@ public class Store {
 
     /**
      * Store Admin settings (Figure 3.9): tax rate, maximum discount, address and
-     * phone, with the same rules as {@link #validate(StoreRequest)}. The name is
-     * not changed. Completed sales keep the tax rate saved on them.
+     * phone, with the same rules as {@link #validate(StoreRequest)}. Only the
+     * values sent change: a missing (null) value keeps the current one, so two
+     * dialogs saved one after the other never undo each other. A blank address
+     * or phone clears it. The name is not changed. Completed sales keep the tax
+     * rate saved on them.
      *
-     * @throws ValidationException if a value is missing or invalid
+     * @throws ValidationException if a sent value is invalid (nothing changes)
      */
     public void updateSettings(StoreSettingsRequest r) {
-        Map<String, String> errors = new LinkedHashMap<>();
-        if (r == null || r.taxRate() == null) errors.put("taxRate", "Tax rate is required");
-        if (r == null || r.maxDiscountPercent() == null) {
-            errors.put("maxDiscountPercent", "Maximum discount is required");
-        }
-        if (r != null) {
-            try {
-                validate(new StoreRequest(name, r.address(), r.phone(), r.taxRate(), r.maxDiscountPercent()));
-            } catch (ValidationException e) {
-                e.getFieldErrors().forEach(errors::putIfAbsent);
-            }
-        }
-        if (!errors.isEmpty()) throw new ValidationException(errors);
-        this.address = blankToNull(r.address());
-        this.phone = blankToNull(r.phone());
-        this.taxRate = r.taxRate();
-        this.maxDiscountPercent = r.maxDiscountPercent();
+        if (r == null) return;
+        String newAddress = r.address() != null ? r.address() : address;
+        String newPhone = r.phone() != null ? r.phone() : phone;
+        double newTax = r.taxRate() != null ? r.taxRate() : taxRate;
+        double newMax = r.maxDiscountPercent() != null ? r.maxDiscountPercent() : maxDiscountPercent;
+        validate(new StoreRequest(name, newAddress, newPhone, newTax, newMax));
+        this.address = blankToNull(newAddress);
+        this.phone = blankToNull(newPhone);
+        this.taxRate = newTax;
+        this.maxDiscountPercent = newMax;
     }
 
     public void setStatus(AccountStatus newStatus) {

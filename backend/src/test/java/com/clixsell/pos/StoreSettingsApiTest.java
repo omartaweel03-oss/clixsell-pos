@@ -105,16 +105,43 @@ class StoreSettingsApiTest extends ApiTestBase {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.fieldErrors.taxRate").value("Tax rate must be between 0 and 100"))
                 .andExpect(jsonPath("$.fieldErrors.maxDiscountPercent").value("Maximum discount must be between 0 and 100"));
-        putSettings(shini.adminToken(), settings(null, null, null, null))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.fieldErrors.taxRate").value("Tax rate is required"))
-                .andExpect(jsonPath("$.fieldErrors.maxDiscountPercent").value("Maximum discount is required"));
+        // Nothing sent → nothing changes.
+        putSettings(shini.adminToken(), settings(null, null, null, null)).andExpect(status().isOk());
+        putSettings(shini.adminToken(), "{}").andExpect(status().isOk());
         putSettings(shini.adminToken(), settings("A".repeat(121), "call me", 16, 10))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.fieldErrors.address").exists())
                 .andExpect(jsonPath("$.fieldErrors.phone").exists());
         putSettings(shini.adminToken(), "{\"taxRate\":\"lots\"}").andExpect(status().isBadRequest());
         assertThat(store(shini.storeId())).isEqualTo(before);
+    }
+
+    @Test
+    void onlyTheSentValuesChangeSoTwoDialogsDoNotUndoEachOther() throws Exception {
+        // Taxes dialog: only tax and discount.
+        putSettings(shini.adminToken(), "{\"taxRate\":10,\"maxDiscountPercent\":20}")
+                .andExpect(status().isOk());
+        // General dialog (opened earlier, in another tab): only address and phone.
+        putSettings(shini.adminToken(), "{\"address\":\"Al-Irsal St\",\"phone\":\"+970 2 295 1234\"}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.taxRate").value(10.0))
+                .andExpect(jsonPath("$.maxDiscountPercent").value(20.0));
+        assertThat(store(shini.storeId()))
+                .containsEntry("tax_rate", 10.0)
+                .containsEntry("max_discount_percent", 20.0)
+                .containsEntry("address", "Al-Irsal St")
+                .containsEntry("phone", "+970 2 295 1234");
+        // Taxes again: the address and phone stay.
+        putSettings(shini.adminToken(), "{\"taxRate\":12}").andExpect(status().isOk());
+        assertThat(store(shini.storeId()))
+                .containsEntry("tax_rate", 12.0)
+                .containsEntry("max_discount_percent", 20.0)
+                .containsEntry("phone", "+970 2 295 1234");
+        // One invalid value: nothing at all changes.
+        putSettings(shini.adminToken(), "{\"taxRate\":5,\"phone\":\"call me\"}")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors.phone").exists());
+        assertThat(store(shini.storeId()).get("tax_rate")).isEqualTo(12.0);
     }
 
     @Test

@@ -269,6 +269,39 @@ void main() {
     expect(backend.stores.first['taxRate'], isNull);
   });
 
+  testWidgets('Taxes and General send only their own values (no lost update)', (
+    tester,
+  ) async {
+    final backend = _backend();
+    await _open(tester, backend);
+    // General is opened; meanwhile the tax is changed in another tab.
+    await _tap(tester, 'settings-general');
+    backend.stores.first['taxRate'] = 9.0;
+    await tester.enterText(
+      find.byKey(const Key('settingsPhone')),
+      '+970 2 295 1234',
+    );
+    await _tap(tester, 'settingsSaveButton');
+    expect(
+      backend.lastStoreSettingsBody!.keys,
+      unorderedEquals(['address', 'phone']),
+    );
+    expect(backend.stores.first['taxRate'], 9.0); // not undone
+    expect(backend.stores.first['phone'], '+970 2 295 1234');
+
+    // Taxes is opened; meanwhile the phone is changed elsewhere.
+    await _tap(tester, 'settings-taxes');
+    backend.stores.first['phone'] = '0599 000 000';
+    await tester.enterText(find.byKey(const Key('settingsTaxRate')), '11');
+    await _tap(tester, 'settingsSaveButton');
+    expect(
+      backend.lastStoreSettingsBody!.keys,
+      unorderedEquals(['taxRate', 'maxDiscountPercent']),
+    );
+    expect(backend.stores.first['taxRate'], 11.0);
+    expect(backend.stores.first['phone'], '0599 000 000'); // not undone
+  });
+
   testWidgets('General: store name read-only, address and phone saved', (
     tester,
   ) async {
@@ -305,7 +338,10 @@ void main() {
     expect(backend.stores.first['address'], 'Al-Irsal St, Ramallah');
     expect(backend.stores.first['phone'], '+970 2 295 1234');
     expect(backend.stores.first['name'], 'Shini Supermarket');
-    expect(backend.stores.first['taxRate'], 16.0); // sent unchanged
+    expect(
+      backend.stores.first['taxRate'],
+      isNull,
+    ); // not sent: unchanged (16 %)
   });
 
   testWidgets(
