@@ -23,9 +23,9 @@ another store's data (another store's record is answered with 404).
 
 | Role | Can do |
 |---|---|
-| **System Admin** (`sysadmin`) | Create / edit / activate / deactivate stores (incl. tax rate and maximum discount); create and manage each store's Store Admins |
-| **Store Admin** (report: Manager) | Products of their store (add, edit, delete); create and manage their store's Cashiers; POS; Reports and Sales Analytics |
-| **Cashier** | POS (opens first); view their store's products (read only) |
+| **System Admin** (`sysadmin`) | Create / edit / activate / deactivate stores (incl. tax rate and maximum discount); create and manage each store's Store Admins; Settings: own profile and password, language, **database backups** |
+| **Store Admin** (report: Manager) | Products of their store (add, edit, delete); create and manage their store's Cashiers (incl. resetting their passwords); POS; Reports and Sales Analytics; Settings: own store's tax, maximum discount, address and phone, own profile and password, language |
+| **Cashier** | POS (opens first); view their store's products (read only). **No Settings** and no own password change: the Store Admin sets cashier passwords |
 
 Everyone uses the **same Login screen** (username + password). Usernames are unique in the
 whole system (tip: `store.name`, e.g. `shini.ahmad`). The app opens the right screens for the
@@ -79,6 +79,36 @@ actions; pages (10 / 20 / 50 per page); month filter (default: all months).
   database (`DELETE /api/sales/suspended/{id}`).
 * Uses the existing API only (`GET /api/sales/suspended`, `DELETE …/{id}`); no database change.
   The POS "Suspended" window still works as before.
+
+## Settings (Figure 3.9, UR-M12 / SR25)
+Title, description, today's date and the eight cards of the figure (Printer, Taxes, Users,
+Profile / Language, General, AI Mobile, Backup); "Settings" is the last sidebar item. Only the
+System Admin and the Store Admin open it; the backend refuses Cashiers every settings API.
+
+| Card | Store Admin | System Admin |
+|---|---|---|
+| Printer | "Not available yet" (no printing in the system yet) | same |
+| Taxes | own store's tax rate and maximum discount (0–100 %) | per store → Stores page |
+| Users | existing Cashiers page | existing Stores page (Store Admins) |
+| Profile | name, username, role, store; change **own** password | same |
+| Language | English / العربية, remembered on this device (`shared_preferences`) | same |
+| General | own store's address and phone (the name stays with the System Admin) | per store → Stores page |
+| AI Mobile | "Not available yet" (needs AI Product Identification, Figure 3.10) | same |
+| Backup | "System Admin only" | create a checked backup, list backups |
+
+* **Tax / discount:** new sales (and suspended invoices completed later) use the new values;
+  completed sales keep the tax rate, tax, discount and total saved on them. The POS reads the
+  store's settings again each time it opens.
+* **Own password:** current password required (a wrong one is a 400, not a logout, and counts
+  like a failed login: 5 in a row lock the account for 5 minutes); usual password rules; saved
+  as BCrypt; the user's other sessions end, this one stays; passwords never returned or logged.
+* **Backup and restore:** `POST /api/admin/backups` copies the whole database with SQLite
+  `VACUUM INTO` into `backend/backups/clixsell-backup-YYYYMMDD-HHmmss.db` (folder
+  `clixsell.backup.dir`; owner-only permissions; not in Git), then opens the copy read-only and
+  checks `PRAGMA integrity_check` (a failed copy is deleted). The API never takes a file name or
+  path (no download, delete or restore). **Manual restore:** 1) stop the backend; 2) keep a copy
+  of the current `backend/clixsell.db`; 3) copy the chosen backup over `backend/clixsell.db`;
+  4) start the backend (Flyway brings an older backup up to date).
 
 ## Stock Alerts (Figure 3.5, UR-M9 / SR22)
 Store Admin only, own store. Cards *Total alerts*, *Out of stock*, *Low stock* (tap to filter), a
@@ -180,6 +210,9 @@ maximum discount 10%, and every existing store, user and product is kept (tested
 | `GET, POST /api/admin/stores`, `GET, PUT /api/admin/stores/{id}`, `PUT …/{id}/status` | System Admin | `stores` |
 | `GET, POST /api/admin/stores/{id}/admins`, `PUT …/admins/{userId}/status`, `PUT …/admins/{userId}/password` | System Admin | `users` |
 | `GET /api/store` (own store) | Store Admin, Cashier | `stores` |
+| `PUT /api/store/settings` (own store: tax, max. discount, address, phone) | Store Admin | `UPDATE stores` |
+| `PUT /api/auth/me/password` (own password) | System Admin, Store Admin (Cashier 403) | `UPDATE users`; `DELETE` other `user_sessions` |
+| `GET, POST /api/admin/backups` (list / create a checked backup) | System Admin | `VACUUM INTO` a file (read only) |
 | `GET, POST /api/store/cashiers`, `PUT …/cashiers/{id}/status`, `PUT …/cashiers/{id}/password` | Store Admin | `users` |
 | `GET /api/products`, `GET /api/products/{id}` | Store Admin, Cashier | `SELECT` (own store) |
 | `POST /api/products` · `PUT /api/products/{id}` · `DELETE /api/products/{id}` · `GET /api/products/generate-barcode` | Store Admin | `INSERT` · `UPDATE` · `DELETE` (own store) |
@@ -224,9 +257,10 @@ Migrations: `backend/src/main/resources/db/migration/V1__initial_schema.sql` (or
 
 ## Tests
 ```bash
-cd backend && .\mvnw.cmd test     # 105 backend tests: business logic (Sale, ReturnProduct, …),
-                                 #   API + database, two-store isolation, roles, lockout, migration
-flutter test                     # 119 Flutter tests (use a fake server), incl. POS cart + screen
+cd backend && .\mvnw.cmd test     # 124 backend tests: business logic (Sale, ReturnProduct, …),
+                                 #   API + database, two-store isolation, roles, lockout, migration,
+                                 #   settings, own password, backups
+flutter test                     # 137 Flutter tests (use a fake server), incl. POS cart + screens
 ```
 
 ## Files
@@ -238,6 +272,10 @@ flutter test                     # 119 Flutter tests (use a fake server), incl. 
 | `lib/services/auth_api_client.dart` | Login / logout API |
 | `lib/services/admin_api_clients.dart` | Stores API, Store Admins API, Cashiers API |
 | `lib/services/product_api_client.dart` | Product API |
+| `lib/services/settings_api_client.dart` | Settings API (store settings, own password, backups) |
+| `lib/screens/settings/settings_page.dart`, `settings_dialogs.dart` | Settings (Fig 3.9): cards, Taxes, General, Profile, Language, Backup |
+| `lib/state/language_preference.dart` | Remembers the chosen language on the device |
+| `backend/.../backup/BackupService.java` | Checked database backups (System Admin) |
 | `lib/models/app_user.dart`, `store_info.dart` | User (role, store) and store models |
 | `lib/screens/auth/login_page.dart` | Shared Login screen |
 | `lib/screens/admin/stores_page.dart` | System Admin: stores |

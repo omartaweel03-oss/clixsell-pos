@@ -15,6 +15,8 @@ import 'admin/stores_page.dart';
 import 'pos/pos_page.dart';
 import 'pos/pos_resume.dart';
 import 'pos/suspended_invoices_page.dart';
+import 'settings/settings_page.dart';
+import '../services/settings_api_client.dart';
 import '../models/sale.dart';
 import 'reports/reports_page.dart';
 import 'reports/sales_analytics_page.dart';
@@ -38,12 +40,14 @@ class AppShell extends StatefulWidget {
     required this.user,
     required this.http,
     required this.onToggleLanguage,
+    required this.onSetLanguage,
     required this.onLogout,
   });
 
   final AppUser user;
   final ApiHttp http;
   final VoidCallback onToggleLanguage;
+  final ValueChanged<Locale> onSetLanguage;
   final VoidCallback onLogout;
 
   @override
@@ -219,6 +223,27 @@ class _AppShellState extends State<AppShell> {
           title: s.cashiersTitle,
           description: s.cashiersDescription,
           addLabel: s.addCashier,
+        );
+      case SidebarDestination.settings:
+        final systemAdmin = widget.user.role == UserRole.systemAdmin;
+        return SettingsPage(
+          key: const ValueKey('settings'),
+          user: widget.user,
+          api: SettingsApiClient(widget.http),
+          // Users: the existing user management, no second one.
+          onOpenUsers: () => _navigate(
+            systemAdmin
+                ? SidebarDestination.stores
+                : SidebarDestination.cashiers,
+          ),
+          onOpenStores: () => _navigate(SidebarDestination.stores),
+          onSetLanguage: widget.onSetLanguage,
+          // New tax / discount apply to this admin's POS at once.
+          onStoreSettingsSaved: (store) =>
+              PosCartScope.maybeRead(context)?.applyStoreSettings(
+                taxRate: store.taxRate,
+                maxDiscountPercent: store.maxDiscountPercent,
+              ),
         );
       case SidebarDestination.products:
         return InventoryPage(

@@ -17,6 +17,8 @@ independent stores in one system.
 * **POS – Cashier Dashboard**: add products by tap or barcode, quantities, discount,
   per-store tax, 4 payment methods, complete sale with a QR digital receipt,
   suspend / resume invoices, cancel, and product returns.
+* **Suspended Invoices**, **Stock Alerts**, **Reports**, **Sales Analytics** and **Settings**
+  (tax and discount, store details, own password, language, database backups).
 
 ## Run (Windows)
 Requires **Java JDK 17+** and **Flutter**. Maven and SQLite need no installation.
@@ -35,8 +37,8 @@ flutter pub get
 flutter run -d chrome
 ```
 
-First login: **`sysadmin` / `Admin12345`** (change it before real use; see
-`backend/src/main/resources/application.properties`). Then create a store, its Store Admin,
+First login: **`sysadmin` / `Admin12345`** (change it before real use: Settings → Profile →
+Change password). Then create a store, its Store Admin,
 products and cashiers.
 
 ## Demo data (optional – presentations and testing only)

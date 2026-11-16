@@ -26,6 +26,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.datasource.url=jdbc:sqlite:target/test-clixsell.db?foreign_keys=on",
         "clixsell.system-admin.username=sysadmin",
         "clixsell.demo-data=false",
+        "clixsell.backup.dir=target/test-backups",
         "clixsell.system-admin.password=" + ApiTestBase.SYSADMIN_PASSWORD
 })
 @AutoConfigureMockMvc

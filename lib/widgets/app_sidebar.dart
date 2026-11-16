@@ -16,12 +16,16 @@ enum SidebarDestination {
   salesAnalytics,
   stockAlerts,
   suspendedInvoices,
+  settings,
 }
 
 /// Which pages each role may open (the backend enforces the same rules).
 extension RoleDestinations on UserRole {
   List<SidebarDestination> get destinations => switch (this) {
-    UserRole.systemAdmin => const [SidebarDestination.stores],
+    UserRole.systemAdmin => const [
+      SidebarDestination.stores,
+      SidebarDestination.settings,
+    ],
     UserRole.storeAdmin => const [
       SidebarDestination.products,
       SidebarDestination.addProduct,
@@ -32,8 +36,10 @@ extension RoleDestinations on UserRole {
       SidebarDestination.reports,
       SidebarDestination.salesAnalytics,
       SidebarDestination.cashiers,
+      SidebarDestination.settings,
     ],
-    // The cashier's home is the POS screen (report Figure 3.2).
+    // The cashier's home is the POS screen (report Figure 3.2). No Settings:
+    // settings are for managers (UR-M12), and the backend refuses cashiers.
     UserRole.cashier => const [
       SidebarDestination.pos,
       SidebarDestination.suspendedInvoices,
@@ -198,6 +204,16 @@ class AppSidebar extends StatelessWidget {
           Icons.badge_outlined,
           Icons.badge_rounded,
           s.navCashiers,
+        ),
+      ],
+      // Settings (report Figure 3.9): last item, System Admin and Store Admin.
+      if (user.role != UserRole.cashier) ...[
+        section(s.navSectionSystem),
+        item(
+          SidebarDestination.settings,
+          Icons.settings_outlined,
+          Icons.settings_rounded,
+          s.navSettings,
         ),
       ],
     ];

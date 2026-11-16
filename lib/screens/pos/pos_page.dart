@@ -52,6 +52,23 @@ class _PosPageState extends State<PosPage> {
         if (mounted) _toast(message);
       });
     }
+    _refreshStoreSettings();
+  }
+
+  /// The store's tax rate and maximum discount may have been changed in
+  /// Settings since login: read them again each time the POS opens, so the
+  /// totals on screen match what the backend will calculate.
+  Future<void> _refreshStoreSettings() async {
+    try {
+      final store = await widget.api.storeSettings();
+      if (!mounted) return;
+      PosCartScope.read(context).applyStoreSettings(
+        taxRate: store.taxRate,
+        maxDiscountPercent: store.maxDiscountPercent,
+      );
+    } on ApiException {
+      // Keep the values read at login; the backend calculates the real totals.
+    }
   }
 
   @override

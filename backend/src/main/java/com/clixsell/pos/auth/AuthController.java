@@ -7,6 +7,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
  * POST /api/auth/login    username + password → token and user (anyone)
  * POST /api/auth/logout   ends this login          (logged in)
  * GET  /api/auth/me       the logged-in user       (logged in)
+ * PUT  /api/auth/me/password  own password      (System Admin, Store Admin; not Cashier)
  * </pre>
  */
 @RestController
@@ -45,5 +47,17 @@ public class AuthController {
     @GetMapping("/me")
     public UserResponse me(@AuthenticationPrincipal CurrentUser user) {
         return users.findById(user.userId()).map(UserResponse::from).orElseThrow();
+    }
+
+    /**
+     * Changes the logged-in admin's own password (System Admin, Store Admin;
+     * Cashiers get 403). Answers 204; the passwords are never returned.
+     */
+    @PutMapping("/me/password")
+    public ResponseEntity<Void> changeOwnPassword(@AuthenticationPrincipal CurrentUser user,
+                                                  @RequestBody ChangePasswordRequest body,
+                                                  HttpServletRequest request) {
+        auth.changeOwnPassword(user, TokenAuthenticationFilter.bearerToken(request), body);
+        return ResponseEntity.noContent().build();
     }
 }

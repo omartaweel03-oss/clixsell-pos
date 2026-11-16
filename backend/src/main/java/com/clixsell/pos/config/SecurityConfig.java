@@ -28,10 +28,12 @@ import java.util.List;
  *
  * <pre>
  * POST /api/auth/login                     anyone
+ * PUT  /api/auth/me/password               SYSTEM_ADMIN, STORE_ADMIN (not CASHIER)
  * /api/auth/**                             any logged-in user
- * /api/admin/**                            SYSTEM_ADMIN
+ * /api/admin/** (stores, admins, backups)  SYSTEM_ADMIN
  * /api/store/cashiers/**                   STORE_ADMIN
  * GET  /api/store                          STORE_ADMIN, CASHIER
+ * PUT  /api/store/settings                 STORE_ADMIN (own store)
  * GET  /api/products/generate-barcode      STORE_ADMIN
  * GET  /api/products/**                    STORE_ADMIN, CASHIER
  * POST/PUT/DELETE /api/products/**         STORE_ADMIN
@@ -67,10 +69,15 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/error").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
+                        // Own password (Settings → Profile): admins only. Cashier passwords
+                        // are set by their Store Admin (/api/store/cashiers/{id}/password).
+                        .requestMatchers("/api/auth/me/password").hasAnyRole("SYSTEM_ADMIN", "STORE_ADMIN")
                         .requestMatchers("/api/auth/**").authenticated()
                         .requestMatchers("/api/admin/**").hasRole("SYSTEM_ADMIN")
                         .requestMatchers("/api/store/cashiers", "/api/store/cashiers/**").hasRole("STORE_ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/store").hasAnyRole("STORE_ADMIN", "CASHIER")
+                        // Store settings (tax, discount, address, phone): own store's Store Admin.
+                        .requestMatchers("/api/store/settings").hasRole("STORE_ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/products/generate-barcode").hasRole("STORE_ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/products", "/api/products/**").hasAnyRole("STORE_ADMIN", "CASHIER")
                         .requestMatchers("/api/products", "/api/products/**").hasRole("STORE_ADMIN")

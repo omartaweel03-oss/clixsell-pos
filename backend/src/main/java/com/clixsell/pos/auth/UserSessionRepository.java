@@ -13,6 +13,9 @@ public interface UserSessionRepository extends JpaRepository<UserSession, Long> 
     /** Logs a user out everywhere (deactivation, password reset). */
     void deleteByUser_UserId(Long userId);
 
+    /** Logs a user out everywhere except this session (own password changed). */
+    void deleteByUser_UserIdAndTokenHashNot(Long userId, String tokenHash);
+
     /** Logs out every user of a store (store deactivated). */
     void deleteByUser_Store_StoreId(Long storeId);
 

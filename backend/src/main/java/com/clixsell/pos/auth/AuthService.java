@@ -1,10 +1,13 @@
 package com.clixsell.pos.auth;
 
 import com.clixsell.pos.auth.LoginFailedException.Reason;
+import com.clixsell.pos.common.ValidationException;
+import com.clixsell.pos.user.Role;
 import com.clixsell.pos.user.User;
 import com.clixsell.pos.user.UserRepository;
 import com.clixsell.pos.user.UserResponse;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,6 +20,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -87,6 +91,59 @@ public class AuthService {
         LocalDateTime expiresAt = createdAt.plus(sessionLength);
         sessions.save(new UserSession(user, hash(token), createdAt, expiresAt));
         return new LoginResponse(token, expiresAt, UserResponse.from(user));
+    }
+
+    /**
+     * The logged-in System Admin or Store Admin changes their OWN password
+     * (Settings → Profile). Cashiers cannot: their passwords are set by their
+     * Store Admin. The current password must be right; a wrong one counts like a
+     * failed login (5 in a row lock the account for 5 minutes). The new password
+     * follows the usual rules and is saved hashed. Every other session of the
+     * user is ended; the session that made the change stays (it proved the
+     * current password).
+     *
+     * <p>The failed-attempt counter must be saved even though the change fails.
+     *
+     * @throws ValidationException (400) for a wrong current password or an invalid new one
+     */
+    @Transactional(noRollbackFor = ValidationException.class)
+    public void changeOwnPassword(CurrentUser current, String currentToken, ChangePasswordRequest request) {
+        if (current.role() == Role.CASHIER) {
+            throw new AccessDeniedException("Cashier passwords are managed by the Store Admin");
+        }
+        User user = users.findById(current.userId()).orElseThrow();
+        LocalDateTime now = LocalDateTime.now();
+        String currentPassword = request == null || request.currentPassword() == null ? "" : request.currentPassword();
+        String newPassword = request == null ? null : request.newPassword();
+
+        if (user.isLocked(now)) {
+            throw new ValidationException(Map.of("currentPassword",
+                    "Too many wrong attempts. Try again in a few minutes."));
+        }
+        if (currentPassword.isEmpty()) {
+            throw new ValidationException(Map.of("currentPassword", "Current password is required"));
+        }
+        if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
+            user.recordFailedLogin(now);
+            users.save(user);
+            throw new ValidationException(Map.of("currentPassword", "Current password is incorrect"));
+        }
+        try {
+            User.validatePassword(newPassword);
+        } catch (ValidationException e) {
+            throw new ValidationException(Map.of("newPassword", e.getFieldErrors().get("password")));
+        }
+        if (passwordEncoder.matches(newPassword, user.getPasswordHash())) {
+            throw new ValidationException(Map.of("newPassword",
+                    "The new password must be different from the current one"));
+        }
+        user.changePassword(passwordEncoder.encode(newPassword));
+        users.save(user);
+        if (currentToken == null) {
+            sessions.deleteByUser_UserId(user.getUserId());
+        } else {
+            sessions.deleteByUser_UserIdAndTokenHashNot(user.getUserId(), hash(currentToken));
+        }
     }
 
     /** Ends the session of this token. */

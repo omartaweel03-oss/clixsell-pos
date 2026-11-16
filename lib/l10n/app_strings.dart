@@ -852,4 +852,131 @@ class AppStrings {
     '$amount (جزئي: $pct فقط من الإيراد له تكلفة معروفة)',
   );
   String get rTop => _t('Best-selling products', 'أكثر المنتجات مبيعاً');
+
+  // ── Settings (report Figure 3.9) ──────────────────────────────────────────
+  String get navSectionSystem => _t('SYSTEM', 'النظام');
+  String get navSettings => _t('Settings', 'الإعدادات');
+  String get settingsDescription =>
+      _t('Manage system settings', 'إدارة إعدادات النظام');
+  String get setPrinter => _t('Printer', 'الطابعة');
+  String get setPrinterDesc =>
+      _t('Printing and invoice settings', 'إعدادات الطباعة والفواتير');
+  String get setTaxes => _t('Taxes', 'الضرائب');
+  String get setTaxesDesc =>
+      _t('Tax and discount settings', 'إعدادات الضرائب والخصومات');
+  String get setUsers => _t('Users', 'المستخدمين');
+  String get setUsersDesc =>
+      _t('Manage system users and roles', 'إدارة مستخدمي النظام والصلاحيات');
+  String get setProfile => _t('Profile', 'الملف الشخصي');
+  String get setProfileDesc =>
+      _t('Your account and password', 'إدارة الحساب والمعلومات الشخصية');
+  String get setLanguage => _t('Language', 'اللغة');
+  String get setLanguageDesc =>
+      _t('Change the system language', 'تغيير لغة النظام');
+  String get setGeneral => _t('General', 'عام');
+  String get setGeneralDesc =>
+      _t('General store settings', 'إعدادات عامة للنظام');
+  String get setAiMobile => _t('AI Mobile', 'AI Mobile');
+  String get setAiMobileDesc =>
+      _t('Connection with the mobile app', 'إعدادات الاتصال مع تطبيق الموبايل');
+  String get setBackup => _t('Backup', 'النسخ الاحتياطي');
+  String get setBackupDesc =>
+      _t('Back up the database', 'نسخ احتياطي للبيانات');
+  String get notAvailableYet => _t('Not available yet', 'غير متوفر حالياً');
+  String get printerNotAvailable => _t(
+    'Receipt printing is not part of the system yet, so there is nothing to set up.',
+    'طباعة الإيصال غير موجودة في النظام بعد، لذلك لا توجد إعدادات لها.',
+  );
+  String get aiMobileNotAvailable => _t(
+    'Available after AI Product Identification (Figure 3.10) is built.',
+    'متوفر بعد تنفيذ التعرّف على المنتج بالذكاء الاصطناعي (الشكل 3.10).',
+  );
+  String get systemAdminOnly => _t('System Admin only', 'لمدير النظام فقط');
+  String get backupSystemAdminOnly => _t(
+    'The database holds every store, so only the System Admin makes backups.',
+    'قاعدة البيانات فيها كل المتاجر، لذلك النسخ الاحتياطي لمدير النظام فقط.',
+  );
+  String get perStoreInStores =>
+      _t('Per store – in Stores', 'لكل متجر – في شاشة المتاجر');
+
+  // Taxes / General
+  String get taxesTitle => _t('Taxes and discounts', 'الضرائب والخصومات');
+  String get taxRatePercent => _t('Tax rate (%)', 'نسبة الضريبة (%)');
+  String get maxDiscountPercent =>
+      _t('Maximum discount (%)', 'أقصى خصم مسموح (%)');
+  String get taxesNote => _t(
+    'New sales use the new values. Completed invoices keep their own tax and discount.',
+    'المبيعات الجديدة تستخدم القيم الجديدة. الفواتير المكتملة تحتفظ بضريبتها وخصمها.',
+  );
+  String get taxesSaved =>
+      _t('Tax and discount settings saved', 'تم حفظ إعدادات الضرائب والخصم');
+  String get generalTitle => _t('Store information', 'معلومات المتجر');
+  String get storeNameBySystemAdmin => _t(
+    'The store name is changed by the System Admin.',
+    'اسم المتجر يغيّره مدير النظام.',
+  );
+  String get addressTooLong => _t(
+    'Address must be 120 characters or fewer',
+    'العنوان 120 حرفاً كحد أقصى',
+  );
+  String get generalSaved =>
+      _t('Store information saved', 'تم حفظ معلومات المتجر');
+  String get saveSettings => _t('Save', 'حفظ');
+
+  // Profile
+  String get profileTitle => _t('Profile', 'الملف الشخصي');
+  String get roleFieldLabel => _t('Role', 'الدور');
+  String get storeLabel => _t('Store', 'المتجر');
+  String get changePassword => _t('Change password', 'تغيير كلمة المرور');
+  String get currentPassword => _t('Current password', 'كلمة المرور الحالية');
+  String get newPassword => _t('New password', 'كلمة المرور الجديدة');
+  String get confirmNewPassword =>
+      _t('Confirm new password', 'تأكيد كلمة المرور الجديدة');
+  String get fieldRequired => _t('Required', 'مطلوب');
+  String get passwordMin8 => _t('At least 8 characters', '8 أحرف على الأقل');
+  String get passwordsDoNotMatch =>
+      _t('The passwords do not match', 'كلمتا المرور غير متطابقتين');
+  String get passwordSameAsCurrent => _t(
+    'Choose a password different from the current one',
+    'اختر كلمة مرور مختلفة عن الحالية',
+  );
+  String get passwordChanged => _t(
+    'Password changed. Your other sessions were logged out.',
+    'تم تغيير كلمة المرور. تم تسجيل الخروج من جلساتك الأخرى.',
+  );
+
+  // Language
+  String get languageTitle => _t('Language', 'اللغة');
+  String get languageSavedNote => _t(
+    'Your choice is remembered on this device.',
+    'يتم حفظ اختيارك على هذا الجهاز.',
+  );
+
+  // Backup
+  String get backupTitle =>
+      _t('Database backup', 'النسخ الاحتياطي لقاعدة البيانات');
+  String get createBackupNow =>
+      _t('Create backup now', 'إنشاء نسخة احتياطية الآن');
+  String get backupFolder =>
+      _t('Backup folder on the server', 'مجلد النسخ على السيرفر');
+  String get noBackupsYet => _t('No backups yet.', 'لا توجد نسخ احتياطية بعد.');
+  String backupCreated(String name) => _t(
+    'Backup $name created and checked (integrity: ok).',
+    'تم إنشاء النسخة $name وفحصها (السلامة: ok).',
+  );
+  String backupRows(int stores, int products, int sales) => _t(
+    'It holds $stores stores, $products products and $sales sales.',
+    'فيها $stores متاجر و $products منتجات و $sales مبيعات.',
+  );
+  String get colBackupFile => _t('File', 'الملف');
+  String get colBackupDate => _t('Created', 'التاريخ');
+  String get colBackupSize => _t('Size', 'الحجم');
+  String get restoreTitle =>
+      _t('How to restore (manual)', 'طريقة الاستعادة (يدوية)');
+  String get restoreSteps => _t(
+    '1. Stop the backend.  2. Keep a copy of the current clixsell.db.  '
+        '3. Copy the backup file over clixsell.db.  4. Start the backend.',
+    '1. أوقف السيرفر.  2. احتفظ بنسخة من clixsell.db الحالي.  '
+        '3. انسخ ملف النسخة الاحتياطية مكان clixsell.db.  4. شغّل السيرفر.',
+  );
 }

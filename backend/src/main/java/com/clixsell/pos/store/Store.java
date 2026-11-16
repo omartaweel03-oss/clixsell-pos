@@ -83,6 +83,33 @@ public class Store {
         applyDetails(request);
     }
 
+    /**
+     * Store Admin settings (Figure 3.9): tax rate, maximum discount, address and
+     * phone, with the same rules as {@link #validate(StoreRequest)}. The name is
+     * not changed. Completed sales keep the tax rate saved on them.
+     *
+     * @throws ValidationException if a value is missing or invalid
+     */
+    public void updateSettings(StoreSettingsRequest r) {
+        Map<String, String> errors = new LinkedHashMap<>();
+        if (r == null || r.taxRate() == null) errors.put("taxRate", "Tax rate is required");
+        if (r == null || r.maxDiscountPercent() == null) {
+            errors.put("maxDiscountPercent", "Maximum discount is required");
+        }
+        if (r != null) {
+            try {
+                validate(new StoreRequest(name, r.address(), r.phone(), r.taxRate(), r.maxDiscountPercent()));
+            } catch (ValidationException e) {
+                e.getFieldErrors().forEach(errors::putIfAbsent);
+            }
+        }
+        if (!errors.isEmpty()) throw new ValidationException(errors);
+        this.address = blankToNull(r.address());
+        this.phone = blankToNull(r.phone());
+        this.taxRate = r.taxRate();
+        this.maxDiscountPercent = r.maxDiscountPercent();
+    }
+
     public void setStatus(AccountStatus newStatus) {
         this.status = newStatus;
     }

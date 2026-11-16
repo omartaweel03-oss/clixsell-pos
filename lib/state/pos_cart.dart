@@ -257,6 +257,10 @@ class PosCartScope extends InheritedNotifier<PosCart> {
     return scope!.notifier!;
   }
 
+  /// The cart, or null for a user without a POS (System Admin).
+  static PosCart? maybeRead(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<PosCartScope>()?.notifier;
+
   static PosCart read(BuildContext context) {
     final scope = context.getInheritedWidgetOfExactType<PosCartScope>();
     assert(scope != null, 'PosCartScope not found');

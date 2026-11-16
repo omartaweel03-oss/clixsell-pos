@@ -51,3 +51,6 @@ clixsell_pos_inventory.zip
 # Backend (Spring Boot)
 backend/target/
 backend/*.db
+# Database backups (Settings → Backup): never in Git
+backend/backups/
+**/backups/*.db

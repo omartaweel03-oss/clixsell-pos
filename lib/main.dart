@@ -7,13 +7,17 @@ import 'screens/auth/login_page.dart';
 import 'services/api_http.dart';
 import 'services/product_api_client.dart';
 import 'state/auth_session.dart';
+import 'state/language_preference.dart';
 import 'services/sales_api_client.dart';
 import 'state/pos_cart.dart';
 import 'state/product_store.dart';
 import 'theme/app_theme.dart';
 
-void main() {
-  runApp(ClixSellApp(http: ApiHttp()));
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // The language chosen last time on this device (Settings → Language).
+  final language = await LanguagePreference.load();
+  runApp(ClixSellApp(http: ApiHttp(), initialLocale: language));
 }
 
 /// Root widget of ClixSell POS.
@@ -34,19 +38,34 @@ class ClixSellApp extends StatefulWidget {
 
 class _ClixSellAppState extends State<ClixSellApp> {
   late Locale _locale = widget.initialLocale ?? const Locale('en');
-  late final AuthSession _session = AuthSession(http: widget.http);
+  late final AuthSession _session = AuthSession(http: widget.http)
+    ..addListener(_closeDialogsWhenLoggedOut);
+  final _navigator = GlobalKey<NavigatorState>();
 
-  void _toggleLanguage() {
-    setState(() {
-      _locale = _locale.languageCode == 'ar'
-          ? const Locale('en')
-          : const Locale('ar');
-    });
+  /// When the session ends (logout, expired, account or store deactivated)
+  /// no dialog of the previous user may stay open over the login screen.
+  void _closeDialogsWhenLoggedOut() {
+    if (_session.user == null) {
+      _navigator.currentState?.popUntil((route) => route.isFirst);
+    }
   }
+
+  /// Changes the language and remembers it on this device.
+  void _setLanguage(Locale locale) {
+    if (locale.languageCode == _locale.languageCode) return;
+    setState(() => _locale = locale);
+    LanguagePreference.save(locale);
+  }
+
+  void _toggleLanguage() => _setLanguage(
+    _locale.languageCode == 'ar' ? const Locale('en') : const Locale('ar'),
+  );
 
   @override
   void dispose() {
-    _session.dispose();
+    _session
+      ..removeListener(_closeDialogsWhenLoggedOut)
+      ..dispose();
     super.dispose();
   }
 
@@ -55,13 +74,17 @@ class _ClixSellAppState extends State<ClixSellApp> {
     return AuthSessionScope(
       session: _session,
       child: MaterialApp(
+        navigatorKey: _navigator,
         title: 'ClixSell POS',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light(),
         locale: _locale,
         supportedLocales: const [Locale('en'), Locale('ar')],
         localizationsDelegates: GlobalMaterialLocalizations.delegates,
-        home: _Home(onToggleLanguage: _toggleLanguage),
+        home: _Home(
+          onToggleLanguage: _toggleLanguage,
+          onSetLanguage: _setLanguage,
+        ),
       ),
     );
   }
@@ -69,9 +92,10 @@ class _ClixSellAppState extends State<ClixSellApp> {
 
 /// Login screen when logged out; the user's screens when logged in.
 class _Home extends StatelessWidget {
-  const _Home({required this.onToggleLanguage});
+  const _Home({required this.onToggleLanguage, required this.onSetLanguage});
 
   final VoidCallback onToggleLanguage;
+  final ValueChanged<Locale> onSetLanguage;
 
   @override
   Widget build(BuildContext context) {
@@ -86,6 +110,7 @@ class _Home extends StatelessWidget {
       user: user,
       session: session,
       onToggleLanguage: onToggleLanguage,
+      onSetLanguage: onSetLanguage,
     );
   }
 }
@@ -96,11 +121,13 @@ class _LoggedIn extends StatefulWidget {
     required this.user,
     required this.session,
     required this.onToggleLanguage,
+    required this.onSetLanguage,
   });
 
   final AppUser user;
   final AuthSession session;
   final VoidCallback onToggleLanguage;
+  final ValueChanged<Locale> onSetLanguage;
 
   @override
   State<_LoggedIn> createState() => _LoggedInState();
@@ -152,6 +179,7 @@ class _LoggedInState extends State<_LoggedIn> {
       user: widget.user,
       http: widget.session.http,
       onToggleLanguage: widget.onToggleLanguage,
+      onSetLanguage: widget.onSetLanguage,
       onLogout: widget.session.logout,
     );
     final products = _products;

@@ -62,6 +62,18 @@ class FakeProductBackend {
   /// Every request received, e.g. "POST /api/products".
   final List<String> requests = [];
 
+  /// Database backups made through Settings → Backup (newest first).
+  final List<Map<String, dynamic>> backups = [];
+
+  /// The password a user would log in with now (to check password changes).
+  String? passwordOf(String username) => _passwords[username];
+
+  /// How many logins (sessions) a user has open.
+  int sessionsOf(String username) {
+    final id = userByName(username)?['userId'];
+    return _sessions.values.where((v) => v == id).length;
+  }
+
   /// Date/time given to completed sales and returns (change it to build a history).
   String saleTime = '2026-11-04T10:05:00';
 
@@ -202,6 +214,17 @@ class FakeProductBackend {
       return http.Response('', 204);
     }
 
+    // Own password (Settings → Profile): System Admin and Store Admin only.
+    if (path == '/api/auth/me/password' && method == 'PUT') {
+      if (role == 'CASHIER') return _forbidden();
+      return _changeOwnPassword(user, _token(request)!, body());
+    }
+    // Own store's settings (Settings → Taxes / General): Store Admin only.
+    if (path == '/api/store/settings' && method == 'PUT') {
+      if (role != 'STORE_ADMIN') return _forbidden();
+      return _storeSettings(storeId!, body());
+    }
+
     // System Admin area
     if (path.startsWith('/api/admin/')) {
       if (role != 'SYSTEM_ADMIN') return _forbidden();
@@ -328,11 +351,113 @@ class FakeProductBackend {
         .length,
   };
 
+  http.Response _changeOwnPassword(
+    Map<String, dynamic> user,
+    String token,
+    Map<String, dynamic> b,
+  ) {
+    final username = user['username'] as String;
+    final current = b['currentPassword'] as String? ?? '';
+    final next = b['newPassword'] as String? ?? '';
+    Map<String, String>? problem;
+    if (current.isEmpty) {
+      problem = {'currentPassword': 'Current password is required'};
+    } else if (_passwords[username] != current) {
+      problem = {'currentPassword': 'Current password is incorrect'};
+    } else if (next.length < 8) {
+      problem = {'newPassword': 'Password must be at least 8 characters'};
+    } else if (next == current) {
+      problem = {
+        'newPassword':
+            'The new password must be different from the current one',
+      };
+    }
+    if (problem != null) {
+      return _error(
+        400,
+        'VALIDATION_FAILED',
+        'Some fields are not valid',
+        problem,
+      );
+    }
+    _passwords[username] = next;
+    // Every other session of this user ends; this one stays.
+    _sessions.removeWhere((t, id) => id == user['userId'] && t != token);
+    return http.Response('', 204);
+  }
+
+  http.Response _storeSettings(int storeId, Map<String, dynamic> b) {
+    final errors = <String, String>{};
+    double? percent(String key, String label) {
+      final v = (b[key] as num?)?.toDouble();
+      if (v == null) {
+        errors[key] = '$label is required';
+      } else if (v < 0 || v > 100) {
+        errors[key] = '$label must be between 0 and 100';
+      }
+      return v;
+    }
+
+    final tax = percent('taxRate', 'Tax rate');
+    final max = percent('maxDiscountPercent', 'Maximum discount');
+    final address = (b['address'] as String? ?? '').trim();
+    final phone = (b['phone'] as String? ?? '').trim();
+    if (address.length > 120) {
+      errors['address'] = 'Address must be 120 characters or fewer';
+    }
+    if (phone.isNotEmpty && !RegExp(r'^[0-9+()\- ]{1,30}$').hasMatch(phone)) {
+      errors['phone'] =
+          'Phone may contain only digits, spaces, +, - and brackets';
+    }
+    if (errors.isNotEmpty) {
+      return _error(
+        400,
+        'VALIDATION_FAILED',
+        'Some fields are not valid',
+        errors,
+      );
+    }
+    final st = _find(stores, 'storeId', storeId)!;
+    st['taxRate'] = tax;
+    st['maxDiscountPercent'] = max;
+    st['address'] = address.isEmpty ? null : address;
+    st['phone'] = phone.isEmpty ? null : phone;
+    return _json(200, _storeJson(st));
+  }
+
   http.Response _admin(
     String path,
     String method,
     Map<String, dynamic> Function() body,
   ) {
+    if (path == '/api/admin/backups' && method == 'GET') {
+      return _json(200, {
+        'folder': '/srv/clixsell/backend/backups',
+        'backups': [
+          for (final b in backups)
+            {...b, 'integrityCheck': null, 'rowCounts': null},
+        ],
+      });
+    }
+    if (path == '/api/admin/backups' && method == 'POST') {
+      final n = backups.length + 1;
+      final backup = {
+        'fileName':
+            'clixsell-backup-20261116-1000${n.toString().padLeft(2, '0')}.db',
+        'sizeBytes': 245760 + n,
+        'createdAt': '2026-11-16T10:00:${n.toString().padLeft(2, '0')}',
+        'integrityCheck': 'ok',
+        'rowCounts': {
+          'stores': stores.length,
+          'users': users.length,
+          'products': rows.length,
+          'sales': sales.length,
+          'returns': returns.length,
+        },
+      };
+      backups.insert(0, backup);
+      return _json(201, backup);
+    }
     if (path == '/api/admin/stores' && method == 'GET') {
       return _json(200, stores.map(_storeJson).toList());
     }

@@ -13,7 +13,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.Map;
 
-/** Store management, used by the System Admin (and by store users to read their own store). */
+/**
+ * Store management, used by the System Admin; store users read their own store,
+ * and the Store Admin changes its settings (Figure 3.9).
+ */
 @Service
 @Transactional
 public class StoreService {
@@ -53,6 +56,16 @@ public class StoreService {
             throw duplicateName();
         }
         store.updateDetails(request);
+        return toResponse(stores.save(store));
+    }
+
+    /**
+     * A Store Admin changes their own store's settings (tax, maximum discount,
+     * address, phone). The store id always comes from the logged-in user.
+     */
+    public StoreResponse updateMySettings(long storeId, StoreSettingsRequest request) {
+        Store store = find(storeId);
+        store.updateSettings(request);
         return toResponse(stores.save(store));
     }
 
