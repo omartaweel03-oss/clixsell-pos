@@ -1,6 +1,6 @@
 # ClixSell POS – Progress (continue from here)
 
-Last updated: **2026-11-14** · `main` = **752a5de** (all feature branches merged and pushed)
+Last updated: **2026-11-17** · `main` = **09be153** (Settings merged; all feature branches merged and pushed)
 
 Source of truth: the official 58-page project report (`clixsell_3.pdf`). Figures 3.1–3.10 are
 the screen designs; Tables 3.2–3.6 are the requirements. Full status per requirement:
@@ -31,11 +31,21 @@ the screen designs; Tables 3.2–3.6 are the requirements. Full status per requi
 | Reports + Sales Analytics | Fig 3.8, 3.7, UR-M7–M8, SR20–21 | profit with sale-time cost |
 | Stock Alerts | Fig 3.5, UR-M9, SR22 | "Create purchase request" shown disabled with reason (needs Purchase Orders) |
 | Suspended Invoices screen | Fig 3.6, UR-C8, UR-M10, SR9, SR23 | "Customer" column shows **Cashier** (no customers in the system); delete = CANCELED, record kept; asks before discarding unsaved changes of an open invoice |
+| Settings | Fig 3.9, UR-M12, SR25 | 8 cards. Store Admin: own store's tax + max. discount, address + phone, Cashiers page, own password, language (remembered). System Admin: own password, language, checked DB backups (`backend/backups`, manual restore). Printer + AI Mobile shown "Not available yet". Cashier: no Settings, cannot change own password (403). Only the values sent change (no lost update). No DB change |
 | Desktop designs on every screen | all figures | basic responsiveness |
 | Demo data (optional `demo` profile) | – | 2 Palestinian stores; see README |
 
-**Tests on `main`:** backend 105/105 · Flutter 119/119 · `flutter analyze` clean ·
-real API check `tools/e2e/api_check.py` 66/66.
+**Tests on `main` (09be153):** backend 125/125 · Flutter 138/138 · `flutter analyze` clean ·
+real API check `tools/e2e/api_check.py` 66/66 · Settings API check (5 accounts) 41/41.
+
+## Pending: owner's own Windows testing (POSTPONED)
+Everything was tested in the development environment (Linux, fresh demo databases, real
+backend + web app). The owner's own test on the Windows PC is **postponed until later**. To check then:
+1. Settings → Backup creates a file in `backend\backups\` (POSIX 700/600 permissions do not apply on Windows).
+2. Language stays after F5 (note: `flutter run -d chrome` may start a fresh Chrome profile each run).
+3. `flutter pub get` (new package `shared_preferences`, pinned for Flutter 3.38+).
+4. Before using the real database: copy `backend\clixsell.db` first (this version has no migration).
+5. Arabic text in the owner's Chrome.
 
 ## Decisions already approved
 * Suspended Invoices (A–D): Cashier column instead of Customer; card "Oldest suspended";
@@ -45,30 +55,17 @@ real API check `tools/e2e/api_check.py` 66/66.
 * Profit uses the product cost saved on each sale line at sale time (V4 migration).
 * Desktop-only layouts except Figure 3.10.
 * SR3: the sale record is created when the invoice is first saved (suspend / complete).
+* Settings (A–F + corrections): Printer / AI Mobile "Not available yet"; backups System Admin only,
+  saved on the server, restore manual; language remembered (`shared_preferences`); Store Admin
+  edits address + phone (name stays with System Admin); **Cashiers have no Settings and cannot
+  change their own password** (Store Admin resets it); System Admin sees all 8 cards (Taxes /
+  General / Users open the Stores page).
 
-## Next: Settings (Figure 3.9) – planned, NOT started (wait for "START")
-Full plan (Arabic): [`docs/plans/ClixSell_Settings_Plan.txt`](docs/plans/ClixSell_Settings_Plan.txt) ·
-figure: [`docs/plans/figure_3.9_settings.png`](docs/plans/figure_3.9_settings.png)
+## Next: not started – wait for "START"
+Settings plan and results (Arabic): `docs/plans/ClixSell_Settings_Plan.txt`,
+`docs/reports/ClixSell_Settings_*.txt`, `docs/reports/ClixSell_Final_Test_Results.txt`.
 
-Report: UR-M12, SR25 (settings, taxes, language, users, backups). Figure: title + 8 tiles —
-Printer, Taxes, Users, Profile, Language, General, AI Mobile, Backup; "Settings" last in the sidebar.
-
-| Tile | Today | Plan |
-|---|---|---|
-| Users | Cashiers page exists | tile opens it |
-| Taxes | `tax_rate`, `max_discount_percent` exist; only System Admin edits | `PUT /api/store/settings` for the Store Admin (own store); completed sales keep their saved rate |
-| Profile | name/role shown | change own password: `PUT /api/auth/me/password` (current + new; other sessions ended) |
-| Language | toggle exists, not remembered | choose in tile; remember choice (decision C) |
-| General | store name/address/phone (System Admin) | Store Admin edits address + phone; name stays with System Admin (decision D) |
-| Backup | none | System Admin only (DB holds all stores): download a consistent copy (`VACUUM INTO`); restore manual + documented (decision B) |
-| Printer | no printing (FUTURE_WORK #4) | "not available yet" tile (decision A) |
-| AI Mobile | depends on Fig 3.10 | "available after AI Product Identification" tile (decision E) |
-
-No database change needed. Cashier: no Settings screen (decision F). System Admin: Profile,
-Language, Backup. **Decisions A–F are proposed and still need the owner's approval.**
-Branch to use: `feature/settings` from `main`.
-
-## Still missing after Settings (from the report)
+## Still missing (from the report)
 1. **Guardian Mode + Purchase Orders** – Fig 3.1, 3.18, 3.20; UR-M13–M17; SR26–SR31
    (recommendations from stock + sales, pending → approve/reject, WhatsApp request to supplier).
    Needs new tables (database change → approval) and supplier phone management.
@@ -80,7 +77,7 @@ Branch to use: `feature/settings` from `main`.
 7. Smaller: stock-adjustment history (UR-M6 / SR19 partial), login by email (SR1 partial),
    Android build (Portability).
 
-Suggested order: Settings → Import/Export + Product Details → Guardian Mode + Purchase Orders
+Suggested order: Import/Export + Product Details → Guardian Mode + Purchase Orders
 → AI Product Identification / camera → Offline.
 
 ## How to continue

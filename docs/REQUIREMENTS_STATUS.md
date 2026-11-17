@@ -1,6 +1,6 @@
 # ClixSell – Requirements status (report Tables 3.2–3.6, Figures 3.1–3.10)
 
-Updated 2026-11-14 (`main` = 752a5de). **Done** = implemented and tested · **Partial** · **Missing**.
+Updated 2026-11-17 (`main` = 09be153). **Done** = implemented and tested · **Partial** · **Missing**.
 
 ## Screens (Figures, report pages 30–39)
 | Figure | Screen | Status | Notes |
@@ -13,7 +13,7 @@ Updated 2026-11-14 (`main` = 752a5de). **Done** = implemented and tested · **Pa
 | 3.6 | Suspended Invoices | Done | "Customer" column = Cashier (decision A) |
 | 3.7 | Sales Analytics | Done | |
 | 3.8 | Reports | Done | profit with sale-time cost |
-| 3.9 | Settings | Partial → **next** | plan in `docs/plans/ClixSell_Settings_Plan.txt` |
+| 3.9 | Settings | Done | 8 cards; Printer and AI Mobile "Not available yet" (no printing / AI yet) |
 | 3.10 | AI Product Identification (mobile) | Missing | the only dedicated mobile screen |
 
 ## Cashier (Table 3.2)
@@ -44,7 +44,7 @@ Updated 2026-11-14 (`main` = 752a5de). **Done** = implemented and tested · **Pa
 | UR-M9 | Low-stock alerts | Done |
 | UR-M10 | Manage suspended invoices | Done |
 | UR-M11 | Import / export products | Missing |
-| UR-M12 | System settings | Partial – Settings screen next |
+| UR-M12 | System settings | Done (Settings screen) |
 | UR-M13 | Review AI purchase recommendations | Missing |
 | UR-M14 | Approve / reject purchase orders | Missing |
 | UR-M15 | Send approved orders via WhatsApp | Missing |
@@ -76,7 +76,7 @@ Updated 2026-11-14 (`main` = 752a5de). **Done** = implemented and tested · **Pa
 | SR22 low-stock alerts | Done | |
 | SR23 view / resume / delete suspended | Done | |
 | SR24 import / export product files | Missing | |
-| SR25 settings, taxes, language, users, backups | Partial | Settings plan |
+| SR25 settings, taxes, language, users, backups | Done | backups by System Admin; restore manual |
 | SR26–SR29 purchase recommendations, pending, WhatsApp, send after approval | Missing | |
 | SR30–SR31 Guardian Mode, AI alerts | Missing | |
 | SR32–SR33 offline storage + sync | Missing | |
