@@ -174,6 +174,7 @@ class _StoreSettingsDialogState extends State<StoreSettingsDialog> {
             decoration: InputDecoration(
               labelText: s.storeNameLabel,
               helperText: s.storeNameBySystemAdmin,
+              helperMaxLines: 2,
               prefixIcon: const Icon(Icons.storefront_outlined),
             ),
           ),
@@ -633,9 +634,11 @@ class _BackupDialogState extends State<BackupDialog> {
                     fontSize: 12.5,
                   ),
                 ),
+                // A file path reads left to right, also in Arabic.
                 SelectableText(
                   list.folder,
                   key: const Key('backupFolder'),
+                  textDirection: TextDirection.ltr,
                   style: const TextStyle(
                     fontWeight: FontWeight.w600,
                     fontSize: 13,
@@ -704,7 +707,7 @@ class _BackupDialogState extends State<BackupDialog> {
               ],
               const SizedBox(height: AppSpacing.lg),
               _note(
-                '${s.restoreTitle}: ${s.restoreSteps}',
+                '${s.restoreTitle}:${s.restoreSteps}',
                 key: const Key('restoreSteps'),
               ),
             ],

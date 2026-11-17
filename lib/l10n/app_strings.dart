@@ -974,9 +974,9 @@ class AppStrings {
   String get restoreTitle =>
       _t('How to restore (manual)', 'طريقة الاستعادة (يدوية)');
   String get restoreSteps => _t(
-    '1. Stop the backend.  2. Keep a copy of the current clixsell.db.  '
-        '3. Copy the backup file over clixsell.db.  4. Start the backend.',
-    '1. أوقف السيرفر.  2. احتفظ بنسخة من clixsell.db الحالي.  '
-        '3. انسخ ملف النسخة الاحتياطية مكان clixsell.db.  4. شغّل السيرفر.',
+    '\n1. Stop the backend.\n2. Keep a copy of the current clixsell.db.\n'
+        '3. Copy the backup file over clixsell.db.\n4. Start the backend.',
+    '\n1. أوقف السيرفر.\n2. احتفظ بنسخة من ملف clixsell.db الحالي.\n'
+        '3. انسخ ملف النسخة الاحتياطية مكان clixsell.db.\n4. شغّل السيرفر.',
   );
 }
