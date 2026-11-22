@@ -10,7 +10,9 @@ import '../state/pos_cart.dart';
 import '../state/product_store.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_sidebar.dart';
+import '../services/guardian_api_client.dart';
 import 'admin/staff_accounts_page.dart';
+import 'guardian/guardian_page.dart';
 import 'admin/stores_page.dart';
 import 'pos/pos_page.dart';
 import 'pos/pos_resume.dart';
@@ -60,6 +62,34 @@ class _AppShellState extends State<AppShell> {
 
   late SidebarDestination _destination = widget.user.role.home;
 
+  /// Store Admin: true until we know whether Guardian Mode is on (then the
+  /// first page is Guardian Mode, as in Figure 3.1; otherwise Products).
+  late bool _choosingHome = widget.user.role == UserRole.storeAdmin;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_choosingHome) _chooseHome();
+  }
+
+  /// Decision D9: Guardian Mode is the Store Admin's first page when it is ON.
+  /// If the status cannot be read, Products stays the first page.
+  Future<void> _chooseHome() async {
+    var guardianOn = false;
+    try {
+      guardianOn = (await GuardianApiClient(
+        widget.http,
+      ).status().timeout(const Duration(seconds: 5))).enabled;
+    } catch (_) {
+      guardianOn = false;
+    }
+    if (!mounted || !_choosingHome) return;
+    setState(() {
+      _choosingHome = false;
+      if (guardianOn) _destination = SidebarDestination.guardian;
+    });
+  }
+
   /// The product open in the edit form or in Product Details.
   String? _editingProductId;
 
@@ -104,6 +134,7 @@ class _AppShellState extends State<AppShell> {
     if (!await _canLeaveForm() || !mounted) return;
 
     setState(() {
+      _choosingHome = false; // the user chose a page
       if (destination == SidebarDestination.addProduct ||
           destination == SidebarDestination.editProduct) {
         if (!_onForm) {
@@ -191,7 +222,30 @@ class _AppShellState extends State<AppShell> {
 
   Widget _buildContent(ProductStore? store) {
     final s = AppStrings.of(context);
+    if (_choosingHome) {
+      return const Center(
+        key: Key('choosingHome'),
+        child: CircularProgressIndicator(),
+      );
+    }
     switch (_destination) {
+      case SidebarDestination.guardian:
+        return GuardianPage(
+          key: const ValueKey('guardian'),
+          api: GuardianApiClient(widget.http),
+          salesApi: SalesApiClient(widget.http),
+          onOpenStockAlerts: () => _navigate(SidebarDestination.stockAlerts),
+          onOpenProduct: (id) async {
+            // Read it again: it may have been added or deleted since login.
+            final product = await store?.refreshProduct('$id');
+            if (product == null || !mounted) return false;
+            await _navigate(
+              SidebarDestination.productDetails,
+              product: product,
+            );
+            return true;
+          },
+        );
       case SidebarDestination.stores:
         return StoresPage(key: const ValueKey('stores'), http: widget.http);
       case SidebarDestination.pos:
@@ -324,7 +378,7 @@ class _AppShellState extends State<AppShell> {
       layoutBuilder: (current, previous) =>
           Stack(fit: StackFit.expand, children: [...previous, ?current]),
       child: KeyedSubtree(
-        key: ValueKey('$_destination-$_editingProductId'),
+        key: ValueKey('$_destination-$_editingProductId-$_choosingHome'),
         child: _buildContent(store),
       ),
     );
