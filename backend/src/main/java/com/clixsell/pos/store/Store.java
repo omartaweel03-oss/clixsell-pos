@@ -63,6 +63,13 @@ public class Store {
     @Column(name = "next_invoice_number", nullable = false)
     private long nextInvoiceNumber = 1;
 
+    /**
+     * Guardian Mode (report Figure 3.1, UR-M16 / SR30) on or off for this store.
+     * Every store starts OFF; only its own Store Admin turns it on.
+     */
+    @Column(name = "guardian_enabled", nullable = false)
+    private boolean guardianEnabled = false;
+
     /** Required by JPA. Use {@link #create(StoreRequest)}. */
     protected Store() {
     }
@@ -104,6 +111,17 @@ public class Store {
         this.phone = blankToNull(newPhone);
         this.taxRate = newTax;
         this.maxDiscountPercent = newMax;
+    }
+
+    /**
+     * Turns Guardian Mode on or off. Nothing else changes and no data is deleted.
+     *
+     * @return true if the state changed, false if it already was {@code enabled}
+     */
+    public boolean setGuardianEnabled(boolean enabled) {
+        if (guardianEnabled == enabled) return false;
+        guardianEnabled = enabled;
+        return true;
     }
 
     public void setStatus(AccountStatus newStatus) {
@@ -173,4 +191,5 @@ public class Store {
     public LocalDateTime getCreatedAt() { return createdAt; }
     public double getTaxRate() { return taxRate; }
     public double getMaxDiscountPercent() { return maxDiscountPercent; }
+    public boolean isGuardianEnabled() { return guardianEnabled; }
 }

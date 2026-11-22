@@ -175,7 +175,7 @@ class MigrationTest {
             for (String[] t : tables) before.put(t[0], rows(c, t[0], t[1]));
         }
 
-        migrate(); // → V4
+        migrateTo("4"); // → V4 only (V5, Guardian Mode, has its own test: GuardianMigrationTest)
 
         try (Connection c = DriverManager.getConnection(URL); Statement s = c.createStatement()) {
             for (String[] t : tables) {

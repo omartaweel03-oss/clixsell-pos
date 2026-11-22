@@ -68,12 +68,12 @@ public class ProductController {
     @PutMapping("/{id}")
     public ProductResponse update(@AuthenticationPrincipal CurrentUser user, @PathVariable long id,
                                   @RequestBody ProductRequest request) {
-        return ProductResponse.from(service.updateProduct(user.requireStoreId(), id, request), true);
+        return ProductResponse.from(service.updateProduct(user, id, request), true);
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@AuthenticationPrincipal CurrentUser user, @PathVariable long id) {
-        service.deleteProduct(user.requireStoreId(), id);
+        service.deleteProduct(user, id);
         return ResponseEntity.noContent().build();
     }
 

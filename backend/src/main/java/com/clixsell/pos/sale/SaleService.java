@@ -1,5 +1,7 @@
 package com.clixsell.pos.sale;
 
+import com.clixsell.pos.activity.ActivityEventType;
+import com.clixsell.pos.activity.ActivityLogService;
 import com.clixsell.pos.auth.CurrentUser;
 import com.clixsell.pos.common.ConflictException;
 import com.clixsell.pos.common.NotFoundException;
@@ -13,6 +15,9 @@ import com.clixsell.pos.user.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -23,6 +28,10 @@ import java.util.Map;
  * stock, reduces it and saves the sale, its lines, payment and receipt
  * together, or saves nothing at all. The store always comes from the logged-in
  * user, so one store can never see or change another store's invoices.
+ *
+ * <p>For Guardian Mode the activity log records, with the LOGGED-IN user (not
+ * the cashier who started the invoice): a completed sale that has a discount
+ * (the user who completed it set the final discount) and a canceled invoice.
  */
 @Service
 @Transactional
@@ -32,20 +41,39 @@ public class SaleService {
     private final ProductRepository products;
     private final StoreRepository stores;
     private final UserRepository users;
+    private final ActivityLogService activity;
 
     public SaleService(SaleRepository sales, ProductRepository products, StoreRepository stores,
-                       UserRepository users) {
+                       UserRepository users, ActivityLogService activity) {
         this.sales = sales;
         this.products = products;
         this.stores = stores;
         this.users = users;
+        this.activity = activity;
     }
 
     /** Completes the current invoice (new or resumed): stock, payment and receipt. */
     public SaleResponse complete(CurrentUser user, SaleRequest request) {
         Sale sale = openSale(user, request);
         sale.completeSale(request.paymentMethod());
-        return SaleResponse.from(sales.save(sale));
+        Sale saved = sales.save(sale);
+        if (saved.getDiscount() > 0) {
+            // The discount is calculated again from THIS request (openSale → calculateTotal),
+            // so the user completing the sale is the one who applied the final discount.
+            Map<String, Object> d = new LinkedHashMap<>();
+            d.put("invoiceNumber", saved.getInvoiceNumber());
+            d.put("subtotal", saved.getSubtotal());
+            d.put("discount", saved.getDiscount());
+            d.put("percent", BigDecimal.valueOf(saved.getDiscount() * 100 / saved.getSubtotal())
+                    .setScale(2, RoundingMode.HALF_UP).doubleValue());
+            d.put("maxPercentAtSale", saved.getStore().getMaxDiscountPercent());
+            d.put("total", saved.getTotal());
+            d.put("startedByUserId", saved.getCashier().getUserId());
+            d.put("resumed", request.saleId() != null);
+            activity.record(user, ActivityEventType.DISCOUNT_APPLIED, "SALE", saved.getSaleId(),
+                    saved.getInvoiceNumber(), d);
+        }
+        return SaleResponse.from(saved);
     }
 
     /** Suspends the current invoice (SR9). A resumed invoice keeps its number. */
@@ -66,10 +94,18 @@ public class SaleService {
         return SaleResponse.from(find(storeId, saleId));
     }
 
-    /** Cancels a suspended invoice; it stays in the database marked CANCELED. */
-    public SaleResponse cancelSuspended(long storeId, long saleId) {
-        Sale sale = find(storeId, saleId);
+    /**
+     * Cancels a suspended invoice of the logged-in user's store; it stays in the
+     * database marked CANCELED. The log records the user who canceled it.
+     */
+    public SaleResponse cancelSuspended(CurrentUser user, long saleId) {
+        Sale sale = find(user.requireStoreId(), saleId);
         sale.cancel();
+        Map<String, Object> d = new LinkedHashMap<>();
+        d.put("invoiceNumber", sale.getInvoiceNumber());
+        d.put("total", sale.getTotal());
+        d.put("startedByUserId", sale.getCashier().getUserId());
+        activity.record(user, ActivityEventType.INVOICE_CANCELED, "SALE", sale.getSaleId(), sale.getInvoiceNumber(), d);
         return SaleResponse.from(sale);
     }
 

@@ -52,6 +52,7 @@ public abstract class ApiTestBase {
     /** Everything except the System Admin is removed before each test. */
     @BeforeEach
     void cleanDatabase() {
+        db.update("DELETE FROM activity_log");
         db.update("DELETE FROM user_sessions");
         db.update("DELETE FROM returns");
         db.update("DELETE FROM payments");
