@@ -3,13 +3,12 @@ import 'package:flutter/material.dart';
 import '../../l10n/app_strings.dart';
 import '../../models/product.dart';
 import '../../models/product_category.dart';
-import '../../services/product_api_client.dart';
 import '../../state/product_store.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/formatters.dart';
 import '../../widgets/stat_card.dart';
 import '../../widgets/stock_status_badge.dart';
-import 'widgets/confirm_dialogs.dart';
+import 'product_delete.dart';
 import 'widgets/product_table.dart';
 
 /// Inventory Management page: header, live statistics, search/filters,
@@ -22,11 +21,15 @@ class InventoryPage extends StatefulWidget {
     super.key,
     required this.onAddProduct,
     required this.onEditProduct,
+    this.onOpenProduct,
     this.readOnly = false,
   });
 
   final VoidCallback onAddProduct;
   final ValueChanged<Product> onEditProduct;
+
+  /// Opens Product Details (Figure 3.4) – Store Admins only; null for Cashiers.
+  final ValueChanged<Product>? onOpenProduct;
   final bool readOnly;
 
   @override
@@ -86,59 +89,9 @@ class _InventoryPageState extends State<InventoryPage> {
     });
   }
 
-  Future<void> _deleteProduct(Product product) async {
-    final s = AppStrings.of(context);
-    final store = ProductStoreScope.read(context);
-    final messenger = ScaffoldMessenger.of(context);
-
-    final confirmed = await confirmDeleteProduct(context, product);
-    if (!confirmed || !mounted) return;
-
-    final index = store.products.indexWhere((p) => p.id == product.id);
-    final Product? removed;
-    try {
-      removed = await store.deleteProduct(
-        product.id,
-      ); // DELETE /api/products/{id}
-    } on ApiException catch (e) {
-      _showError(messenger, s.deleteFailed(_describe(e, s)));
-      return;
-    }
-    if (removed == null) return;
-    final Product deleted = removed;
-
-    messenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(s.productDeleted(deleted.name)),
-          duration: const Duration(seconds: 5),
-          persist: false, // auto-hide even though it has an Undo action
-          action: SnackBarAction(
-            label: s.undo,
-            textColor: AppColors.primarySoft,
-            onPressed: () async {
-              try {
-                await store.restoreProduct(deleted, index: index);
-              } on ApiException catch (e) {
-                _showError(messenger, s.restoreFailed(_describe(e, s)));
-              }
-            },
-          ),
-        ),
-      );
-  }
-
-  static String _describe(ApiException e, AppStrings s) =>
-      e.isNetworkError ? s.networkError : e.message;
-
-  static void _showError(ScaffoldMessengerState messenger, String message) {
-    messenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(content: Text(message), backgroundColor: AppColors.danger),
-      );
-  }
+  /// Same confirmation, DELETE and Undo as Product Details (shared helper).
+  Future<void> _deleteProduct(Product product) =>
+      deleteProductWithUndo(context, product);
 
   @override
   Widget build(BuildContext context) {
@@ -252,6 +205,9 @@ class _InventoryPageState extends State<InventoryPage> {
                                   ? null
                                   : widget.onEditProduct,
                               onDelete: widget.readOnly ? null : _deleteProduct,
+                              onOpen: widget.readOnly
+                                  ? null
+                                  : widget.onOpenProduct,
                             ),
                             const SizedBox(height: AppSpacing.lg),
                             _Pagination(

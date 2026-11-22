@@ -27,6 +27,13 @@ class ProductApiClient {
         .toList();
   }
 
+  /// One product of the user's store (GET /api/products/{id}): 404 when it
+  /// does not exist or belongs to another store. The cost price is included
+  /// only for Store Admins (the backend decides).
+  Future<Product> fetchProduct(String id) async => Product.fromJson(
+    await _http.get('/products/$id') as Map<String, dynamic>,
+  );
+
   /// Inserts [product] (its id is ignored) and returns the saved product.
   Future<Product> createProduct(Product product) async => Product.fromJson(
     await _http.post('/products', product.toRequestJson())

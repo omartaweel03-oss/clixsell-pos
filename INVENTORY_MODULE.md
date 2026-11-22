@@ -80,6 +80,17 @@ actions; pages (10 / 20 / 50 per page); month filter (default: all months).
 * Uses the existing API only (`GET /api/sales/suspended`, `DELETE …/{id}`); no database change.
   The POS "Suspended" window still works as before.
 
+## Product Details (Figure 3.4, UR-M5 / SR18)
+A Store Admin screen: in Products, click a product's **name or image**. As in the figure: the
+product image on the left; on the right name, barcode, category, price, quantity, minimum
+stock, supplier, date added and status (coloured); **Edit Product** and **Delete Product**
+below. The cost price is an extra row for the Store Admin (the backend never sends it to
+Cashiers). The product is read again with the existing `GET /api/products/{id}` when the
+screen opens, so the quantity is current after sales and returns; a product deleted elsewhere
+shows "not found". Edit opens the existing form and returns to the details; Delete uses the
+same confirmation and Undo as the table (`product_delete.dart`). Cashiers keep the read-only
+product list and do not get this screen. No new API, no database change.
+
 ## Settings (Figure 3.9, UR-M12 / SR25)
 Title, description, today's date and the eight cards of the figure (Printer, Taxes, Users,
 Profile / Language, General, AI Mobile, Backup); "Settings" is the last sidebar item. Only the
@@ -259,10 +270,10 @@ Migrations: `backend/src/main/resources/db/migration/V1__initial_schema.sql` (or
 
 ## Tests
 ```bash
-cd backend && .\mvnw.cmd test     # 125 backend tests: business logic (Sale, ReturnProduct, …),
+cd backend && .\mvnw.cmd test     # 130 backend tests: business logic (Sale, ReturnProduct, …),
                                  #   API + database, two-store isolation, roles, lockout, migration,
                                  #   settings, own password, backups
-flutter test                     # 138 Flutter tests (use a fake server), incl. POS cart + screens
+flutter test                     # 152 Flutter tests (use a fake server), incl. POS cart + screens
 ```
 
 ## Files
@@ -274,6 +285,7 @@ flutter test                     # 138 Flutter tests (use a fake server), incl. 
 | `lib/services/auth_api_client.dart` | Login / logout API |
 | `lib/services/admin_api_clients.dart` | Stores API, Store Admins API, Cashiers API |
 | `lib/services/product_api_client.dart` | Product API |
+| `lib/screens/inventory/product_details_page.dart`, `product_delete.dart` | Product Details (Fig 3.4); shared delete with Undo |
 | `lib/services/settings_api_client.dart` | Settings API (store settings, own password, backups) |
 | `lib/screens/settings/settings_page.dart`, `settings_dialogs.dart` | Settings (Fig 3.9): cards, Taxes, General, Profile, Language, Backup |
 | `lib/state/language_preference.dart` | Remembers the chosen language on the device |

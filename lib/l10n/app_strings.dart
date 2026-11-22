@@ -979,4 +979,19 @@ class AppStrings {
     '\n1. أوقف السيرفر.\n2. احتفظ بنسخة من ملف clixsell.db الحالي.\n'
         '3. انسخ ملف النسخة الاحتياطية مكان clixsell.db.\n4. شغّل السيرفر.',
   );
+
+  // ── Product Details (report Figure 3.4) ──────────────────────────────────
+  String get navProductDetails => _t('Product Details', 'تفاصيل المنتج');
+  String openProductDetails(String name) =>
+      _t('Open details of $name', 'عرض تفاصيل $name');
+  String get detailName => _t('Product name', 'اسم المنتج');
+  String get detailDateAdded => _t('Date added', 'تاريخ الإضافة');
+  String get detailCostPrice => _t('Cost price', 'سعر التكلفة');
+  String get detailCostUnknown => _t('Not recorded', 'غير مسجّل');
+  String get detailCostOnlyAdmin =>
+      _t('Visible to Store Admins only', 'يظهر لمدير المتجر فقط');
+  String get editProductButton => _t('Edit Product', 'تعديل المنتج');
+  String get deleteProductButton => _t('Delete Product', 'حذف المنتج');
+  String get backToProducts => _t('Back to products', 'العودة إلى المنتجات');
+  String get noProductImage => _t('No image', 'لا توجد صورة');
 }

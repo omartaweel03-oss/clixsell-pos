@@ -18,6 +18,7 @@ class ProductTable extends StatelessWidget {
     required this.products,
     this.onEdit,
     this.onDelete,
+    this.onOpen,
   });
 
   final List<Product> products;
@@ -25,6 +26,10 @@ class ProductTable extends StatelessWidget {
   /// Null for read-only users (Cashiers): the edit/delete actions are hidden.
   final ValueChanged<Product>? onEdit;
   final ValueChanged<Product>? onDelete;
+
+  /// Clicking the product name or image opens Product Details (Figure 3.4).
+  /// Null for Cashiers.
+  final ValueChanged<Product>? onOpen;
 
   /// Narrowest width at which every column (incl. the actions) fits.
   static const double wideBreakpoint = 1100;
@@ -34,7 +39,12 @@ class ProductTable extends StatelessWidget {
     // Desktop table (Figure 3.3) at every size; narrow screens scroll sideways.
     return MinWidthScroll(
       minWidth: wideBreakpoint,
-      child: _WideTable(products: products, onEdit: onEdit, onDelete: onDelete),
+      child: _WideTable(
+        products: products,
+        onEdit: onEdit,
+        onDelete: onDelete,
+        onOpen: onOpen,
+      ),
     );
   }
 }
@@ -53,11 +63,17 @@ class _Cols {
 }
 
 class _WideTable extends StatelessWidget {
-  const _WideTable({required this.products, this.onEdit, this.onDelete});
+  const _WideTable({
+    required this.products,
+    this.onEdit,
+    this.onDelete,
+    this.onOpen,
+  });
 
   final List<Product> products;
   final ValueChanged<Product>? onEdit;
   final ValueChanged<Product>? onDelete;
+  final ValueChanged<Product>? onOpen;
 
   bool get _showActions => onEdit != null || onDelete != null;
 
@@ -112,6 +128,7 @@ class _WideTable extends StatelessWidget {
             product: p,
             onEdit: onEdit == null ? null : () => onEdit!(p),
             onDelete: onDelete == null ? null : () => onDelete!(p),
+            onOpen: onOpen == null ? null : () => onOpen!(p),
           ),
       ],
     );
@@ -124,11 +141,13 @@ class _WideRow extends StatefulWidget {
     required this.product,
     this.onEdit,
     this.onDelete,
+    this.onOpen,
   });
 
   final Product product;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
+  final VoidCallback? onOpen;
 
   @override
   State<_WideRow> createState() => _WideRowState();
@@ -182,21 +201,28 @@ class _WideRowState extends State<_WideRow> {
         child: Row(
           children: [
             cell(
-              Row(
-                children: [
-                  ProductThumbnail(imageBytes: p.imageBytes, size: 42),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: Tooltip(
-                      message: p.name,
-                      waitDuration: const Duration(milliseconds: 600),
-                      child: text(
-                        p.name,
-                        style: cellStyle.copyWith(fontWeight: FontWeight.w700),
+              _openable(
+                Row(
+                  children: [
+                    ProductThumbnail(imageBytes: p.imageBytes, size: 42),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: Tooltip(
+                        message: p.name,
+                        waitDuration: const Duration(milliseconds: 600),
+                        child: text(
+                          p.name,
+                          style: cellStyle.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: widget.onOpen == null
+                                ? null
+                                : AppColors.primary,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
               _Cols.product,
             ),
@@ -278,6 +304,25 @@ class _WideRowState extends State<_WideRow> {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+extension on _WideRowState {
+  /// Name and image open Product Details when [onOpen] is given.
+  Widget _openable(Widget child) {
+    final onOpen = widget.onOpen;
+    if (onOpen == null) return child;
+    return Semantics(
+      button: true,
+      excludeSemantics: true, // one clear label: "Open details of <name>"
+      label: AppStrings.of(context).openProductDetails(widget.product.name),
+      child: InkWell(
+        key: Key('open-${widget.product.id}'),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+        onTap: onOpen,
+        child: child,
       ),
     );
   }

@@ -605,6 +605,7 @@ class FakeProductBackend {
       if (existing == null) {
         return _error(404, 'PRODUCT_NOT_FOUND', 'Product $id was not found');
       }
+      if (method == 'GET') return _json(200, existing);
       if (method == 'DELETE') {
         rows.remove(existing);
         return http.Response('', 204);

@@ -117,6 +117,30 @@ class ProductStore extends ChangeNotifier {
     }
   }
 
+  /// SELECT one: reloads a product from the backend (Product Details), so its
+  /// quantity is current after sales and returns. Returns null (and removes it
+  /// from the list) when it no longer exists in this store.
+  ///
+  /// Throws [ApiException] for any other error.
+  Future<Product?> refreshProduct(String id) async {
+    try {
+      final fresh = await _api.fetchProduct(id);
+      final index = _products.indexWhere((p) => p.id == id);
+      if (index == -1) {
+        _products.insert(0, fresh);
+      } else {
+        _products[index] = fresh;
+      }
+      notifyListeners();
+      return fresh;
+    } on ApiException catch (e) {
+      if (!e.isNotFound) rethrow;
+      _products.removeWhere((p) => p.id == id);
+      notifyListeners();
+      return null;
+    }
+  }
+
   /// INSERT: sends a new product to the backend and adds the saved result.
   ///
   /// Throws [ApiException] if the backend rejects it or cannot be reached.

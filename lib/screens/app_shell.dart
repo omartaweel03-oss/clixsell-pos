@@ -22,6 +22,7 @@ import 'reports/reports_page.dart';
 import 'reports/sales_analytics_page.dart';
 import '../services/sales_api_client.dart';
 import 'inventory/inventory_page.dart';
+import 'inventory/product_details_page.dart';
 import 'inventory/product_form_page.dart';
 import 'inventory/stock_alerts_page.dart';
 
@@ -58,12 +59,15 @@ class _AppShellState extends State<AppShell> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
 
   late SidebarDestination _destination = widget.user.role.home;
+
+  /// The product open in the edit form or in Product Details.
   String? _editingProductId;
 
   /// Shown once by the POS when it opens (e.g. after resuming an invoice).
   String? _posMessage;
 
-  /// Where the product form returns to (inventory, or Stock Alerts).
+  /// Where the product form returns to (inventory, Stock Alerts, or
+  /// Product Details when the form was opened from there).
   SidebarDestination _formReturn = SidebarDestination.products;
   GlobalKey<ProductFormPageState> _formKey = GlobalKey<ProductFormPageState>();
 
@@ -85,12 +89,15 @@ class _AppShellState extends State<AppShell> {
     // A role can only open its own pages.
     if (!widget.user.role.destinations.contains(destination)) return;
 
-    final sameEdit =
-        destination == SidebarDestination.editProduct &&
-        _destination == SidebarDestination.editProduct &&
+    bool forProduct(SidebarDestination d) =>
+        d == SidebarDestination.editProduct ||
+        d == SidebarDestination.productDetails;
+    final sameProduct =
+        forProduct(destination) &&
+        destination == _destination &&
         (product == null || product.id == _editingProductId);
     if (destination == _destination &&
-        (destination != SidebarDestination.editProduct || sameEdit)) {
+        (!forProduct(destination) || sameProduct)) {
       return; // already there
     }
 
@@ -100,13 +107,17 @@ class _AppShellState extends State<AppShell> {
       if (destination == SidebarDestination.addProduct ||
           destination == SidebarDestination.editProduct) {
         if (!_onForm) {
-          _formReturn = _destination == SidebarDestination.stockAlerts
-              ? SidebarDestination.stockAlerts
-              : SidebarDestination.products;
+          _formReturn = switch (_destination) {
+            SidebarDestination.stockAlerts => SidebarDestination.stockAlerts,
+            SidebarDestination.productDetails
+                when destination == SidebarDestination.editProduct =>
+              SidebarDestination.productDetails,
+            _ => SidebarDestination.products,
+          };
         }
       }
       _destination = destination;
-      if (destination == SidebarDestination.editProduct) {
+      if (forProduct(destination)) {
         _editingProductId = product?.id ?? _editingProductId;
       } else {
         _editingProductId = null;
@@ -122,10 +133,7 @@ class _AppShellState extends State<AppShell> {
 
   void _onSaved(Product product, {required bool wasEditing}) {
     final s = AppStrings.of(context);
-    setState(() {
-      _destination = _formReturn;
-      _editingProductId = null;
-    });
+    _backToList();
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
@@ -169,10 +177,15 @@ class _AppShellState extends State<AppShell> {
     await _navigate(SidebarDestination.pos);
   }
 
+  /// Leaves the product form: back to where it was opened from (Product
+  /// Details keeps showing the same product).
   void _backToList() {
     setState(() {
       _destination = _formReturn;
-      _editingProductId = null;
+      if (_formReturn != SidebarDestination.productDetails) {
+        _editingProductId = null;
+      }
+      _formReturn = SidebarDestination.products;
     });
   }
 
@@ -252,6 +265,19 @@ class _AppShellState extends State<AppShell> {
           onAddProduct: () => _navigate(SidebarDestination.addProduct),
           onEditProduct: (p) =>
               _navigate(SidebarDestination.editProduct, product: p),
+          // Product Details (Figure 3.4): Store Admins only.
+          onOpenProduct: widget.user.role == UserRole.storeAdmin
+              ? (p) => _navigate(SidebarDestination.productDetails, product: p)
+              : null,
+        );
+      case SidebarDestination.productDetails:
+        final id = _editingProductId;
+        if (id == null) return _MissingProduct(onBack: _backToList);
+        return ProductDetailsPage(
+          key: ValueKey('details-$id'),
+          productId: id,
+          onBack: () => _navigate(SidebarDestination.products),
+          onEdit: (p) => _navigate(SidebarDestination.editProduct, product: p),
         );
       case SidebarDestination.addProduct:
         return ProductFormPage(
@@ -280,9 +306,15 @@ class _AppShellState extends State<AppShell> {
     final store = widget.user.role.worksInStore
         ? ProductStoreScope.of(context)
         : null;
-    final editingName = _editingProductId == null
+    final productName = _editingProductId == null
         ? null
         : store?.findById(_editingProductId!)?.name;
+    final editingName = _destination == SidebarDestination.editProduct
+        ? productName
+        : null;
+    final viewingName = _destination == SidebarDestination.productDetails
+        ? productName
+        : null;
 
     final content = AnimatedSwitcher(
       duration: const Duration(milliseconds: 220),
@@ -306,6 +338,7 @@ class _AppShellState extends State<AppShell> {
           selected: _destination,
           compact: compact,
           editingProductName: editingName,
+          viewingProductName: viewingName,
           alertCount: store == null
               ? 0
               : store.stats.lowStock + store.stats.outOfStock,

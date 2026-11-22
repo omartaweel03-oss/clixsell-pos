@@ -11,6 +11,7 @@ enum SidebarDestination {
   products,
   addProduct,
   editProduct,
+  productDetails,
   cashiers,
   reports,
   salesAnalytics,
@@ -30,6 +31,8 @@ extension RoleDestinations on UserRole {
       SidebarDestination.products,
       SidebarDestination.addProduct,
       SidebarDestination.editProduct,
+      // Product Details (Figure 3.4) is a Store Admin screen (UR-M5).
+      SidebarDestination.productDetails,
       SidebarDestination.stockAlerts,
       SidebarDestination.pos,
       SidebarDestination.suspendedInvoices,
@@ -71,6 +74,7 @@ class AppSidebar extends StatelessWidget {
     required this.onLogout,
     this.compact = false,
     this.editingProductName,
+    this.viewingProductName,
     this.alertCount = 0,
   });
 
@@ -85,6 +89,9 @@ class AppSidebar extends StatelessWidget {
 
   /// When not null an "Edit Product" entry is shown for the product being edited.
   final String? editingProductName;
+
+  /// Product open in Product Details (shown under the menu item).
+  final String? viewingProductName;
 
   /// Low + out-of-stock products, shown as a badge on "Stock Alerts".
   final int alertCount;
@@ -175,6 +182,14 @@ class AppSidebar extends StatelessWidget {
             Icons.edit_rounded,
             s.navEditProduct,
             caption: editingProductName,
+          ),
+        if (viewingProductName != null)
+          item(
+            SidebarDestination.productDetails,
+            Icons.info_outline_rounded,
+            Icons.info_rounded,
+            s.navProductDetails,
+            caption: viewingProductName,
           ),
         // Stock Alerts (Figure 3.5): Manager feature, with the live alert count.
         item(
