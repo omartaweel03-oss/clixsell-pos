@@ -128,6 +128,26 @@ final _deletions = _alert(
   action: {'type': 'ACTIVITY', 'id': null},
 );
 
+final _oldCancels = _alert(
+  'G7:day:2026-11-21',
+  'G7',
+  'CANCELED_INVOICES',
+  'HIGH',
+  'ACTIVITY',
+  {
+    'count': 6,
+    'completed': 5,
+    'percent': 54.5,
+    'minCount': 6,
+    'minPercent': 20,
+    'day': '2026-11-21',
+    'byUser': <Object>[],
+    'notRecorded': 6,
+  },
+  actorNote: 'NOT_RECORDED',
+  at: '2026-11-21T15:00:00',
+);
+
 Map<String, dynamic> _dashboard({
   bool enoughData = true,
   bool current = true,
@@ -218,7 +238,7 @@ Map<String, dynamic> _dashboard({
           ],
         },
   'topAlerts': [_loss, _discount, _low],
-  'allAlerts': [_loss, _deletions, _discount, _low],
+  'allAlerts': [_loss, _deletions, _discount, _low, _oldCancels],
   'alertCount': 4,
   'recommendations': [
     {
@@ -575,6 +595,24 @@ void main() {
     expect(find.byKey(const Key('guardianAllAlertsDialog')), findsOneWidget);
     expect(
       find.byKey(const Key('guardianAlert-G9:user:3:2026-11-22')),
+      findsOneWidget,
+    );
+    // Cancellations before the activity log: no names, said plainly.
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('guardianAlert-G7:day:2026-11-21')),
+      200,
+      scrollable: find.descendant(
+        of: find.byKey(const Key('guardianAllAlertsDialog')),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('guardianAlert-G7:day:2026-11-21')),
+        matching: find.text(
+          'User not recorded (before the activity log started)',
+        ),
+      ),
       findsOneWidget,
     );
     await _tapKey(tester, 'guardianFilter-high');

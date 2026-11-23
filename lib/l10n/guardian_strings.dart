@@ -19,6 +19,13 @@ class GuardianStrings {
 
   String _t(String en, String ar) => isArabic ? ar : en;
 
+  /// Keeps a product name or invoice number in its own direction inside
+  /// Arabic text (Unicode first-strong isolate).
+  String _iso(Object? v) => isArabic ? '\u2068${v ?? ''}\u2069' : '${v ?? ''}';
+
+  /// Keeps a date (2026-11-23) left-to-right inside Arabic text.
+  String _ltr(Object? v) => isArabic ? '\u2066${v ?? ''}\u2069' : '${v ?? ''}';
+
   static String money(Object? v) => Formatters.currency((v as num?) ?? 0);
 
   /// 7.5 → "7.5", 10.0 → "10".
@@ -59,7 +66,7 @@ class GuardianStrings {
   String get refresh => _t('Refresh', 'تحديث');
   String lastChange(String who, DateTime when) => _t(
     'Last changed by $who on ${date(when)} ${time(when)}',
-    'آخر تغيير: $who في ${date(when)} ${time(when)}',
+    'آخر تغيير: $who في ${_ltr('${date(when)} ${time(when)}')}',
   );
   String get pastPeriodNote => _t(
     'Past month: alerts and activity are for that month; stock sections show the CURRENT stock.',
@@ -79,7 +86,7 @@ class GuardianStrings {
   );
   String trackedSince(DateTime d) => _t(
     'The activity log has been recording since ${date(d)} (also while Guardian Mode is off).',
-    'سجل النشاط يعمل منذ ${date(d)} (حتى عندما يكون وضع الحارس متوقفاً).',
+    'سجل النشاط يعمل منذ ${_ltr(date(d))} (حتى عندما يكون وضع الحارس متوقفاً).',
   );
   String get enable => _t('Turn on Guardian Mode', 'تفعيل وضع الحارس');
   String get enableConfirmTitle =>
@@ -200,7 +207,7 @@ class GuardianStrings {
 
   String deletionsSince(String d) => _t(
     'Product deletions are recorded since $d',
-    'حذف المنتجات مسجّل منذ $d',
+    'حذف المنتجات مسجّل منذ ${_ltr(d)}',
   );
 
   // ── Smart alerts ────────────────────────────────────────────────────────
@@ -256,11 +263,11 @@ class GuardianStrings {
     String n(String k) => num_(p[k]);
     return switch (a.code) {
       'HIGH_DISCOUNT' => _t(
-        '${n('percent')}% discount (${m('discount')}) on invoice ${p['invoiceNumber']} '
+        '${n('percent')}% discount (${m('discount')}) on invoice ${_iso(p['invoiceNumber'])} '
             '(${m('subtotal')}). Limit: ${n('thresholdPercent')}% = 75% of the '
             '${p['maxSource'] == 'CURRENT' ? 'current ' : ''}maximum ${n('maxPercent')}%, '
             'and at least ${m('minAmount')}.',
-        'خصم ${n('percent')}% (${m('discount')}) على الفاتورة ${p['invoiceNumber']} '
+        'خصم ${n('percent')}% (${m('discount')}) على الفاتورة ${_iso(p['invoiceNumber'])} '
             '(${m('subtotal')}). الحد: ${n('thresholdPercent')}% = 75% من أعلى خصم '
             '${n('maxPercent')}%${p['maxSource'] == 'CURRENT' ? ' (الحد الحالي للمتجر)' : ''}، '
             'و${m('minAmount')} على الأقل.',
@@ -272,28 +279,28 @@ class GuardianStrings {
             '(الحد: ${p['repeatLimit']}). مجموع الخصم ${m('totalDiscount')}.',
       ),
       'BELOW_COST_SALE' => _t(
-        '${p['productName']} sold ${p['times']} time(s) (${p['units']} units) at '
+        '${_iso(p['productName'])} sold ${p['times']} time(s) (${p['units']} units) at '
             '${m('unitPrice')}; its cost at sale time was ${m('unitCost')}. '
             'Loss before the invoice discount: ${m('lossBeforeDiscount')}.',
-        '${p['productName']} بيع ${p['times']} مرة (${p['units']} قطعة) بسعر '
+        '${_iso(p['productName'])} بيع ${p['times']} مرة (${p['units']} قطعة) بسعر '
             '${m('unitPrice')} وتكلفته وقت البيع ${m('unitCost')}. '
             'الخسارة قبل خصم الفاتورة: ${m('lossBeforeDiscount')}.',
       ),
       'CONFIRMED_LOSS' => _t(
-        'Invoice ${p['invoiceNumber']}: net ${m('netRevenue')} (after a ${m('discount')} '
+        'Invoice ${_iso(p['invoiceNumber'])}: net ${m('netRevenue')} (after a ${m('discount')} '
             'discount, tax excluded), cost ${m('cost')} → loss ${m('loss')}. '
             'Every product on it has a recorded cost.',
-        'الفاتورة ${p['invoiceNumber']}: الصافي ${m('netRevenue')} (بعد خصم ${m('discount')}، '
+        'الفاتورة ${_iso(p['invoiceNumber'])}: الصافي ${m('netRevenue')} (بعد خصم ${m('discount')}، '
             'بدون الضريبة) والتكلفة ${m('cost')} ← خسارة ${m('loss')}. '
             'كل منتجاتها لها تكلفة مسجلة.',
       ),
       'PRICE_BELOW_COST' => _t(
-        '${p['productName']}: price ${m('price')}, cost ${m('cost')}. Every sale loses money.',
-        '${p['productName']}: السعر ${m('price')} والتكلفة ${m('cost')}. كل بيع له بخسارة.',
+        '${_iso(p['productName'])}: price ${m('price')}, cost ${m('cost')}. Every sale loses money.',
+        '${_iso(p['productName'])}: السعر ${m('price')} والتكلفة ${m('cost')}. كل بيع له بخسارة.',
       ),
       'PRICE_EQUALS_COST' => _t(
-        '${p['productName']}: price ${m('price')} equals its cost. No profit.',
-        '${p['productName']}: السعر ${m('price')} يساوي التكلفة. بدون ربح.',
+        '${_iso(p['productName'])}: price ${m('price')} equals its cost. No profit.',
+        '${_iso(p['productName'])}: السعر ${m('price')} يساوي التكلفة. بدون ربح.',
       ),
       'MAX_DISCOUNT_RISK' => maxDiscountText(
         p['productName'] as String? ?? '',
@@ -317,36 +324,36 @@ class GuardianStrings {
             '${p['windowDays']} يوماً.',
       ),
       'CANCELED_INVOICES' => _t(
-        '${p['count']} suspended invoices canceled on ${p['day']} of '
+        '${p['count']} suspended invoices canceled on ${_ltr(p['day'])} of '
             '${(p['count'] as num) + (p['completed'] as num)} (${n('percent')}%). '
             'Limit: ${p['minCount']} and ${p['minPercent']}%.',
-        '${p['count']} فواتير معلّقة أُلغيت في ${p['day']} من أصل '
+        '${p['count']} فواتير معلّقة أُلغيت في ${_ltr(p['day'])} من أصل '
             '${(p['count'] as num) + (p['completed'] as num)} (${n('percent')}%). '
             'الحد: ${p['minCount']} و${p['minPercent']}%.',
       ),
       'RETURNS_SPIKE' =>
         p['percent'] == null
             ? _t(
-                'Refunds of ${m('refunds')} on ${p['day']}, a day without sales '
+                'Refunds of ${m('refunds')} on ${_ltr(p['day'])}, a day without sales '
                     '(limit ${m('minAmount')}).',
-                'مرتجعات ${m('refunds')} في ${p['day']}، يوم بلا مبيعات '
+                'مرتجعات ${m('refunds')} في ${_ltr(p['day'])}، يوم بلا مبيعات '
                     '(الحد ${m('minAmount')}).',
               )
             : _t(
-                'Refunds on ${p['day']}: ${m('refunds')} = ${n('percent')}% of that day\'s '
+                'Refunds on ${_ltr(p['day'])}: ${m('refunds')} = ${n('percent')}% of that day\'s '
                     'sales ${m('sales')} (limit: ${m('minAmount')} and ${p['mediumPercent']}%).',
-                'مرتجعات ${p['day']}: ${m('refunds')} = ${n('percent')}% من مبيعات اليوم '
+                'مرتجعات ${_ltr(p['day'])}: ${m('refunds')} = ${n('percent')}% من مبيعات اليوم '
                     '${m('sales')} (الحد: ${m('minAmount')} و${p['mediumPercent']}%).',
               ),
       'PRODUCT_RETURNS_REPEATED' => _t(
-        '${p['productName']} was returned ${p['count']} times within ${p['days']} days. '
+        '${_iso(p['productName'])} was returned ${p['count']} times within ${p['days']} days. '
             'There may be a problem with the product.',
-        '${p['productName']} أُرجع ${p['count']} مرات خلال ${p['days']} أيام. '
+        '${_iso(p['productName'])} أُرجع ${p['count']} مرات خلال ${p['days']} أيام. '
             'قد تكون هناك مشكلة في المنتج.',
       ),
       'PRODUCT_DELETIONS' => _t(
-        '${p['count']} products deleted on ${p['day']} (limit: ${p['mediumLimit']}).',
-        '${p['count']} منتجات حُذفت في ${p['day']} (الحد: ${p['mediumLimit']}).',
+        '${p['count']} products deleted on ${_ltr(p['day'])} (limit: ${p['mediumLimit']}).',
+        '${p['count']} منتجات حُذفت في ${_ltr(p['day'])} (الحد: ${p['mediumLimit']}).',
       ),
       _ => '',
     };
@@ -358,12 +365,15 @@ class GuardianStrings {
     Object? after,
     Object? cost,
     Object? safe,
-  ) => _t(
-    '$name: with the maximum allowed discount (${num_(max)}%) its price becomes '
-        '${money(after)}, below its cost ${money(cost)}. Safe discount: up to ${num_(safe)}%.',
-    '$name: بأعلى خصم مسموح (${num_(max)}%) يصبح سعره ${money(after)} وهو أقل '
-        'من تكلفته ${money(cost)}. أعلى خصم آمن: ${num_(safe)}%.',
-  );
+  ) {
+    final who = name.isEmpty ? '' : '${_iso(name)}: ';
+    return _t(
+      '${who}with the maximum allowed discount (${num_(max)}%) its price becomes '
+          '${money(after)}, below its cost ${money(cost)}. Safe discount: up to ${num_(safe)}%.',
+      '$whoبأعلى خصم مسموح (${num_(max)}%) يصبح سعره ${money(after)} وهو أقل '
+          'من تكلفته ${money(cost)}. أعلى خصم آمن: ${num_(safe)}%.',
+    );
+  }
 
   /// Who did it, from the backend's records only.
   String? actorLine(GuardianAlert a) {
@@ -375,10 +385,11 @@ class GuardianStrings {
           '${u['name']} (${u['count']})',
       ];
       final missing = (p['notRecorded'] as num?)?.toInt() ?? 0;
+      // Nobody recorded at all (before the activity log): say so plainly.
+      if (parts.isEmpty) return missing > 0 ? notRecorded : null;
       if (missing > 0) {
         parts.add(_t('$missing not recorded', '$missing غير مسجّل'));
       }
-      if (parts.isEmpty) return null;
       return _t('By: ${parts.join(', ')}', 'بواسطة: ${parts.join('، ')}');
     }
     if (a.actorName != null) {
@@ -442,7 +453,7 @@ class GuardianStrings {
   String recProductLine(String code, Map<String, dynamic> p) => switch (code) {
     'REORDER_SOON' => _t(
       '${p['quantity']} left · about ${num_(p['daysLeft'])} day(s) · ${p['expectedStockout']}',
-      'المتبقي ${p['quantity']} · حوالي ${num_(p['daysLeft'])} يوم · ${p['expectedStockout']}',
+      'المتبقي ${p['quantity']} · حوالي ${num_(p['daysLeft'])} يوم · ${_ltr(p['expectedStockout'])}',
     ),
     'LOW_MARGIN' => _t(
       'Price ${money(p['price'])} · cost ${money(p['cost'])} · margin ${num_(p['marginPercent'])}%',
@@ -489,7 +500,7 @@ class GuardianStrings {
       i.priceAfterMaxDiscount,
       i.cost,
       i.safeDiscountPercent,
-    ).replaceFirst(RegExp(r'^: '), ''),
+    ),
   };
   String costPrice(double c) => _t('Cost ${money(c)}', 'التكلفة ${money(c)}');
   String currentPrice(double c) =>

@@ -427,6 +427,7 @@ class HealthRing extends StatelessWidget {
             ),
             const Text(
               '/100',
+              textDirection: TextDirection.ltr,
               style: TextStyle(fontSize: 10, color: AppColors.textSecondary),
             ),
           ],
@@ -923,11 +924,14 @@ class AtRiskTable extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 6),
               child: row([
-                Text(
-                  p.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+                Padding(
+                  padding: const EdgeInsetsDirectional.only(end: 8),
+                  child: Text(
+                    p.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
                 ),
                 Text(Formatters.integer(p.quantity)),
                 Text(
