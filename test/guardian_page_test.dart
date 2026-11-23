@@ -852,4 +852,17 @@ void main() {
     await _tapKey(tester, 'guardianActivityPrev');
     expect(find.text('Page 1 of 3'), findsOneWidget);
   });
+
+  testWidgets('audit: Guardian dialogs are named for screen readers', (
+    tester,
+  ) async {
+    final handle = tester.ensureSemantics();
+    await _open(tester, _onBackend());
+    await _tapKey(tester, 'guardianViewActivity');
+    expect(find.bySemanticsLabel('Activity report'), findsWidgets);
+    await _tapKey(tester, 'guardianDialogClose');
+    await _tapKey(tester, 'guardianAllAlerts');
+    expect(find.bySemanticsLabel('All alerts'), findsWidgets);
+    handle.dispose();
+  });
 }

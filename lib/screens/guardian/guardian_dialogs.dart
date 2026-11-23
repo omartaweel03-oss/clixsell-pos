@@ -18,39 +18,49 @@ Widget _dialogFrame({
   double maxWidth = 760,
 }) {
   final g = GuardianStrings.of(context);
+  // The dialog is named by its title for screen readers (a plain Dialog does
+  // not do it by itself), and the title is a heading. No visual change.
   return Dialog(
     key: key,
     insetPadding: const EdgeInsets.all(AppSpacing.lg),
-    child: ConstrainedBox(
-      constraints: BoxConstraints(maxWidth: maxWidth, maxHeight: 680),
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
+    child: Semantics(
+      namesRoute: true,
+      label: title,
+      explicitChildNodes: true,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxWidth, maxHeight: 680),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Semantics(
+                      header: true,
+                      child: Text(
+                        title,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
                     ),
                   ),
-                ),
-                IconButton(
-                  key: const Key('guardianDialogClose'),
-                  tooltip: g.close,
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close_rounded),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Flexible(child: body),
-          ],
+                  IconButton(
+                    key: const Key('guardianDialogClose'),
+                    tooltip: g.close,
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Flexible(child: body),
+            ],
+          ),
         ),
       ),
     ),
