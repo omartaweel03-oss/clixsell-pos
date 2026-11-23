@@ -453,7 +453,7 @@ class GuardianStrings {
     );
   }
 
-  /// Short name of a rule, for "the same incident as …" (decision U8).
+  /// Short name of a rule, for "also reported as …" (decision U8).
   String ruleName(String rule) => switch (rule) {
     'G1' => _t('High discount', 'خصم عالٍ'),
     'G2a' => _t('Sold below cost', 'بيع بأقل من التكلفة'),
@@ -474,8 +474,8 @@ class GuardianStrings {
     if (rules.isEmpty) return null;
     final names = [for (final r in rules) ruleName(r)];
     return _t(
-      'Same incident as: ${names.join(', ')} (not a separate problem).',
-      'نفس الحالة في: ${names.join('، ')} (ليست مشكلة منفصلة).',
+      'Also reported as: ${names.join(', ')} (same invoice or product – one issue, not separate problems).',
+      'مُبلَّغ عنها أيضاً في: ${names.join('، ')} (نفس الفاتورة أو المنتج – حالة واحدة وليست مشاكل منفصلة).',
     );
   }
 

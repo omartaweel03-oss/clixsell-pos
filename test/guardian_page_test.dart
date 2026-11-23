@@ -1152,12 +1152,13 @@ void main() {
       );
       expect(
         find.text(
-          'Same incident as: Sold below cost, Price at or below cost (not a separate problem).',
+          'Also reported as: Sold below cost, Price at or below cost '
+          '(same invoice or product – one issue, not separate problems).',
         ),
         findsOneWidget,
       );
       // Not linked: no note.
-      expect(find.textContaining('Same incident as'), findsOneWidget);
+      expect(find.textContaining('Also reported as'), findsOneWidget);
     });
 
     testWidgets('U8: Arabic separate issues and incident line', (tester) async {
@@ -1165,7 +1166,8 @@ void main() {
       expect(find.text('حالات منفصلة: 2'), findsOneWidget);
       expect(
         find.text(
-          'نفس الحالة في: بيع بأقل من التكلفة، سعر عند التكلفة أو أقل (ليست مشكلة منفصلة).',
+          'مُبلَّغ عنها أيضاً في: بيع بأقل من التكلفة، سعر عند التكلفة أو أقل '
+          '(نفس الفاتورة أو المنتج – حالة واحدة وليست مشاكل منفصلة).',
         ),
         findsOneWidget,
       );

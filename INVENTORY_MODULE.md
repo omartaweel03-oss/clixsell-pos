@@ -208,7 +208,7 @@ Recommendations (suggestions only, nothing changes automatically): T1 order befo
   next month), one alert per product per month (the largest window; `episodes` = how many).
 * **Same incident** (decision U8): different rules can report the same invoice or product
   (e.g. G3 price below cost, G2a sold below cost, G2b that invoice's loss). They stay separate
-  alerts, each one lists the others in `related` ("Same incident as: …"), and the Critical card
+  alerts, each one lists the others in `related` ("Also reported as: … – one issue"), and the Critical card
   shows how many separate issues the critical alerts are (`criticalIssues`). Alerts about a group
   (a day, a user's day, a list of products: G1 repeated, G5, G6, G7, G8a, G9) are never linked.
 * **Cashier area** of the map (decision U2) = POS alerts of the period: G1, G7, G8a, **by any
