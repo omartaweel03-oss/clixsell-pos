@@ -427,6 +427,7 @@ class GuardianDashboard {
     this.criticalCount = 0,
     this.criticalIssues = 0,
     this.profitRiskCount = 0,
+    this.marginRiskCount = 0,
     this.costData,
     this.health,
     this.topAlerts = const [],
@@ -453,6 +454,7 @@ class GuardianDashboard {
         criticalCount: _i(j['criticalCount']),
         criticalIssues: _i(j['criticalIssues']),
         profitRiskCount: _i(j['profitRiskCount']),
+        marginRiskCount: _i(j['marginRiskCount']),
         costData: j['costData'] == null
             ? null
             : CostData.fromJson(j['costData'] as Map<String, dynamic>),
@@ -491,7 +493,13 @@ class GuardianDashboard {
   /// Separate incidents behind [criticalCount] (alerts about the same invoice
   /// or product count once, decision U8).
   final int criticalIssues;
+
+  /// The approved Profit Risks number: G2a + G2b + G3 alerts.
   final int profitRiskCount;
+
+  /// G2c alerts (allocation-based product margin risks). Shown as a separate
+  /// line on the Profit Risks card; NOT included in [profitRiskCount].
+  final int marginRiskCount;
   final CostData? costData;
   final StoreHealth? health;
   final List<GuardianAlert> topAlerts;

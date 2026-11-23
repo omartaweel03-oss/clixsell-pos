@@ -830,6 +830,43 @@ class GuardianRulesTest {
             assertThat(r.alerts()).extracting(Alert::rule).containsExactlyInAnyOrder("G2a", "G2b", "G3", "G5", "G1");
         }
 
+        /**
+         * Pre-merge fix: the dashboard sends the number of G2c alerts (marginRiskCount) for the
+         * Profit Risks card. It is never part of profitRiskCount (G2a + G2b + G3), so nothing is
+         * counted twice. Zero, one and several.
+         */
+        @Test
+        void marginRiskCountIsTheNumberOfG2cAlertsAndIsNotInTheProfitRiskCount() {
+            Data d = new Data();
+            d.product(1, "Milk", "dairy", 5, 4.6, 50, 5, 60);
+            d.product(2, "Chocolate", "snacks", 20, 8.0, 50, 5, 60);
+            d.product(3, "Labaneh", "dairy", 10, 9.2, 50, 5, 60);
+            d.product(7, "Cake", "bakery", 2, 3.0, 20, 2, 60);                      // G3: a profit risk
+            GuardianAnalysis.Result zero = GuardianAnalysis.analyze(d.build());
+            assertThat(zero.marginRiskCount()).isZero();
+            assertThat(zero.profitRiskCount()).isEqualTo(1);
+
+            InvoiceFact a = d.invoice(1, 25, 2.5, at(20, 10), 2, 0, 12.6);        // Milk's share 4.50 < 4.60
+            d.shareLine(a, 1, "Milk", 1, 5, 4.6, 0);
+            d.shareLine(a, 2, "Chocolate", 1, 20, 8.0, 0);
+            GuardianAnalysis.Result one = GuardianAnalysis.analyze(d.build());
+            assertThat(one.marginRiskCount()).isEqualTo(1);
+            assertThat(one.profitRiskCount()).isEqualTo(1);                          // unchanged: G2c not in it
+
+            InvoiceFact b = d.invoice(2, 30, 3, at(20, 11), 2, 0, 17.2);          // Labaneh's share 9.00 < 9.20
+            d.shareLine(b, 3, "Labaneh", 1, 10, 9.2, 0);
+            d.shareLine(b, 2, "Chocolate", 1, 20, 8.0, 0);
+            InvoiceFact c = d.invoice(3, 25, 2.5, at(21, 10), 2, 0, 12.6);        // Milk again, another day
+            d.shareLine(c, 1, "Milk", 1, 5, 4.6, 0);
+            d.shareLine(c, 2, "Chocolate", 1, 20, 8.0, 0);
+            GuardianAnalysis.Result many = GuardianAnalysis.analyze(d.build());
+            assertThat(only(many.alerts(), "G2c")).hasSize(3);                      // one per product per day
+            assertThat(many.marginRiskCount()).isEqualTo(3);
+            assertThat(many.profitRiskCount()).isEqualTo(1);
+            assertThat(many.alerts().stream().filter(x -> GuardianAnalysis.PROFIT_RULES.contains(x.rule()))
+                    .noneMatch(x -> x.rule().equals("G2c"))).isTrue();
+        }
+
         /** U8 (audit): a loss invoice inside a "repeated high discounts" alert: two HIGH alerts, one issue. */
         @Test
         void u8ARepeatedDiscountAlertIsLinkedToTheLossOfOneOfItsInvoices() {

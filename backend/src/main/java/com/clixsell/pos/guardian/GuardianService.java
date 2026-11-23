@@ -104,7 +104,7 @@ public class GuardianService {
         GuardianAnalysis.Result r = GuardianAnalysis.analyze(load(storeId, period, now, status));
         List<Alert> top = r.alerts().subList(0, Math.min(3, r.alerts().size()));
         return new Dashboard(true, status, period.from(), period.to(), period.current(), todaySales(storeId, now),
-                r.criticalCount(), r.criticalIssues(), r.profitRiskCount(), r.costData(), r.health(), top, r.alerts().size(),
+                r.criticalCount(), r.criticalIssues(), r.profitRiskCount(), r.marginRiskCount(), r.costData(), r.health(), top, r.alerts().size(),
                 r.recommendations(), r.storeMap(), r.atRisk(), r.profitProtection(), r.activity());
     }
 

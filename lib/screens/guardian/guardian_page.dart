@@ -169,6 +169,9 @@ class _GuardianPageState extends State<GuardianPage> {
   /// The rules counted by the "Profit risks" card (same as the backend).
   static const profitRiskRules = {'G2a', 'G2b', 'G3'};
 
+  /// G2c: shown on the same card as a separate line, not in its number.
+  static const marginRiskRules = {'G2c'};
+
   Future<void> _allAlerts({
     GuardianSeverity? severity,
     Set<String>? rules,
@@ -410,6 +413,7 @@ class _GuardianPageState extends State<GuardianPage> {
   Widget _profitCard(GuardianDashboard d) {
     final g = GuardianStrings.of(context);
     final incomplete = d.costData?.incompleteCostInvoices ?? 0;
+    final margin = d.marginRiskCount;
     return GuardianCard(
       key: const Key('guardianCardProfit'),
       title: g.profitRisks,
@@ -417,9 +421,40 @@ class _GuardianPageState extends State<GuardianPage> {
       color: AppColors.warning,
       softColor: AppColors.warningSoft,
       icon: Icons.warning_amber_rounded,
-      subtitle: d.profitRiskCount == 0 ? g.none : g.needAttention,
-      subtitleColor: d.profitRiskCount == 0 ? null : AppColors.warning,
+      // Never a plain "None" while G2c margin risks exist (they are not in the number).
+      subtitle: d.profitRiskCount > 0
+          ? g.needAttention
+          : margin > 0
+          ? g.noneCountedSeeBelow
+          : g.none,
+      subtitleColor: d.profitRiskCount > 0 || margin > 0
+          ? AppColors.warning
+          : null,
       note: incomplete == 0 ? null : g.incompleteCost(incomplete),
+      extra: margin == 0
+          ? null
+          : Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: TextButton(
+                key: const Key('guardianMarginRisks'),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  minimumSize: const Size(0, 30),
+                  foregroundColor: AppColors.warning,
+                  alignment: AlignmentDirectional.centerStart,
+                ),
+                onPressed: () => _allAlerts(rules: marginRiskRules),
+                child: Text(
+                  g.marginRisks(margin),
+                  textAlign: TextAlign.start,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
+              ),
+            ),
       actionLabel: g.viewAll,
       actionKey: const Key('guardianViewProfit'),
       onAction: () => _allAlerts(rules: profitRiskRules),

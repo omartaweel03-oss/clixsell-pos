@@ -55,6 +55,8 @@ public final class GuardianAnalysis {
     /** Alerts about what a cashier does at the POS (the "cashier area" tile). */
     static final Set<String> CASHIER_RULES = Set.of("G1", "G7", "G8a");
     static final Set<String> PROFIT_RULES = Set.of("G2a", "G2b", "G3");
+    /** G2c (allocation-based product margin risk): shown next to the Profit Risks card, never inside its number. */
+    static final String MARGIN_RULE = "G2c";
 
     /**
      * Alerts about a day or a list of products: never linked to others. A "repeated high discounts"
@@ -63,7 +65,7 @@ public final class GuardianAnalysis {
     static final Set<String> GROUP_KEYS = Set.of("G5:", "G6:", "G7:", "G8a:", "G9:");
 
     public record Result(List<Alert> alerts, int criticalCount, int criticalIssues, int profitRiskCount,
-                         CostData costData,
+                         int marginRiskCount, CostData costData,
                          Health health, List<Recommendation> recommendations, List<MapTile> storeMap,
                          List<AtRiskProduct> atRisk, List<ProfitProtection> profitProtection,
                          ActivitySummary activity) {
@@ -175,7 +177,8 @@ public final class GuardianAnalysis {
         List<StockoutForecast> forecasts = StockoutSoonRule.forecasts(d);
         int critical = (int) alerts.stream().filter(a -> a.severity() == Severity.HIGH).count();
         int profitRisks = (int) alerts.stream().filter(a -> PROFIT_RULES.contains(a.rule())).count();
-        return new Result(alerts, critical, criticalIssues(alerts), profitRisks, costData(d),
+        int marginRisks = (int) alerts.stream().filter(a -> MARGIN_RULE.equals(a.rule())).count();
+        return new Result(alerts, critical, criticalIssues(alerts), profitRisks, marginRisks, costData(d),
                 HealthScore.of(d, highDiscounts.size(), alerts),
                 Recommendations.of(d, forecasts), storeMap(d, alerts), atRisk(forecasts),
                 profitProtection(d), activity(d, alerts, highDiscounts.size()));

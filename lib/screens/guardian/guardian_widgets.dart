@@ -249,6 +249,7 @@ class GuardianCard extends StatelessWidget {
     this.subtitleColor,
     this.note,
     this.noteColor,
+    this.extra,
     this.visual,
     this.actionLabel,
     this.actionKey,
@@ -264,6 +265,9 @@ class GuardianCard extends StatelessWidget {
   final Color? subtitleColor;
   final String? note;
   final Color? noteColor;
+
+  /// A widget under the note (e.g. the margin-risk line of the Profit Risks card).
+  final Widget? extra;
   final Widget? visual;
   final String? actionLabel;
   final Key? actionKey;
@@ -321,6 +325,7 @@ class GuardianCard extends StatelessWidget {
                     ),
                   ),
                 ],
+                ?extra,
                 if (actionLabel != null && onAction != null)
                   Align(
                     alignment: AlignmentDirectional.centerStart,

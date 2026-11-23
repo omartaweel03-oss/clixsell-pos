@@ -1199,4 +1199,199 @@ void main() {
       );
     }
   });
+
+  // ── Pre-merge fix: the Profit Risks card never hides G2c ────────────────
+
+  group('profit risks card and G2c', () {
+    Map<String, dynamic> marginAlert(int product, String name) => _alert(
+      'G2c:product:$product:2026-11-22',
+      'G2c',
+      'DISCOUNT_SHARE_BELOW_COST',
+      'MEDIUM',
+      'PROFIT',
+      {
+        'productName': name,
+        'times': 1,
+        'units': 1,
+        'unitPrice': 5.0,
+        'unitCost': 4.6,
+        'allocatedUnitRevenue': 4.5,
+        'discountPercent': 10.0,
+        'shortfall': 0.1,
+        'unitsReturned': 0,
+        'invoices': ['INV-000011'],
+        'day': '2026-11-22',
+      },
+      at: '2026-11-22T14:00:00',
+      action: {'type': 'PRODUCT', 'id': product},
+    );
+
+    Map<String, dynamic> dashboard({required int profit, required int margin}) {
+      final d = _dashboard();
+      d['profitRiskCount'] = profit;
+      d['marginRiskCount'] = margin;
+      d['allAlerts'] = [
+        _loss,
+        _discount,
+        for (var i = 1; i <= margin; i++) marginAlert(i, 'Item $i'),
+      ];
+      return d;
+    }
+
+    FakeProductBackend backendWith({required int profit, required int margin}) {
+      final b = _onBackend();
+      b.guardianDashboards[1] = dashboard(profit: profit, margin: margin);
+      return b;
+    }
+
+    Finder inCard(Finder f) => find.descendant(
+      of: find.byKey(const Key('guardianCardProfit')),
+      matching: f,
+    );
+
+    testWidgets(
+      'zero: no margin line, and "None" only when there is no risk at all',
+      (tester) async {
+        await _open(tester, backendWith(profit: 0, margin: 0));
+        expect(find.byKey(const Key('guardianMarginRisks')), findsNothing);
+        expect(inCard(find.text('None')), findsOneWidget);
+        expect(find.textContaining('margin risk'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'one (English): a separate line, not in the number, opens the G2c alerts',
+      (tester) async {
+        await _open(tester, backendWith(profit: 1, margin: 1));
+        expect(
+          inCard(find.text('1')),
+          findsOneWidget,
+        ); // the approved number is unchanged
+        expect(inCard(find.text('Need attention')), findsOneWidget);
+        expect(
+          inCard(
+            find.text(
+              '+ 1 margin risk after discount sharing, not included in this number · View',
+            ),
+          ),
+          findsOneWidget,
+        );
+        await _tapKey(tester, 'guardianMarginRisks');
+        final dialog = find.byKey(const Key('guardianAllAlertsDialog'));
+        expect(dialog, findsOneWidget);
+        expect(
+          find.descendant(
+            of: dialog,
+            matching: find.byKey(
+              const Key('guardianAlert-G2c:product:1:2026-11-22'),
+            ),
+          ),
+          findsOneWidget,
+        );
+        for (final other in ['G2b:sale:2', 'G1:sale:1']) {
+          expect(
+            find.descendant(
+              of: dialog,
+              matching: find.byKey(Key('guardianAlert-$other')),
+            ),
+            findsNothing,
+            reason: other,
+          );
+        }
+      },
+    );
+
+    testWidgets('several and no other profit risk: never a plain "None"', (
+      tester,
+    ) async {
+      await _open(tester, backendWith(profit: 0, margin: 3));
+      expect(inCard(find.text('0')), findsOneWidget);
+      expect(inCard(find.text('None')), findsNothing);
+      expect(
+        inCard(find.text('None counted here – see below')),
+        findsOneWidget,
+      );
+      expect(
+        inCard(
+          find.text(
+            '+ 3 margin risks after discount sharing, not included in this number · View',
+          ),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets(
+      'Arabic (RTL): the line, the "not counted" subtitle and the filter',
+      (tester) async {
+        await _open(
+          tester,
+          backendWith(profit: 0, margin: 2),
+          locale: const Locale('ar'),
+        );
+        final line = find.byKey(const Key('guardianMarginRisks'));
+        expect(
+          inCard(
+            find.text(
+              'مخاطر هامش بعد توزيع الخصم، غير محسوبة في هذا الرقم: 2 · عرض',
+            ),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          inCard(find.text('لا شيء ضمن هذا الرقم – انظر بالأسفل')),
+          findsOneWidget,
+        );
+        expect(inCard(find.text('لا توجد')), findsNothing);
+        expect(Directionality.of(tester.element(line)), TextDirection.rtl);
+        await _tapKey(tester, 'guardianMarginRisks');
+        final dialog = find.byKey(const Key('guardianAllAlertsDialog'));
+        expect(
+          find.descendant(
+            of: dialog,
+            matching: find.textContaining('أقل من التكلفة بعد حصته من الخصم'),
+          ),
+          findsNWidgets(2),
+        );
+        expect(
+          find.descendant(
+            of: dialog,
+            matching: find.textContaining('خسارة مؤكدة وقت البيع'),
+          ),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets('two stores: each sees only its own margin risks', (
+      tester,
+    ) async {
+      final backend = backendWith(profit: 1, margin: 2);
+      final neshan = backend.addStore('Neshan Market');
+      backend.addUser('neshan.admin', 'Admin-Pass-1', 'STORE_ADMIN', neshan);
+      backend.guardianOn[neshan] = true;
+      backend.guardianDashboards[neshan] = dashboard(profit: 0, margin: 0)
+        ..['allAlerts'] = <Object>[];
+      await _open(tester, backend, user: 'neshan.admin');
+      expect(find.byKey(const Key('guardianMarginRisks')), findsNothing);
+      expect(find.textContaining('margin risk'), findsNothing);
+      expect(inCard(find.text('None')), findsOneWidget);
+    });
+
+    for (final locale in const [Locale('en'), Locale('ar')]) {
+      testWidgets(
+        'no overflow at 390 wide with the margin line (${locale.languageCode})',
+        (tester) async {
+          await _open(
+            tester,
+            backendWith(profit: 0, margin: 2),
+            size: const Size(390, 900),
+            locale: locale,
+          );
+          expect(find.byKey(const Key('guardianMarginRisks')), findsOneWidget);
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  });
 }

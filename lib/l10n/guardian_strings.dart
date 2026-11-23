@@ -134,6 +134,18 @@ class GuardianStrings {
   String separateIssues(int n) =>
       _t(en(n, 'separate issue', 'separate issues'), 'حالات منفصلة: $n');
   String get profitRisks => _t('Profit risks', 'مخاطر الربح');
+
+  /// G2c on the Profit Risks card: a separate line, never part of its number.
+  String marginRisks(int n) => _t(
+    '+ ${en(n, 'margin risk', 'margin risks')} after discount sharing, not included in this number · View',
+    'مخاطر هامش بعد توزيع الخصم، غير محسوبة في هذا الرقم: $n · عرض',
+  );
+
+  /// The Profit Risks number is 0 but margin risks exist: never a plain "None".
+  String get noneCountedSeeBelow => _t(
+    'None counted here – see below',
+    'لا شيء ضمن هذا الرقم – انظر بالأسفل',
+  );
   String get needAttention => _t('Need attention', 'تحتاج انتباه');
   String get none => _t('None', 'لا توجد');
   String get viewAll => _t('View all', 'عرض الكل');

@@ -135,6 +135,48 @@ class GuardianDecisionsApiTest extends GuardianApiTestBase {
         assertThat((Integer) read(d, "$.criticalIssues")).isEqualTo(1);
     }
 
+    /**
+     * Pre-merge fix: the Profit Risks card must not hide G2c. The dashboard sends marginRiskCount =
+     * the number of G2c alerts of the logged-in user's store; profitRiskCount stays G2a + G2b + G3.
+     * Zero, one and several risks, in two stores.
+     */
+    @Test
+    void marginRiskCountCountsTheG2cAlertsOfTheOwnStoreOnly() throws Exception {
+        StoreSetup neshan = setupStore("Neshan Market", "neshan");
+        long milk = product(shini.adminToken(), "Milk", "11111111", "dairy", 5, 4.6, 100, 5);
+        long choc = product(shini.adminToken(), "Chocolate", "22222222", "snacks", 20, 8.0, 100, 5);
+        long labaneh = product(shini.adminToken(), "Labaneh", "33333333", "dairy", 10, 9.2, 100, 5);
+        long cake = product(shini.adminToken(), "Promo Cake", "44444444", "bakery", 2, 3.0, 30, 2); // G3
+        setGuardian(shini.adminToken(), true);
+        setGuardian(neshan.adminToken(), true);
+        String d = getJson(shini.adminToken(), "/api/guardian/dashboard");
+        assertThat((Integer) read(d, "$.marginRiskCount")).isZero();
+        assertThat((Integer) read(d, "$.profitRiskCount")).isEqualTo(1);
+
+        sell(shini.cashierToken(), Map.of(milk, 1, choc, 1), "PERCENT", 10.0);    // Milk 4.50 < 4.60
+        d = getJson(shini.adminToken(), "/api/guardian/dashboard");
+        assertThat((Integer) read(d, "$.marginRiskCount")).isEqualTo(1);
+        assertThat((Integer) read(d, "$.profitRiskCount")).isEqualTo(1);       // not counted twice
+
+        sell(shini.cashierToken(), Map.of(labaneh, 1, choc, 1), "PERCENT", 10.0); // Labaneh 9.00 < 9.20
+        sell(shini.cashierToken(), Map.of(milk, 2, choc, 1), "PERCENT", 10.0);    // Milk again: same alert
+        d = getJson(shini.adminToken(), "/api/guardian/dashboard");
+        String g2c = getJson(shini.adminToken(), "/api/guardian/alerts?rule=G2c");
+        assertThat((Integer) read(d, "$.marginRiskCount")).isEqualTo(2);
+        assertThat((List<?>) read(g2c, "$.alerts")).hasSize(2);
+        assertThat((Integer) read(d, "$.profitRiskCount")).isEqualTo(1);
+
+        // The other store: its own count only.
+        String n = getJson(neshan.adminToken(), "/api/guardian/dashboard");
+        assertThat((Integer) read(n, "$.marginRiskCount")).isZero();
+        long nMilk = product(neshan.adminToken(), "Milk", "11111111", "dairy", 5, 4.6, 100, 5);
+        long nChoc = product(neshan.adminToken(), "Chocolate", "22222222", "snacks", 20, 8.0, 100, 5);
+        sell(neshan.cashierToken(), Map.of(nMilk, 1, nChoc, 1), "PERCENT", 10.0);
+        assertThat((Integer) read(getJson(neshan.adminToken(), "/api/guardian/dashboard"), "$.marginRiskCount")).isEqualTo(1);
+        assertThat((Integer) read(getJson(shini.adminToken(), "/api/guardian/dashboard"), "$.marginRiskCount")).isEqualTo(2);
+        assertThat(cake).isPositive();
+    }
+
     // ── G8b across two calendar months, without counting an episode twice ──
 
     private long oldSale(long product, int quantity, LocalDate day) throws Exception {

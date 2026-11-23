@@ -135,16 +135,21 @@ public final class GuardianResponses {
                                   int days, double perDay, LocalDateTime trackedSince) {
     }
 
-    /** @param criticalIssues separate incidents behind the critical alerts (alerts about one invoice / product = 1) */
+    /**
+     * @param criticalIssues  separate incidents behind the critical alerts (alerts about one invoice / product = 1)
+     * @param profitRiskCount G2a + G2b + G3 alerts (the approved Profit Risks number)
+     * @param marginRiskCount G2c alerts (allocation-based product margin risks), shown on the Profit Risks
+     *                        card as a separate line; NOT included in profitRiskCount, so never counted twice
+     */
     public record Dashboard(boolean enabled, Status status, LocalDate from, LocalDate to, boolean currentPeriod,
                             TodaySales todaySales, int criticalCount, int criticalIssues, int profitRiskCount,
-                            CostData costData,
+                            int marginRiskCount, CostData costData,
                             Health health, List<Alert> topAlerts, int alertCount, List<Recommendation> recommendations,
                             List<MapTile> storeMap, List<AtRiskProduct> atRiskProducts,
                             List<ProfitProtection> profitProtection, ActivitySummary activity) {
 
         static Dashboard disabled(Status status) {
-            return new Dashboard(false, status, null, null, false, null, 0, 0, 0, null, null, List.of(), 0, List.of(),
+            return new Dashboard(false, status, null, null, false, null, 0, 0, 0, 0, null, null, List.of(), 0, List.of(),
                     List.of(), List.of(), List.of(), null);
         }
     }
