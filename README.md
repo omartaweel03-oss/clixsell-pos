@@ -19,6 +19,8 @@ independent stores in one system.
   suspend / resume invoices, cancel, and product returns.
 * **Suspended Invoices**, **Stock Alerts**, **Reports**, **Sales Analytics** and **Settings**
   (tax and discount, store details, own password, language, database backups).
+* **Guardian Mode** (Store Admin, off by default): rule-based alerts on discounts, losses,
+  stock, cancellations, returns and deletions; store health score; suggestions; activity log.
 
 ## Run (Windows)
 Requires **Java JDK 17+** and **Flutter**. Maven and SQLite need no installation.

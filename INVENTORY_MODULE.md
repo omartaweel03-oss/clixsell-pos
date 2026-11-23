@@ -165,6 +165,43 @@ How the figures are calculated (backend `ReportService`, never in the app):
   * *Not available* – no line of the period has a cost.
 * **Cost price** is an optional product field for Store Admins; cashiers never receive it.
 
+## Guardian Mode – Phase 1 (Figure 3.1, UR-M16 / SR30, UR-M17 / SR31)
+A Store Admin screen (first item of the menu). **Off by default** for every store; the Store
+Admin turns it on (confirmation), and off again with the switch. When it is on it is the Store
+Admin's first page after login (as in Figure 3.1); when it is off Products stays first.
+
+**Rule-based, not a trained AI model** – the screen says so. The backend reads the store's real
+records (sales and their lines with the sale-time cost, returns, canceled invoices, products and
+the activity log) and applies fixed, explainable rules (`backend/…/guardian/GuardianThresholds.java`):
+
+| Rule | When | Severity |
+|---|---|---|
+| G1 high discount | discount ≥ 75% of the store's maximum discount **and** ≥ 5 ₪ | MEDIUM; HIGH when the same logged user does it 3+ times in a day |
+| G2a sold below cost | a line with a known sale-time cost sold at a lower unit price | HIGH |
+| G2b confirmed loss | **every** line has a cost and subtotal − discount < cost (tax excluded) | HIGH |
+| G3 price ≤ cost | current price below (HIGH) or equal to (MEDIUM) the recorded cost | HIGH / MEDIUM |
+| G4 profit protection | the store's maximum discount would sell the product below cost | LOW |
+| G5 stock | out of stock / low stock (same rules as Stock Alerts) | HIGH / MEDIUM |
+| G6 stockout soon | own sales rate of the last 14 days (≥ 7 days observed, ≥ 3 net units) → ≤ 3 days | HIGH (≤ 7 days: at-risk list) |
+| G7 canceled invoices | per day ≥ 3 and ≥ 10% of the day's invoices (≥ 6 and ≥ 20% → HIGH) | MEDIUM / HIGH |
+| G8 returns | per day refunds ≥ 50 ₪ and ≥ 10% of the day's sales (≥ 25% HIGH); same product returned 3× in 7 days | MEDIUM / HIGH |
+| G9 deletions | same user deletes ≥ 5 products in a day (≥ 10 HIGH) | MEDIUM / HIGH |
+
+Recommendations (suggestions only, nothing changes automatically): T1 order before stockout
+(G6; "Create purchase request" stays disabled until purchase orders exist), T2 margin under
+10%, T3 not sold for 30 days with stock above the minimum.
+
+* **Missing costs are never guessed**: an invoice with a line without cost is "incomplete
+  cost" – never a loss and not part of the profit part of the health score.
+* **Who did it** comes only from the activity log, written by the backend with the logged-in
+  user in the same transaction (the user who completed a sale set its final discount; the
+  user who canceled an invoice). Events from before the log started show no name.
+* **Store Health Score**: 4 parts × 25 points (stock, profit, discounts, activity); a part
+  without enough data is "not available" with the reason; a number is shown only with 3 or more
+  parts. 80+ Good, 60–79 Needs follow-up, below 60 Risk.
+* Not in Phase 1 (later phases, not built): saved alerts / read / dismiss, statistical limits,
+  removed invoice lines in the POS, suppliers, purchase recommendations and orders, WhatsApp.
+
 ## Run (Windows / macOS)
 Requires **Java JDK 17+** (backend) and **Flutter 3.38+** (frontend). Maven and SQLite need no installation.
 
@@ -211,6 +248,10 @@ give it a Store Admin). The version with profit adds `products.cost_price` and `
 (`V4__cost_price.java`): only two empty columns are added, a backup
 `clixsell-backup-before-v4-<date>.db` is written first and nothing is changed or deleted; old
 sales keep an unknown cost (never guessed).
+Guardian Mode adds `stores.guardian_enabled` (0 = off for every store) and the empty table
+`activity_log` (`V5__guardian_mode.java`): a backup `clixsell-backup-before-v5-<date>.db` is
+written first and **checked** (SQLite integrity check and the same number of rows in every
+table) before anything changes; nothing existing is changed or deleted.
 The sales version adds the sales tables (`V3__sales.sql`); existing stores get tax 16% and
 maximum discount 10%, and every existing store, user and product is kept (tested in
 `UpgradeToSalesVersionTest`). To start from an empty database instead, stop the backend and delete
@@ -239,6 +280,9 @@ maximum discount 10%, and every existing store, user and product is kept (tested
 | `GET /api/reports/daily-sales?from=&to=` · `GET /api/reports/monthly-sales?year=` | Store Admin | `SELECT` (one point per day / month, 0 when no sales) |
 | `GET /api/reports/top-products?from=&to=&limit=` | Store Admin | `SELECT` sale_items of completed sales |
 | `GET /api/reports/inventory` | Store Admin | `SELECT` products (inventory report, products to reorder) |
+| `GET /api/guardian/status` · `PUT /api/guardian/status {"enabled": true\|false}` | Store Admin (Cashier, System Admin 403) | `stores.guardian_enabled`; `INSERT activity_log` when it changes |
+| `GET /api/guardian/dashboard?year=&month=` · `GET /api/guardian/alerts?…&severity=&rule=` | Store Admin | `SELECT` (rules G1–G9, health, recommendations; nothing when off) |
+| `GET /api/guardian/activity?year=&month=&type=&page=` | Store Admin | `SELECT activity_log` (own store) |
 
 Sale request: `{"saleId": null, "items": [{"productId": 1, "quantity": 2}], "discountType": "PERCENT",
 "discountValue": 5, "paymentMethod": "CARD"}` — the app sends only ids and quantities; prices
@@ -247,7 +291,9 @@ always come from the database.
 ## Database
 ```
 stores (store_id PK, name UNIQUE, address, phone, status, tax_rate, max_discount_percent,
-        next_invoice_number, created_at)
+        next_invoice_number, created_at, guardian_enabled 0|1)
+ ├─< activity_log (log_id PK, store_id FK, user_id FK, event_type, entity_type, entity_id,
+ │                 entity_name, details JSON, created_at)   -- written by the backend only
  ├─< users (user_id PK, store_id FK NULL only for SYSTEM_ADMIN, username UNIQUE, full_name,
  │          password_hash, role, status, failed_login_attempts, locked_until, created_at)
  │     └─< user_sessions (session_id PK, user_id FK, token_hash UNIQUE, created_at, expires_at)
@@ -266,14 +312,14 @@ stores (store_id PK, name UNIQUE, address, phone, status, tax_rate, max_discount
 Migrations: `backend/src/main/resources/db/migration/V1__initial_schema.sql` (original tables)
 , `backend/src/main/java/db/migration/V2__multi_store.java` (stores, users, store_id) and
 `V3__sales.sql` (sales, sale_items, payments, receipts, returns; store tax settings) and
-`V4__cost_price.java` (purchase cost for profit).
+`V4__cost_price.java` (purchase cost for profit) and `V5__guardian_mode.java` (Guardian Mode).
 
 ## Tests
 ```bash
-cd backend && .\mvnw.cmd test     # 130 backend tests: business logic (Sale, ReturnProduct, …),
-                                 #   API + database, two-store isolation, roles, lockout, migration,
-                                 #   settings, own password, backups
-flutter test                     # 152 Flutter tests (use a fake server), incl. POS cart + screens
+cd backend && .\mvnw.cmd test     # 176 backend tests: business logic (Sale, ReturnProduct, …),
+                                 #   API + database, two-store isolation, roles, lockout, migrations,
+                                 #   settings, own password, backups, Guardian rules and activity log
+flutter test                     # 171 Flutter tests (use a fake server), incl. POS cart + screens
 ```
 
 ## Files
@@ -321,6 +367,10 @@ flutter test                     # 152 Flutter tests (use a fake server), incl. 
 | `backend/…/demo/DemoDataInitializer.java` | Demo stores, staff, products, sales (`demo` profile, new database only) |
 | `backend/…/supplier/*` | Supplier entity (per store) |
 | `backend/…/common/*` | JSON errors, date converter, shared exceptions |
+| `backend/…/activity/*` | Activity log (who did what), written by the backend with the logged-in user |
+| `backend/…/guardian/*`, `guardian/rules/*` | Guardian Mode: thresholds, data queries, rules G1–G9, recommendations, health score, API |
+| `lib/screens/guardian/*` | Guardian Mode screen (Fig 3.1), widgets, dialogs (all alerts, health, activity report) |
+| `lib/services/guardian_api_client.dart`, `lib/models/guardian.dart`, `lib/l10n/guardian_strings.dart` | Guardian API client, models, English / Arabic text |
 
 ## Product rules
 * Out of stock: quantity == 0
