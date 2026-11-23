@@ -56,8 +56,11 @@ public final class GuardianAnalysis {
     static final Set<String> CASHIER_RULES = Set.of("G1", "G7", "G8a");
     static final Set<String> PROFIT_RULES = Set.of("G2a", "G2b", "G3");
 
-    /** Alerts about many records at once (a day, a user's day, a list of products): never linked to others. */
-    static final Set<String> GROUP_KEYS = Set.of("G1:user:", "G5:", "G6:", "G7:", "G8a:", "G9:");
+    /**
+     * Alerts about a day or a list of products: never linked to others. A "repeated high discounts"
+     * alert (G1 by one user in one day) IS linked through its invoices (audit decision U8).
+     */
+    static final Set<String> GROUP_KEYS = Set.of("G5:", "G6:", "G7:", "G8a:", "G9:");
 
     public record Result(List<Alert> alerts, int criticalCount, int criticalIssues, int profitRiskCount,
                          CostData costData,
@@ -86,10 +89,10 @@ public final class GuardianAnalysis {
      * {@code related}, so the screen and the counts never show them as separate
      * incidents. The subjects of an alert:
      * <ul>
-     *   <li>G1 (one invoice), G2b: the invoice;</li>
+     *   <li>G1 (one invoice, or the invoices of a "repeated" alert), G2b: the invoice(s);</li>
      *   <li>G2a, G2c: the product and the invoices it was sold in;</li>
      *   <li>G3, G4, G8b: the product;</li>
-     *   <li>alerts about a group (a day, a user's day, a list of products): only
+     *   <li>alerts about a day or a list of products (G5, G6, G7, G8a, G9): only
      *       themselves, so they never join other alerts together.</li>
      * </ul>
      * Alerts that share a subject, directly or through others, are one incident.

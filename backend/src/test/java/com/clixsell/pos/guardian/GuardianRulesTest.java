@@ -830,6 +830,27 @@ class GuardianRulesTest {
             assertThat(r.alerts()).extracting(Alert::rule).containsExactlyInAnyOrder("G2a", "G2b", "G3", "G5", "G1");
         }
 
+        /** U8 (audit): a loss invoice inside a "repeated high discounts" alert: two HIGH alerts, one issue. */
+        @Test
+        void u8ARepeatedDiscountAlertIsLinkedToTheLossOfOneOfItsInvoices() {
+            Data d = new Data();
+            for (long id = 1; id <= 3; id++) {
+                d.invoice(id, 50, 5, at(20, 9 + (int) id), 1, 0, id == 3 ? 46 : 10); // invoice 3: 45 < 46
+                d.discountLog(id, SARA, "Sara", 10.0);
+            }
+            d.invoice(4, 50, 5, at(21, 9), 1, 0, 46);                     // another loss, another day: separate
+            GuardianAnalysis.Result r = GuardianAnalysis.analyze(d.build());
+            Map<String, Alert> byKey = new HashMap<>();
+            for (Alert a : r.alerts()) byKey.put(a.key(), a);
+            String group = "G1:user:" + SARA + ":2026-11-20";
+            assertThat(byKey.get(group).params()).containsEntry("count", 3);   // the invoice stays in the group
+            assertThat(byKey.get(group).related()).containsExactly("G2b:sale:3");
+            assertThat(byKey.get("G2b:sale:3").related()).containsExactly(group);
+            assertThat(byKey.get("G2b:sale:4").related()).isEmpty();
+            assertThat(r.criticalCount()).isEqualTo(3);
+            assertThat(r.criticalIssues()).isEqualTo(2);
+        }
+
         /** Month boundary: Oct 30, Oct 31 and Nov 1 are 3 returns in 7 days; reported once, in November. */
         @Test
         void g8bAnEpisodeThatReachesTheLimitInThisMonthCountsReturnsOfTheMonthBefore() {

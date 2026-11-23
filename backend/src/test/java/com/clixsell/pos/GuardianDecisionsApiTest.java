@@ -112,6 +112,29 @@ class GuardianDecisionsApiTest extends GuardianApiTestBase {
         assertThat(read(all, "$.alerts[?(@.rule == 'G5')].related").toString()).isEqualTo("[[]]");
     }
 
+    /**
+     * U8 (audit part 1): one cashier gives 3 high discounts in a day (G1 "repeated", HIGH) and one of
+     * those invoices is also a confirmed loss (G2b, HIGH). The invoice stays in both alerts, but they
+     * are linked and counted as ONE critical issue.
+     */
+    @Test
+    void u8ARepeatedDiscountAlertAndTheLossOfOneOfItsInvoicesAreOneIssue() throws Exception {
+        long milk = product(shini.adminToken(), "Milk", "11111111", "dairy", 5, 1.0, 100, 5);
+        long cream = product(shini.adminToken(), "Cream", "22222222", "dairy", 5, 4.6, 100, 5);
+        sell(shini.cashierToken(), Map.of(milk, 10), "PERCENT", 10.0);
+        sell(shini.cashierToken(), Map.of(milk, 10), "PERCENT", 10.0);
+        long loss = sell(shini.cashierToken(), Map.of(cream, 10), "PERCENT", 10.0); // 45.00 < cost 46.00
+        setGuardian(shini.adminToken(), true);
+        String all = getJson(shini.adminToken(), "/api/guardian/alerts?severity=HIGH");
+        assertThat(read(all, "$.alerts[*].key").toString()).contains("G1:user:", "G2b:sale:" + loss);
+        assertThat(read(all, "$.alerts[?(@.rule == 'G1')].params.count").toString()).isEqualTo("[3]");
+        assertThat(read(all, "$.alerts[?(@.rule == 'G2b')].related[*]").toString()).contains("G1:user:");
+        assertThat(read(all, "$.alerts[?(@.rule == 'G1')].related[*]").toString()).contains("G2b:sale:" + loss);
+        String d = getJson(shini.adminToken(), "/api/guardian/dashboard");
+        assertThat((Integer) read(d, "$.criticalCount")).isEqualTo(2);
+        assertThat((Integer) read(d, "$.criticalIssues")).isEqualTo(1);
+    }
+
     // ── G8b across two calendar months, without counting an episode twice ──
 
     private long oldSale(long product, int quantity, LocalDate day) throws Exception {

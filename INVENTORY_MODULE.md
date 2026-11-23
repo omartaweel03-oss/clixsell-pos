@@ -209,8 +209,10 @@ Recommendations (suggestions only, nothing changes automatically): T1 order befo
 * **Same incident** (decision U8): different rules can report the same invoice or product
   (e.g. G3 price below cost, G2a sold below cost, G2b that invoice's loss). They stay separate
   alerts, each one lists the others in `related` ("Also reported as: … – one issue"), and the Critical card
-  shows how many separate issues the critical alerts are (`criticalIssues`). Alerts about a group
-  (a day, a user's day, a list of products: G1 repeated, G5, G6, G7, G8a, G9) are never linked.
+  shows how many separate issues the critical alerts are (`criticalIssues`). A "repeated high
+  discounts" alert (G1) keeps every invoice in its count and is linked to the other alerts of
+  those invoices (e.g. G2b). Alerts about a day or a list of products (G5, G6, G7, G8a, G9) are
+  never linked.
 * **Cashier area** of the map (decision U2) = POS alerts of the period: G1, G7, G8a, **by any
   user** – every alert shows the recorded user with their role (Store Admin / Cashier), so a
   Store Admin's action is never shown as a cashier's.
@@ -360,7 +362,7 @@ Migrations: `backend/src/main/resources/db/migration/V1__initial_schema.sql` (or
 
 ## Tests
 ```bash
-cd backend && .\mvnw.cmd test     # 198 backend tests: business logic (Sale, ReturnProduct, …),
+cd backend && .\mvnw.cmd test     # 200 backend tests: business logic (Sale, ReturnProduct, …),
                                  #   API + database, two-store isolation, roles, lockout, migrations,
                                  #   settings, own password, backups, Guardian rules and activity log
 flutter test                     # 188 Flutter tests (use a fake server), incl. POS cart + screens
