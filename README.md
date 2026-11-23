@@ -64,6 +64,11 @@ cd backend
 cd ..
 flutter test           # app: screens and state (with a fake server)
 ```
+The backend tests run in their own folder, `backend/target/test-work`: every test database and
+backup is written there, never next to `backend/clixsell.db`, and a test deletes only the files it
+created itself (an older backup is never deleted or overwritten; `BackupPreservationTest` checks
+this). To be safe anyway, run the tests in a separate copy (clone) of the project, not in the
+folder that holds your real store database.
 
 ## More
 * `INVENTORY_MODULE.md` – architecture, API list, database tables, files.

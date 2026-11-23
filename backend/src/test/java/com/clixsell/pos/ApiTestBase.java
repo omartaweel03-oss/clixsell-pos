@@ -19,14 +19,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * Shared setup for API tests: the real application on a fresh SQLite test
- * database (target/test-clixsell.db, migrated by Flyway), plus helpers that
+ * database (test-clixsell.db in the isolated test folder backend/target/test-work, migrated by
+ * Flyway), plus helpers that
  * create stores, Store Admins and Cashiers through the real API and log in.
  */
 @SpringBootTest(properties = {
-        "spring.datasource.url=jdbc:sqlite:target/test-clixsell.db?foreign_keys=on",
+        "spring.datasource.url=jdbc:sqlite:test-clixsell.db?foreign_keys=on",
         "clixsell.system-admin.username=sysadmin",
         "clixsell.demo-data=false",
-        "clixsell.backup.dir=target/test-backups",
+        "clixsell.backup.dir=test-backups",
         "clixsell.system-admin.password=" + ApiTestBase.SYSADMIN_PASSWORD
 })
 @AutoConfigureMockMvc
@@ -35,9 +36,9 @@ public abstract class ApiTestBase {
     public static final String SYSADMIN_PASSWORD = "Test-Admin-2026";
 
     static {
-        // Start every test run from an empty database file.
+        // Start every test run from an empty database file (the tests' own file, never clixsell.db).
         try {
-            Files.deleteIfExists(Path.of("target/test-clixsell.db"));
+            Files.deleteIfExists(Path.of("test-clixsell.db"));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

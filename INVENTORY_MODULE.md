@@ -200,7 +200,10 @@ Recommendations (suggestions only, nothing changes automatically): T1 order befo
   loss*: it uses the same discount allocation as the Reports profit and only the line's own
   recorded cost (an invoice whose other lines have no cost can still show it; their cost is never
   guessed). The alert shows the worst line of the day (lowest share per unit) and the total
-  shortfall. It is not counted in the "Profit risks" card (G2a, G2b, G3).
+  shortfall. It is not part of the "Profit risks" number (G2a, G2b, G3, unchanged), but it is never
+  hidden: when there are G2c alerts the card shows a separate line ("+ 1 margin risk after discount
+  sharing, not included in this number · View") that opens the G2c alerts, and the card never says
+  just "None" while they exist. The dashboard sends the count as `marginRiskCount`.
 * **G8b** (same product returned 3 times within 7 days) also reads the returns of the 14 days
   before the chosen month, so a 7-day window can start in the previous month. For each return
   the returns of that product in the 7 days ending at it are counted; an *episode* starts at the
@@ -362,11 +365,23 @@ Migrations: `backend/src/main/resources/db/migration/V1__initial_schema.sql` (or
 
 ## Tests
 ```bash
-cd backend && .\mvnw.cmd test     # 200 backend tests: business logic (Sale, ReturnProduct, …),
+cd backend && .\mvnw.cmd test     # 204 backend tests: business logic (Sale, ReturnProduct, …),
                                  #   API + database, two-store isolation, roles, lockout, migrations,
                                  #   settings, own password, backups, Guardian rules and activity log
-flutter test                     # 188 Flutter tests (use a fake server), incl. POS cart + screens
+flutter test                     # 195 Flutter tests (use a fake server), incl. POS cart + screens
 ```
+**Test files and backups are safe:**
+* Maven runs the backend tests in `backend/target/test-work` (`pom.xml`, surefire
+  `workingDirectory`). Every test database (`test-clixsell.db`, `migration-test.db`, …) and every
+  backup a test makes is written there, never next to `backend/clixsell.db`. `mvnw clean` removes it.
+* A test deletes only what it created: `OwnedFiles` reads the folder when the test starts and later
+  deletes only the new entries. No test deletes by wildcard, and none overwrites a file
+  (migrations use `VACUUM INTO`, which fails on an existing file; test files use `CREATE_NEW`).
+* `BackupPreservationTest` puts older backups (upgrade v2 / v4 / v5 and a Settings backup) in a
+  fresh folder, runs every test class that makes or lists backups there in a separate JVM, and
+  checks that each older file is still there, byte for byte. It also fails if a new test that
+  touches backups is not in its list.
+* Still, run the tests in a separate clone of the project, never in the folder of a real store.
 
 ## Files
 | Path | Purpose |

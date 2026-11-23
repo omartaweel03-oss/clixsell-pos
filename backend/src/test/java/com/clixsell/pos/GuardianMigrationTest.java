@@ -1,13 +1,14 @@
 package com.clixsell.pos;
 
+import com.clixsell.pos.support.OwnedFiles;
 import db.migration.V5__guardian_mode;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.lang.reflect.Method;
-import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -31,17 +32,23 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class GuardianMigrationTest {
 
-    private static final Path DB = Path.of("target/guardian-migration-test.db");
+    private static final Path DB = Path.of("guardian-migration-test.db");
     private static final String URL = "jdbc:sqlite:" + DB + "?foreign_keys=on";
     private static final String[] TABLES = {"stores", "users", "user_sessions", "suppliers", "products", "sales",
             "sale_items", "payments", "receipts", "returns"};
 
+    /** Backups the migrations write in the working folder; only the ones made by THIS test are removed. */
+    private OwnedFiles backups;
+
+    @BeforeEach
+    void watchBackups() {
+        backups = OwnedFiles.migrationBackups();
+    }
+
     @AfterEach
     void removeFiles() throws IOException {
-        Files.deleteIfExists(DB);
-        try (DirectoryStream<Path> backups = Files.newDirectoryStream(Path.of("."), "clixsell-backup-before-v*.db")) {
-            for (Path p : backups) Files.delete(p);
-        }
+        Files.deleteIfExists(DB); // this test's own database
+        backups.deleteCreated();  // never a backup that existed before the test
     }
 
     private static void migrateTo(String target) {
@@ -149,10 +156,9 @@ class GuardianMigrationTest {
         }
 
         // The backup was written BEFORE the change and holds every row of every table.
-        Path backup;
-        try (DirectoryStream<Path> b = Files.newDirectoryStream(Path.of("."), "clixsell-backup-before-v5-*.db")) {
-            backup = b.iterator().next();
-        }
+        List<Path> made = backups.created("clixsell-backup-before-v5-");
+        assertThat(made).as("one V5 backup written by this upgrade").hasSize(1);
+        Path backup = made.get(0);
         try (Connection c = DriverManager.getConnection("jdbc:sqlite:" + backup)) {
             try (Statement s = c.createStatement(); ResultSet rs = s.executeQuery("PRAGMA integrity_check")) {
                 assertThat(rs.next()).isTrue();
@@ -169,7 +175,7 @@ class GuardianMigrationTest {
         Files.deleteIfExists(DB);
         migrateTo("4");
         fillV4Database();
-        Path copy = Path.of("target/guardian-backup-check.db");
+        Path copy = Path.of("guardian-backup-check.db");
         Files.deleteIfExists(copy);
         try (Connection c = DriverManager.getConnection(URL); Statement s = c.createStatement()) {
             s.execute("VACUUM INTO '" + copy + "'");
@@ -199,9 +205,7 @@ class GuardianMigrationTest {
             assertThat(count(c, "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' "
                     + "AND name IN ('idx_activity_store_time', 'idx_activity_store_type')")).isEqualTo(2);
         }
-        try (DirectoryStream<Path> b = Files.newDirectoryStream(Path.of("."), "clixsell-backup-before-v5-*.db")) {
-            assertThat(b.iterator().hasNext()).as("nothing to back up in an empty database").isFalse();
-        }
+        assertThat(backups.created("clixsell-backup-before-v5-")).as("nothing to back up in an empty database").isEmpty();
     }
 
     /**
@@ -230,9 +234,7 @@ class GuardianMigrationTest {
                     .as("the new column was rolled back").isZero();
             assertThat(count(c, "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '5' AND success = 1")).isZero();
         }
-        try (DirectoryStream<Path> b = Files.newDirectoryStream(Path.of("."), "clixsell-backup-before-v5-*.db")) {
-            assertThat(b.iterator().hasNext()).as("backup written before the failure").isTrue();
-        }
+        assertThat(backups.created("clixsell-backup-before-v5-")).as("backup written before the failure").hasSize(1);
         try (Connection c = DriverManager.getConnection(URL)) {
             // Flyway keeps a "failed" row: the next start stops until it is removed (repair).
             assertThat(count(c, "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '5' AND success = 0"))

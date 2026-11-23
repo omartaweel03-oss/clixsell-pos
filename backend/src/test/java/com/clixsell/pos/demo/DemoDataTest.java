@@ -14,13 +14,13 @@ import java.nio.file.Path;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /** With the "demo" profile a new database gets the demo stores, staff, products, sales and a return. */
-@SpringBootTest(properties = "spring.datasource.url=jdbc:sqlite:target/demo-clixsell.db?foreign_keys=on")
+@SpringBootTest(properties = "spring.datasource.url=jdbc:sqlite:demo-clixsell.db?foreign_keys=on")
 @ActiveProfiles("demo")
 class DemoDataTest {
 
     static {
         try {
-            Files.deleteIfExists(Path.of("target/demo-clixsell.db"));
+            Files.deleteIfExists(Path.of("demo-clixsell.db"));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

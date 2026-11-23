@@ -1,5 +1,7 @@
 package com.clixsell.pos;
 
+import com.clixsell.pos.support.OwnedFiles;
+
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,14 +36,20 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * stores must not receive demo data or have any record changed.
  */
 @SpringBootTest(properties = {
-        "spring.datasource.url=jdbc:sqlite:target/upgrade-v2-clixsell.db?foreign_keys=on",
+        "spring.datasource.url=jdbc:sqlite:upgrade-v2-clixsell.db?foreign_keys=on",
         "clixsell.system-admin.password=Upgrade-Admin-1"
 })
 @AutoConfigureMockMvc
 @ActiveProfiles("demo")
 class UpgradeToSalesVersionTest {
 
-    private static final Path DB = Path.of("target/upgrade-v2-clixsell.db");
+    private static final Path DB = Path.of("upgrade-v2-clixsell.db");
+
+    /**
+     * Upgrade backups the application writes in the working folder when it starts on the old
+     * database below; read BEFORE anything is created, so only this test's backups are removed.
+     */
+    private static final OwnedFiles BACKUPS = OwnedFiles.migrationBackups();
     private static final String URL = "jdbc:sqlite:" + DB + "?foreign_keys=on";
 
     static {
@@ -80,10 +88,8 @@ class UpgradeToSalesVersionTest {
     }
 
     @org.junit.jupiter.api.AfterAll
-    static void removeBackups() throws Exception {
-        try (var backups = Files.newDirectoryStream(Path.of("."), "clixsell-backup-before-v*.db")) {
-            for (Path p : backups) Files.delete(p);
-        }
+    static void removeBackups() {
+        BACKUPS.deleteCreated(); // never a backup that existed before the test
     }
 
     @Autowired
