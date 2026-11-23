@@ -9,8 +9,12 @@ import java.util.Map;
 
 /**
  * A reporting period: whole days from {@code from} to {@code to}, both included.
- * In the database it is the half-open text range [from 00:00:00, to+1 00:00:00),
- * which matches the ISO date-time text the app stores ("2026-11-04T10:15:00").
+ * In the database it is the half-open text range ["from T00:00", "to+1 T00:00").
+ * The app stores {@code LocalDateTime.toString()}, which leaves out ":00" seconds:
+ * 10:15:30 is "2026-11-04T10:15:30", but the first second after midnight is
+ * "2026-11-01T00:00". "T00:00" is the smallest text of any time of a day, so these
+ * bounds hold every stored form of that day's times and nothing else (U5; the same
+ * bounds as Guardian Mode).
  */
 public record ReportPeriod(LocalDate from, LocalDate to) {
 
@@ -52,10 +56,10 @@ public record ReportPeriod(LocalDate from, LocalDate to) {
     }
 
     String startText() {
-        return from + "T00:00:00";
+        return from + "T00:00";
     }
 
     String endTextExclusive() {
-        return to.plusDays(1) + "T00:00:00";
+        return to.plusDays(1) + "T00:00";
     }
 }
