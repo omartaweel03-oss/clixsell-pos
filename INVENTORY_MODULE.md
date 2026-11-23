@@ -249,9 +249,15 @@ give it a Store Admin). The version with profit adds `products.cost_price` and `
 `clixsell-backup-before-v4-<date>.db` is written first and nothing is changed or deleted; old
 sales keep an unknown cost (never guessed).
 Guardian Mode adds `stores.guardian_enabled` (0 = off for every store) and the empty table
-`activity_log` (`V5__guardian_mode.java`): a backup `clixsell-backup-before-v5-<date>.db` is
+`activity_log` (`V5__guardian_mode.java`): a backup `clixsell-backup-before-v5-<date>-<ms>.db` is
 written first and **checked** (SQLite integrity check and the same number of rows in every
 table) before anything changes; nothing existing is changed or deleted.
+If V5 ever stops half-way, it rolls its own change back (every row is kept, tested in
+`GuardianMigrationTest`), but Flyway remembers a failed V5 and the next start stops with
+"Detected failed migration to version 5". To retry: stop the backend, fix the cause shown in
+the log, then remove that one row with any SQLite tool (e.g. DB Browser for SQLite):
+`DELETE FROM flyway_schema_history WHERE version = '5' AND success = 0;` and start again.
+Or put the backup file back in place of `clixsell.db`.
 The sales version adds the sales tables (`V3__sales.sql`); existing stores get tax 16% and
 maximum discount 10%, and every existing store, user and product is kept (tested in
 `UpgradeToSalesVersionTest`). To start from an empty database instead, stop the backend and delete
@@ -316,10 +322,10 @@ Migrations: `backend/src/main/resources/db/migration/V1__initial_schema.sql` (or
 
 ## Tests
 ```bash
-cd backend && .\mvnw.cmd test     # 176 backend tests: business logic (Sale, ReturnProduct, …),
+cd backend && .\mvnw.cmd test     # 183 backend tests: business logic (Sale, ReturnProduct, …),
                                  #   API + database, two-store isolation, roles, lockout, migrations,
                                  #   settings, own password, backups, Guardian rules and activity log
-flutter test                     # 171 Flutter tests (use a fake server), incl. POS cart + screens
+flutter test                     # 175 Flutter tests (use a fake server), incl. POS cart + screens
 ```
 
 ## Files
