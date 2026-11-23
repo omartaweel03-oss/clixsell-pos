@@ -35,6 +35,11 @@ import static com.clixsell.pos.guardian.rules.GuardianRule.params;
  *       One HIGH alert per invoice. An invoice with any line without a cost is
  *       INCOMPLETE_COST and is never reported as a loss.</li>
  * </ul>
+ * Both are SALE-TIME facts: units returned later are sent with the alert
+ * ("unitsReturned") so the app says the loss happened at the sale and is not
+ * the result after the return; returns never change the judgement.
+ * <ul>
+ * </ul>
  */
 public final class BelowCostRule implements GuardianRule {
 
@@ -51,6 +56,7 @@ public final class BelowCostRule implements GuardianRule {
                     params("invoiceNumber", i.invoiceNumber(), "subtotal", i.subtotal(), "discount", i.discount(),
                             "netRevenue", net.doubleValue(), "cost", cost.doubleValue(),
                             "loss", cost.subtract(net).doubleValue(), "lines", i.lines(),
+                            "unitsSold", i.unitsSold(), "unitsReturned", i.unitsReturned(),
                             "startedBy", log != null && log.userId() != i.startedByUserId() ? i.startedByName() : null),
                     List.of(GuardianRule.sale(i.saleId(), i.invoiceNumber())),
                     discounted ? GuardianRule.actor(log) : null,
@@ -70,7 +76,7 @@ public final class BelowCostRule implements GuardianRule {
         for (var e : groups.entrySet()) {
             List<LineFact> lines = e.getValue();
             LineFact worst = lines.get(0);
-            int units = 0;
+            int units = 0, returned = 0;
             BigDecimal loss = BigDecimal.ZERO;
             LocalDateTime last = worst.completedAt();
             LinkedHashSet<Ref> sales = new LinkedHashSet<>();
@@ -80,6 +86,7 @@ public final class BelowCostRule implements GuardianRule {
                     worst = l;
                 }
                 units += l.quantity();
+                returned += l.returnedQuantity();
                 loss = loss.add(gap.multiply(BigDecimal.valueOf(l.quantity())));
                 if (l.completedAt().isAfter(last)) last = l.completedAt();
                 sales.add(GuardianRule.sale(l.saleId(), l.invoiceNumber()));
@@ -90,7 +97,8 @@ public final class BelowCostRule implements GuardianRule {
             out.add(GuardianRule.alert("G2a:product:" + e.getKey(), "G2a", "BELOW_COST_SALE", Severity.HIGH, "PROFIT",
                     params("productName", worst.productName(), "times", lines.size(), "units", units,
                             "unitPrice", worst.unitPrice(), "unitCost", worst.unitCost(),
-                            "lossBeforeDiscount", Amounts.round2(loss.doubleValue()), "day", day.toString()),
+                            "lossBeforeDiscount", Amounts.round2(loss.doubleValue()), "day", day.toString(),
+                            "unitsReturned", returned),
                     new ArrayList<>(sales), null, null, last,
                     exists ? GuardianRule.action("PRODUCT", productId) : null));
         }

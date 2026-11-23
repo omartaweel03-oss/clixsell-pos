@@ -203,4 +203,53 @@ class GuardianMigrationTest {
             assertThat(b.iterator().hasNext()).as("nothing to back up in an empty database").isFalse();
         }
     }
+
+    /**
+     * Audit item 8: if V5 fails half-way, nothing is left changed. Here an old
+     * leftover table named activity_log makes CREATE TABLE fail AFTER the new
+     * stores column was added: the column is rolled back, every row is kept,
+     * the backup exists, and once the cause is removed the upgrade succeeds.
+     */
+    @Test
+    void aFailureHalfWayChangesNothingAndTheUpgradeCanBeRunAgain() throws Exception {
+        Files.deleteIfExists(DB);
+        migrateTo("4");
+        fillV4Database();
+        try (Connection c = DriverManager.getConnection(URL); Statement s = c.createStatement()) {
+            s.execute("CREATE TABLE activity_log (x INTEGER)"); // something already named like the new table
+        }
+        Map<String, List<String>> before = new HashMap<>();
+        try (Connection c = DriverManager.getConnection(URL)) {
+            for (String t : TABLES) before.put(t, rows(c, t));
+        }
+        assertThatThrownBy(() -> migrateTo(null)).hasMessageContaining("activity_log");
+
+        try (Connection c = DriverManager.getConnection(URL)) {
+            for (String t : TABLES) assertThat(rows(c, t)).as(t + " unchanged").isEqualTo(before.get(t));
+            assertThat(count(c, "SELECT COUNT(*) FROM pragma_table_info('stores') WHERE name = 'guardian_enabled'"))
+                    .as("the new column was rolled back").isZero();
+            assertThat(count(c, "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '5' AND success = 1")).isZero();
+        }
+        try (DirectoryStream<Path> b = Files.newDirectoryStream(Path.of("."), "clixsell-backup-before-v5-*.db")) {
+            assertThat(b.iterator().hasNext()).as("backup written before the failure").isTrue();
+        }
+        try (Connection c = DriverManager.getConnection(URL)) {
+            // Flyway keeps a "failed" row: the next start stops until it is removed (repair).
+            assertThat(count(c, "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '5' AND success = 0"))
+                    .isEqualTo(1);
+        }
+        assertThatThrownBy(() -> migrateTo(null)).hasMessageContaining("Detected failed migration to version 5");
+        // Remove the cause, then remove the failed row (Flyway repair = delete that one row), then it upgrades.
+        try (Connection c = DriverManager.getConnection(URL); Statement s = c.createStatement()) {
+            s.execute("DROP TABLE activity_log");
+            s.execute("DELETE FROM flyway_schema_history WHERE version = '5' AND success = 0");
+        }
+        migrateTo(null);
+        try (Connection c = DriverManager.getConnection(URL)) {
+            assertThat(count(c, "SELECT COUNT(*) FROM stores WHERE guardian_enabled = 0")).isEqualTo(2);
+            for (String t : TABLES) {
+                if (!t.equals("stores")) assertThat(rows(c, t)).as(t + " kept").isEqualTo(before.get(t));
+            }
+        }
+    }
 }

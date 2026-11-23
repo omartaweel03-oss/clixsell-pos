@@ -23,6 +23,12 @@ class GuardianStrings {
   /// Arabic text (Unicode first-strong isolate).
   String _iso(Object? v) => isArabic ? '\u2068${v ?? ''}\u2069' : '${v ?? ''}';
 
+  /// English count with the right singular / plural: "1 product", "3 products".
+  static String en(Object? n, String one, String many) {
+    final v = (n as num?) ?? 0;
+    return '${num_(v)} ${v == 1 ? one : many}';
+  }
+
   /// Keeps a date (2026-11-23) left-to-right inside Arabic text.
   String _ltr(Object? v) => isArabic ? '\u2066${v ?? ''}\u2069' : '${v ?? ''}';
 
@@ -69,8 +75,10 @@ class GuardianStrings {
     'آخر تغيير: $who في ${_ltr('${date(when)} ${time(when)}')}',
   );
   String get pastPeriodNote => _t(
-    'Past month: alerts and activity are for that month; stock sections show the CURRENT stock.',
-    'شهر سابق: التنبيهات والنشاط لذلك الشهر، وأقسام المخزون تعرض المخزون الحالي.',
+    'Past month: alerts and activity are for that month. Stock, prices, recommendations and '
+        'alerts marked "Now" show the CURRENT state.',
+    'شهر سابق: التنبيهات والنشاط لذلك الشهر. المخزون والأسعار والتوصيات والتنبيهات '
+        'المكتوب عليها "حالياً" تعرض الوضع الحالي.',
   );
   String get now => _t('Now', 'حالياً');
 
@@ -126,8 +134,10 @@ class GuardianStrings {
   String get none => _t('None', 'لا توجد');
   String get viewAll => _t('View all', 'عرض الكل');
   String incompleteCost(int n) => _t(
-    '$n invoice(s) with missing cost: profit not judged',
-    '$n فاتورة تكلفتها ناقصة: لا يُحكم على ربحها',
+    n == 1
+        ? '1 invoice with a missing cost: its profit is not judged'
+        : '$n invoices with a missing cost: their profit is not judged',
+    'فواتير تكلفتها ناقصة (لا يُحكم على ربحها): $n',
   );
   String get health => _t('Store health index', 'مؤشر صحة المتجر');
   String get notEnoughData => _t('Not enough data', 'بيانات غير كافية');
@@ -160,22 +170,24 @@ class GuardianStrings {
     final n = p.numbers;
     return switch (p.part) {
       'STOCK' => _t(
-        '${n['healthyProducts']} of ${n['products']} products not low / out of stock',
-        '${n['healthyProducts']} من ${n['products']} منتج غير منخفض أو نافد',
+        '${n['healthyProducts']} of ${en(n['products'], 'product', 'products')} not low / out of stock',
+        'منتجات غير منخفضة ولا نافدة: ${n['healthyProducts']} من أصل ${n['products']}',
       ),
       'PROFIT' => _t(
-        '${n['confirmedLossInvoices']} confirmed loss(es) in ${n['completeCostInvoices']} '
-            'invoices with every cost recorded (of ${n['invoices']})',
-        '${n['confirmedLossInvoices']} خسارة مؤكدة من ${n['completeCostInvoices']} فاتورة '
-            'تكلفتها كاملة (من أصل ${n['invoices']})',
+        '${en(n['confirmedLossInvoices'], 'confirmed loss', 'confirmed losses')} (at the time of sale) in '
+            '${en(n['completeCostInvoices'], 'invoice', 'invoices')} with every cost recorded (of ${n['invoices']})',
+        'خسائر مؤكدة وقت البيع: ${n['confirmedLossInvoices']} · فواتير تكلفتها كاملة: '
+            '${n['completeCostInvoices']} (من أصل ${n['invoices']})',
       ),
       'DISCOUNTS' => _t(
-        '${n['highDiscountInvoices']} high discount(s) in ${n['invoices']} invoices',
-        '${n['highDiscountInvoices']} خصم عالٍ من ${n['invoices']} فاتورة',
+        '${en(n['highDiscountInvoices'], 'high discount', 'high discounts')} in '
+            '${en(n['invoices'], 'invoice', 'invoices')}',
+        'خصومات عالية: ${n['highDiscountInvoices']} من أصل ${n['invoices']} فاتورة',
       ),
       _ => _t(
-        '${n['daysWithAlert']} day(s) with an activity alert of ${n['activeDays']} active days',
-        '${n['daysWithAlert']} يوم فيه تنبيه نشاط من ${n['activeDays']} يوم نشط',
+        '${en(n['daysWithAlert'], 'day', 'days')} with an activity alert of '
+            '${en(n['activeDays'], 'active day', 'active days')}',
+        'أيام فيها تنبيه نشاط: ${n['daysWithAlert']} من أصل الأيام النشطة: ${n['activeDays']}',
       ),
     };
   }
@@ -235,8 +247,8 @@ class GuardianStrings {
     ),
     'BELOW_COST_SALE' => _t('Sold below cost', 'بيع بأقل من التكلفة'),
     'CONFIRMED_LOSS' => _t(
-      'Invoice with a confirmed loss',
-      'فاتورة بخسارة مؤكدة',
+      'Confirmed loss at the time of sale',
+      'خسارة مؤكدة وقت البيع',
     ),
     'PRICE_BELOW_COST' => _t('Price below cost', 'سعر أقل من التكلفة'),
     'PRICE_EQUALS_COST' => _t('Price equals cost', 'سعر يساوي التكلفة'),
@@ -273,26 +285,27 @@ class GuardianStrings {
             'و${m('minAmount')} على الأقل.',
       ),
       'HIGH_DISCOUNT_REPEATED' => _t(
-        '${p['count']} invoices with a high discount by the same user in one day '
+        '${en(p['count'], 'invoice', 'invoices')} with a high discount by the same user in one day '
             '(limit: ${p['repeatLimit']}). Total discount ${m('totalDiscount')}.',
-        '${p['count']} فواتير بخصم عالٍ من نفس المستخدم في يوم واحد '
+        'فواتير بخصم عالٍ من نفس المستخدم في يوم واحد: ${p['count']} '
             '(الحد: ${p['repeatLimit']}). مجموع الخصم ${m('totalDiscount')}.',
       ),
       'BELOW_COST_SALE' => _t(
-        '${_iso(p['productName'])} sold ${p['times']} time(s) (${p['units']} units) at '
-            '${m('unitPrice')}; its cost at sale time was ${m('unitCost')}. '
-            'Loss before the invoice discount: ${m('lossBeforeDiscount')}.',
-        '${_iso(p['productName'])} بيع ${p['times']} مرة (${p['units']} قطعة) بسعر '
-            '${m('unitPrice')} وتكلفته وقت البيع ${m('unitCost')}. '
-            'الخسارة قبل خصم الفاتورة: ${m('lossBeforeDiscount')}.',
+        '${_iso(p['productName'])} sold ${en(p['times'], 'time', 'times')} '
+            '(${en(p['units'], 'unit', 'units')}) at ${m('unitPrice')}; its cost at sale time was '
+            '${m('unitCost')}. Loss when it was sold, before the invoice discount: '
+            '${m('lossBeforeDiscount')}.${returnedNote(p['unitsReturned'], null)}',
+        '${_iso(p['productName'])} بيع بسعر ${m('unitPrice')} وتكلفته وقت البيع '
+            '${m('unitCost')} (عدد المرات: ${p['times']}، القطع: ${p['units']}). '
+            'الخسارة وقت البيع قبل خصم الفاتورة: ${m('lossBeforeDiscount')}.${returnedNote(p['unitsReturned'], null)}',
       ),
       'CONFIRMED_LOSS' => _t(
-        'Invoice ${_iso(p['invoiceNumber'])}: net ${m('netRevenue')} (after a ${m('discount')} '
-            'discount, tax excluded), cost ${m('cost')} → loss ${m('loss')}. '
-            'Every product on it has a recorded cost.',
-        'الفاتورة ${_iso(p['invoiceNumber'])}: الصافي ${m('netRevenue')} (بعد خصم ${m('discount')}، '
-            'بدون الضريبة) والتكلفة ${m('cost')} ← خسارة ${m('loss')}. '
-            'كل منتجاتها لها تكلفة مسجلة.',
+        'Invoice ${_iso(p['invoiceNumber'])} when it was sold: net ${m('netRevenue')} '
+            '(after a ${m('discount')} discount, tax excluded), cost ${m('cost')} → loss '
+            '${m('loss')}. Every product on it has a recorded cost.${returnedNote(p['unitsReturned'], p['unitsSold'])}',
+        'الفاتورة ${_iso(p['invoiceNumber'])} وقت البيع: الصافي ${m('netRevenue')} '
+            '(بعد خصم ${m('discount')}، بدون الضريبة) والتكلفة ${m('cost')} ← خسارة '
+            '${m('loss')}. كل منتجاتها لها تكلفة مسجلة.${returnedNote(p['unitsReturned'], p['unitsSold'])}',
       ),
       'PRICE_BELOW_COST' => _t(
         '${_iso(p['productName'])}: price ${m('price')}, cost ${m('cost')}. Every sale loses money.',
@@ -310,24 +323,26 @@ class GuardianStrings {
         p['safePercent'],
       ),
       'OUT_OF_STOCK' => _t(
-        '${p['count']} product(s) are out of stock.',
-        '${p['count']} منتجات نفدت من المخزون.',
+        p['count'] == 1
+            ? '1 product is out of stock.'
+            : '${p['count']} products are out of stock.',
+        'منتجات نفدت من المخزون: ${p['count']}.',
       ),
       'LOW_STOCK' => _t(
-        '${p['count']} product(s) reached the reorder level.',
-        '${p['count']} منتجات وصلت حد إعادة الطلب.',
+        '${en(p['count'], 'product', 'products')} reached the reorder level.',
+        'منتجات وصلت حد إعادة الطلب: ${p['count']}.',
       ),
       'STOCKOUT_SOON' => _t(
-        '${p['count']} product(s) will run out within ${p['days']} days at their sales '
-            'rate of the last ${p['windowDays']} days.',
-        '${p['count']} منتجات ستنفد خلال ${p['days']} أيام حسب معدل بيعها في آخر '
-            '${p['windowDays']} يوماً.',
+        '${en(p['count'], 'product', 'products')} will run out within ${p['days']} days at '
+            '${p['count'] == 1 ? 'its' : 'their'} sales rate of the last ${p['windowDays']} days.',
+        'منتجات ستنفد خلال ${p['days']} أيام حسب معدل بيعها في آخر '
+            '${p['windowDays']} يوماً: ${p['count']}.',
       ),
       'CANCELED_INVOICES' => _t(
         '${p['count']} suspended invoices canceled on ${_ltr(p['day'])} of '
             '${(p['count'] as num) + (p['completed'] as num)} (${n('percent')}%). '
             'Limit: ${p['minCount']} and ${p['minPercent']}%.',
-        '${p['count']} فواتير معلّقة أُلغيت في ${_ltr(p['day'])} من أصل '
+        'فواتير معلّقة أُلغيت في ${_ltr(p['day'])}: ${p['count']} من أصل '
             '${(p['count'] as num) + (p['completed'] as num)} (${n('percent')}%). '
             'الحد: ${p['minCount']} و${p['minPercent']}%.',
       ),
@@ -348,12 +363,12 @@ class GuardianStrings {
       'PRODUCT_RETURNS_REPEATED' => _t(
         '${_iso(p['productName'])} was returned ${p['count']} times within ${p['days']} days. '
             'There may be a problem with the product.',
-        '${_iso(p['productName'])} أُرجع ${p['count']} مرات خلال ${p['days']} أيام. '
+        'عدد مرات إرجاع ${_iso(p['productName'])} خلال ${p['days']} أيام: ${p['count']}. '
             'قد تكون هناك مشكلة في المنتج.',
       ),
       'PRODUCT_DELETIONS' => _t(
         '${p['count']} products deleted on ${_ltr(p['day'])} (limit: ${p['mediumLimit']}).',
-        '${p['count']} منتجات حُذفت في ${_ltr(p['day'])} (الحد: ${p['mediumLimit']}).',
+        'منتجات حُذفت في ${_ltr(p['day'])}: ${p['count']} (الحد: ${p['mediumLimit']}).',
       ),
       _ => '',
     };
@@ -375,6 +390,21 @@ class GuardianStrings {
     );
   }
 
+  /// " Later returned: …" – the alert is a SALE-TIME fact; returns never undo
+  /// the judgement, so this says so instead of hiding it.
+  String returnedNote(Object? returned, Object? sold) {
+    final r = (returned as num?)?.toInt() ?? 0;
+    if (r <= 0) return '';
+    final en_ = sold == null
+        ? en(r, 'unit', 'units')
+        : '$r of ${en(sold, 'unit', 'units')}';
+    final ar = sold == null ? '$r' : '$r من أصل $sold';
+    return _t(
+      ' Later returned: $en_ – this is the loss when it was sold, not the result after the return.',
+      ' قطع أُرجعت لاحقاً: $ar. هذه خسارة وقت البيع، وليست النتيجة بعد الإرجاع.',
+    );
+  }
+
   /// Who did it, from the backend's records only.
   String? actorLine(GuardianAlert a) {
     final p = a.params;
@@ -388,7 +418,7 @@ class GuardianStrings {
       // Nobody recorded at all (before the activity log): say so plainly.
       if (parts.isEmpty) return missing > 0 ? notRecorded : null;
       if (missing > 0) {
-        parts.add(_t('$missing not recorded', '$missing غير مسجّل'));
+        parts.add(_t('$missing not recorded', 'غير مسجّل: $missing'));
       }
       return _t('By: ${parts.join(', ')}', 'بواسطة: ${parts.join('، ')}');
     }
@@ -433,17 +463,20 @@ class GuardianStrings {
   };
   String recText(GuardianRecommendation r) => switch (r.code) {
     'REORDER_SOON' => _t(
-      '${r.count} product(s) will run out within 3 days at their sales rate.',
-      '${r.count} منتجات ستنفد خلال 3 أيام حسب معدل بيعها.',
+      '${en(r.count, 'product', 'products')} will run out within 3 days at '
+          '${r.count == 1 ? 'its' : 'their'} sales rate.',
+      'منتجات ستنفد خلال 3 أيام حسب معدل بيعها: ${r.count}.',
     ),
     'LOW_MARGIN' => _t(
-      '${r.count} product(s) earn less than 10% of their price. Review their price.',
-      '${r.count} منتجات ربحها أقل من 10% من سعرها. راجع السعر.',
+      r.count == 1
+          ? '1 product earns less than 10% of its price. Review its price.'
+          : '${r.count} products earn less than 10% of their price. Review their price.',
+      'منتجات ربحها أقل من 10% من سعرها: ${r.count}. راجع السعر.',
     ),
     _ => _t(
-      '${r.count} product(s) not sold for 30 days with stock above the minimum. '
-          'Review the quantity or an offer.',
-      '${r.count} منتجات لم يُبع منها شيء منذ 30 يوماً ومخزونها فوق الحد. '
+      '${en(r.count, 'product', 'products')} not sold for 30 days with stock above the '
+          'minimum. Review the quantity or an offer.',
+      'منتجات لم يُبع منها شيء منذ 30 يوماً ومخزونها فوق الحد: ${r.count}. '
           'راجع الكمية أو فكّر بعرض.',
     ),
   };
@@ -452,7 +485,7 @@ class GuardianStrings {
   String get showProducts => _t('Show products', 'عرض المنتجات');
   String recProductLine(String code, Map<String, dynamic> p) => switch (code) {
     'REORDER_SOON' => _t(
-      '${p['quantity']} left · about ${num_(p['daysLeft'])} day(s) · ${p['expectedStockout']}',
+      '${p['quantity']} left · about ${en(p['daysLeft'], 'day', 'days')} · ${p['expectedStockout']}',
       'المتبقي ${p['quantity']} · حوالي ${num_(p['daysLeft'])} يوم · ${_ltr(p['expectedStockout'])}',
     ),
     'LOW_MARGIN' => _t(
@@ -461,22 +494,24 @@ class GuardianStrings {
     ),
     _ => _t(
       '${p['quantity']} in stock (minimum ${p['minStock']}) · added ${p['ageDays']} days ago',
-      'الموجود ${p['quantity']} (الحد ${p['minStock']}) · أضيف قبل ${p['ageDays']} يوم',
+      'الموجود ${p['quantity']} (الحد ${p['minStock']}) · عمر المنتج بالأيام: ${p['ageDays']}',
     ),
   };
 
   // ── Store map ───────────────────────────────────────────────────────────
   String get storeMap => _t('Live store map', 'خريطة المتجر الحية');
   String get storeMapNote => _t(
-    'By product category (the store layout is not recorded).',
-    'حسب تصنيف المنتجات (مخطط المتجر غير مسجّل).',
+    'By product category (the store layout is not recorded). Categories: current stock · '
+        'Cashier area: the chosen period.',
+    'حسب تصنيف المنتجات (مخطط المتجر غير مسجّل). التصنيفات: المخزون الحالي · '
+        'منطقة الكاشير: الفترة المختارة.',
   );
   String stockHealth(int p) => _t('Stock health $p%', 'صحة المخزون $p%');
   String get cashierArea => _t('Cashier area', 'منطقة الكاشير');
   String get noProblems => _t('No problems', 'لا توجد مشاكل');
   String cashierAlerts(int high, int medium) => _t(
-    '${high + medium} alert(s) this period',
-    '${high + medium} تنبيه في هذه الفترة',
+    '${en(high + medium, 'alert', 'alerts')} this period',
+    'تنبيهات هذه الفترة: ${high + medium}',
   );
   String get legendGood => _t('Good', 'جيد');
   String get legendAttention => _t('Needs follow-up', 'يحتاج متابعة');
@@ -510,8 +545,10 @@ class GuardianStrings {
     'لا يوجد منتج سيُباع بأقل من تكلفته المسجلة.',
   );
   String withoutCost(int n) => _t(
-    '$n product(s) have no recorded cost and are not checked.',
-    '$n منتجات بدون سعر تكلفة ولا يتم فحصها.',
+    n == 1
+        ? '1 product has no recorded cost and is not checked.'
+        : '$n products have no recorded cost and are not checked.',
+    'منتجات بدون سعر تكلفة ولا يتم فحصها: $n.',
   );
 
   // ── At-risk products ────────────────────────────────────────────────────
@@ -534,8 +571,10 @@ class GuardianStrings {
 
   // ── Unusual activity ────────────────────────────────────────────────────
   String get unusual => _t('Unusual activity', 'نشاط غير طبيعي');
-  String perDay(double v) =>
-      _t('${num_(v)} case(s) / day', '${num_(v)} حالة يومياً');
+  String perDay(double v) => _t(
+    v == 1 ? '1 case / day' : '${num_(v)} cases / day',
+    'حالات يومياً: ${num_(v)}',
+  );
   String get typeDiscounts => _t('High discounts', 'خصومات عالية');
   String get typeCancels => _t('Canceled invoices', 'إلغاء فواتير');
   String get typeReturns => _t('Returns', 'مرتجعات');

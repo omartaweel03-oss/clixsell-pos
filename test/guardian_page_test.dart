@@ -91,6 +91,8 @@ final _loss = _alert(
     'cost': 15.0,
     'loss': 5.0,
     'lines': 1,
+    'unitsSold': 5,
+    'unitsReturned': 5,
     'startedBy': null,
   },
   at: '2026-11-22T11:00:00',
@@ -126,6 +128,23 @@ final _deletions = _alert(
   actor: {'userId': 3, 'name': 'Shini Manager', 'source': 'ACTIVITY_LOG'},
   at: '2026-11-22T12:13:00',
   action: {'type': 'ACTIVITY', 'id': null},
+);
+
+final _maxDiscount = _alert(
+  'G4:product:2',
+  'G4',
+  'MAX_DISCOUNT_RISK',
+  'LOW',
+  'PROFIT',
+  {
+    'productName': 'Cheese',
+    'price': 10.0,
+    'cost': 9.5,
+    'maxPercent': 10.0,
+    'priceAfterMax': 9.0,
+    'safePercent': 5.0,
+  },
+  action: {'type': 'PRODUCT', 'id': 2},
 );
 
 final _oldCancels = _alert(
@@ -238,7 +257,7 @@ Map<String, dynamic> _dashboard({
           ],
         },
   'topAlerts': [_loss, _discount, _low],
-  'allAlerts': [_loss, _deletions, _discount, _low, _oldCancels],
+  'allAlerts': [_loss, _deletions, _discount, _low, _oldCancels, _maxDiscount],
   'alertCount': 4,
   'recommendations': [
     {
@@ -428,7 +447,7 @@ void main() {
     expect(find.text('92/100'), findsOneWidget);
     expect(find.text('Good'), findsWidgets);
     expect(
-      find.text('10 invoice(s) with missing cost: profit not judged'),
+      find.text('10 invoices with a missing cost: their profit is not judged'),
       findsOneWidget,
     );
     expect(find.byKey(const Key('guardianRuleBased')), findsOneWidget);
@@ -467,7 +486,25 @@ void main() {
     expect(find.textContaining('Safe discount: up to 5%'), findsOneWidget);
     expect(find.byKey(const Key('guardianWithoutCost')), findsOneWidget);
     expect(find.byKey(const Key('guardianActivityTotal')), findsOneWidget);
-    expect(find.text('0.4 case(s) / day'), findsOneWidget);
+    expect(find.text('0.4 cases / day'), findsOneWidget);
+    // Correct singular wording (audit).
+    expect(find.text('1 product reached the reorder level.'), findsOneWidget);
+    expect(
+      find.textContaining(
+        '1 product will run out within 3 days at its sales rate.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('(s)'), findsNothing);
+    // A sale-time loss later returned is not shown as a loss that still exists.
+    expect(find.text('Confirmed loss at the time of sale'), findsOneWidget);
+    expect(
+      find.textContaining(
+        'Later returned: 5 of 5 units – this is the loss when it was sold, '
+        'not the result after the return.',
+      ),
+      findsOneWidget,
+    );
     // Nothing pretends to be AI or an action that does not exist.
     expect(find.text('Clixsell AI'), findsNothing);
     expect(find.text('Apply discount'), findsNothing);
@@ -486,6 +523,10 @@ void main() {
       find.text('أكملها: Sara Nasser · بدأها: Ahmad Odeh'),
       findsOneWidget,
     );
+    // Counts as "label: number" (correct Arabic for any number).
+    expect(find.text('منتجات وصلت حد إعادة الطلب: 1.'), findsOneWidget);
+    expect(find.text('حالات يومياً: 0.4'), findsOneWidget);
+    expect(find.textContaining('1 منتجات'), findsNothing);
     double x(String key) => tester.getCenter(find.byKey(Key(key))).dx;
     // Cards: today's sales on the right … health on the left.
     expect(x('guardianCardSales'), greaterThan(x('guardianCardCritical')));
@@ -518,7 +559,7 @@ void main() {
     await _tapKey(tester, 'guardianHealthDetails');
     expect(find.text('21.25 / 25'), findsOneWidget);
     expect(find.text('24.44 / 25'), findsOneWidget);
-    expect(find.text('6 high discount(s) in 120 invoices'), findsOneWidget);
+    expect(find.text('6 high discounts in 120 invoices'), findsOneWidget);
   });
 
   testWidgets('choosing a past month asks the backend for that month', (
@@ -727,4 +768,88 @@ void main() {
       });
     }
   }
+
+  testWidgets(
+    'audit: "Profit risks" → View all lists exactly the alerts it counts',
+    (tester) async {
+      await _open(tester, _onBackend());
+      await _tapKey(tester, 'guardianViewProfit');
+      final dialog = find.byKey(const Key('guardianAllAlertsDialog'));
+      expect(
+        find.descendant(
+          of: dialog,
+          matching: find.byKey(const Key('guardianAlert-G2b:sale:2')),
+        ),
+        findsOneWidget,
+      );
+      // G4 (profit protection) is not part of the "Profit risks" count.
+      expect(
+        find.descendant(
+          of: dialog,
+          matching: find.byKey(const Key('guardianAlert-G4:product:2')),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.descendant(
+          of: dialog,
+          matching: find.byKey(const Key('guardianAlert-G1:sale:1')),
+        ),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets('audit: a past month labels what is current ("Now")', (
+    tester,
+  ) async {
+    final backend = _onBackend();
+    backend.guardianDashboards[1] = _dashboard(current: false);
+    await _open(tester, backend);
+    expect(find.byKey(const Key('guardianPastNote')), findsOneWidget);
+    expect(
+      find.textContaining('alerts marked "Now" show the CURRENT state'),
+      findsOneWidget,
+    );
+    for (final card in [
+      'guardianRecommendations',
+      'guardianAtRisk',
+      'guardianProfit',
+    ]) {
+      expect(
+        find.descendant(of: find.byKey(Key(card)), matching: find.text('Now')),
+        findsOneWidget,
+        reason: card,
+      );
+    }
+    expect(
+      find.textContaining('Cashier area: the chosen period'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('audit: activity report pages (Next / Previous)', (tester) async {
+    final backend = _onBackend();
+    backend.guardianLog[1] = [
+      for (var i = 120; i >= 1; i--)
+        {
+          'logId': i,
+          'type': 'PRICE_CHANGED',
+          'createdAt': '2026-11-20T10:00:00',
+          'userId': 1,
+          'userName': 'Shini Manager',
+          'entityName': 'Item $i',
+          'details': {'old': 1.0, 'new': 2.0},
+        },
+    ];
+    await _open(tester, backend);
+    await _tapKey(tester, 'guardianViewActivity');
+    expect(find.text('Page 1 of 3'), findsOneWidget);
+    expect(find.byKey(const Key('guardianLog-120')), findsOneWidget);
+    await _tapKey(tester, 'guardianActivityNext');
+    expect(find.text('Page 2 of 3'), findsOneWidget);
+    expect(find.byKey(const Key('guardianLog-70')), findsOneWidget);
+    await _tapKey(tester, 'guardianActivityPrev');
+    expect(find.text('Page 1 of 3'), findsOneWidget);
+  });
 }

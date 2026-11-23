@@ -45,11 +45,21 @@ public class GuardianRepository {
         this.db = db;
     }
 
+    /**
+     * Text bound for "from the start of this day". Dates are stored as
+     * LocalDateTime.toString(), which leaves out ":00" seconds (a sale at
+     * midnight is "2026-11-23T00:00"). "…T00:00" compares correctly with both
+     * forms, while "…T00:00:00" would put a midnight sale on the day before.
+     */
+    static String dayStart(LocalDate day) {
+        return day + "T00:00";
+    }
+
     /** Loads everything the rules need for the period [from, to] of one store. */
     public GuardianData load(long storeId, LocalDate from, LocalDate to, boolean currentPeriod, LocalDateTime now,
                              double maxDiscountPercent, LocalDateTime trackedSince) {
-        String start = from + "T00:00:00";
-        String end = to.plusDays(1) + "T00:00:00";
+        String start = dayStart(from);
+        String end = dayStart(to.plusDays(1));
         LocalDate today = now.toLocalDate();
         return new GuardianData(now, from, to, currentPeriod, maxDiscountPercent, trackedSince,
                 products(storeId), invoices(storeId, start, end), belowCostLines(storeId, start, end),
@@ -57,8 +67,8 @@ public class GuardianRepository {
                 saleLogs(storeId, "DISCOUNT_APPLIED", "COMPLETED", "completed_at", start, end),
                 saleLogs(storeId, "INVOICE_CANCELED", "CANCELED", "updated_at", start, end),
                 logs(storeId, "PRODUCT_DELETED", start, end),
-                netUnitsSince(storeId, today.minusDays(13) + "T00:00:00"),
-                soldSince(storeId, today.minusDays(29) + "T00:00:00"));
+                netUnitsSince(storeId, dayStart(today.minusDays(13))),
+                soldSince(storeId, dayStart(today.minusDays(29))));
     }
 
     List<ProductFact> products(long storeId) {
@@ -75,7 +85,8 @@ public class GuardianRepository {
                 SELECT s.sale_id, s.invoice_number, s.cashier_id, u.full_name, s.subtotal, s.discount, s.total,
                        s.completed_at, COUNT(si.sale_item_id),
                        COALESCE(SUM(CASE WHEN si.unit_cost IS NULL THEN 1 ELSE 0 END), 0),
-                       COALESCE(SUM(CASE WHEN si.unit_cost IS NOT NULL THEN si.unit_cost * si.quantity ELSE 0 END), 0)
+                       COALESCE(SUM(CASE WHEN si.unit_cost IS NOT NULL THEN si.unit_cost * si.quantity ELSE 0 END), 0),
+                       COALESCE(SUM(si.quantity), 0), COALESCE(SUM(si.returned_quantity), 0)
                 FROM sales s
                 JOIN users u ON u.user_id = s.cashier_id
                 JOIN sale_items si ON si.sale_id = s.sale_id
@@ -85,20 +96,20 @@ public class GuardianRepository {
                 ORDER BY s.completed_at, s.sale_id""",
                 (rs, i) -> new InvoiceFact(rs.getLong(1), rs.getString(2), rs.getLong(3), rs.getString(4),
                         rs.getDouble(5), rs.getDouble(6), rs.getDouble(7), time(rs.getString(8)),
-                        rs.getInt(9), rs.getInt(10), rs.getDouble(11)),
+                        rs.getInt(9), rs.getInt(10), rs.getDouble(11), rs.getInt(12), rs.getInt(13)),
                 storeId, start, end);
     }
 
     List<LineFact> belowCostLines(long storeId, String start, String end) {
         return db.query("""
                 SELECT s.sale_id, s.invoice_number, si.product_id, si.product_name, si.quantity, si.unit_price,
-                       si.unit_cost, s.completed_at
+                       si.unit_cost, s.completed_at, si.returned_quantity
                 FROM sale_items si JOIN sales s ON s.sale_id = si.sale_id
                 WHERE s.store_id = ? AND s.status = 'COMPLETED' AND s.completed_at >= ? AND s.completed_at < ?
                   AND si.unit_cost IS NOT NULL AND ROUND(si.unit_price, 2) < ROUND(si.unit_cost, 2)
                 ORDER BY s.completed_at, si.sale_item_id""",
                 (rs, i) -> new LineFact(rs.getLong(1), rs.getString(2), nullableLong(rs, 3), rs.getString(4),
-                        rs.getInt(5), rs.getDouble(6), rs.getDouble(7), time(rs.getString(8))),
+                        rs.getInt(5), rs.getDouble(6), rs.getDouble(7), time(rs.getString(8)), rs.getInt(9)),
                 storeId, start, end);
     }
 
@@ -184,16 +195,16 @@ public class GuardianRepository {
                   AND si.quantity > 0""", Long.class, storeId, since));
     }
 
-    /** Net sales (paid totals − refunds) between two times, both included. */
-    double netSales(long storeId, LocalDateTime from, LocalDateTime to) {
+    /** Net sales (paid totals − refunds) from the start of {@code day} up to {@code to} (included). */
+    double netSales(long storeId, LocalDate day, LocalDateTime to) {
         Double sales = db.queryForObject("""
                 SELECT COALESCE(SUM(total), 0) FROM sales
                 WHERE store_id = ? AND status = 'COMPLETED' AND completed_at >= ? AND completed_at <= ?""",
-                Double.class, storeId, TEXT.format(from), TEXT.format(to));
+                Double.class, storeId, dayStart(day), TEXT.format(to));
         Double refunds = db.queryForObject("""
                 SELECT COALESCE(SUM(refund_amount), 0) FROM returns
                 WHERE store_id = ? AND return_date >= ? AND return_date <= ?""",
-                Double.class, storeId, TEXT.format(from), TEXT.format(to));
+                Double.class, storeId, dayStart(day), TEXT.format(to));
         return (sales == null ? 0 : sales) - (refunds == null ? 0 : refunds);
     }
 
@@ -207,14 +218,23 @@ public class GuardianRepository {
                 "SELECT installed_on FROM flyway_schema_history WHERE version = '5' AND success = 1", String.class);
         LocalDateTime v5 = null;
         if (!installed.isEmpty() && installed.get(0) != null) {
-            v5 = LocalDateTime.parse(installed.get(0).trim().replace(' ', 'T'))
-                    .atOffset(ZoneOffset.UTC).atZoneSameInstant(ZoneId.systemDefault()).toLocalDateTime().withNano(0);
+            v5 = flywayTimeToLocal(installed.get(0), ZoneId.systemDefault());
         }
         List<String> created = db.queryForList("SELECT created_at FROM stores WHERE store_id = ?", String.class, storeId);
         LocalDateTime store = created.isEmpty() || created.get(0) == null ? null : time(created.get(0));
         if (v5 == null) return store;
         if (store == null) return v5;
         return store.isAfter(v5) ? store : v5;
+    }
+
+    /**
+     * Flyway writes installed_on in UTC ("2026-11-23 00:01:52.123" in SQLite);
+     * the app stores local times. Converts to the server's local time zone
+     * (e.g. Asia/Jerusalem on a Windows PC in Palestine).
+     */
+    static LocalDateTime flywayTimeToLocal(String utcText, ZoneId zone) {
+        return LocalDateTime.parse(utcText.trim().replace(' ', 'T'))
+                .atOffset(ZoneOffset.UTC).atZoneSameInstant(zone).toLocalDateTime().withNano(0);
     }
 
     /** The last Guardian on / off of the store: [time, user name], or null. */

@@ -65,7 +65,7 @@ Future<GuardianAction?> showAllAlerts(
   required int year,
   required int month,
   GuardianSeverity? severity,
-  String? category,
+  Set<String>? rules,
 }) => showDialog<GuardianAction>(
   context: context,
   builder: (_) => _AllAlerts(
@@ -73,7 +73,7 @@ Future<GuardianAction?> showAllAlerts(
     year: year,
     month: month,
     severity: severity,
-    category: category,
+    rules: rules,
   ),
 );
 
@@ -83,14 +83,16 @@ class _AllAlerts extends StatefulWidget {
     required this.year,
     required this.month,
     this.severity,
-    this.category,
+    this.rules,
   });
 
   final GuardianApiClient api;
   final int year;
   final int month;
   final GuardianSeverity? severity;
-  final String? category;
+
+  /// Only these rules (e.g. the profit-risk card: G2a, G2b, G3), or all.
+  final Set<String>? rules;
 
   @override
   State<_AllAlerts> createState() => _AllAlertsState();
@@ -135,9 +137,7 @@ class _AllAlertsState extends State<_AllAlerts> {
     } else {
       final shown = all
           .where((a) => _severity == null || a.severity == _severity)
-          .where(
-            (a) => widget.category == null || a.category == widget.category,
-          )
+          .where((a) => widget.rules == null || widget.rules!.contains(a.rule))
           .toList();
       body = Column(
         mainAxisSize: MainAxisSize.min,

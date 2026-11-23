@@ -180,13 +180,14 @@ class FakeProductBackend {
         for (final e in log)
           if (type == null || e['type'] == type) e,
       ];
+      final page = int.tryParse(query['page'] ?? '0') ?? 0;
       return _json(200, {
         'enabled': on,
-        'page': 0,
+        'page': page,
         'pageSize': 50,
         'total': on ? rows.length : 0,
         'trackedSince': '2026-11-01T09:00:00',
-        'entries': on ? rows : [],
+        'entries': on ? rows.skip(page * 50).take(50).toList() : [],
       });
     }
     return _error(404, 'NOT_FOUND', 'Unknown Guardian path');

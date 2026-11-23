@@ -166,9 +166,12 @@ class _GuardianPageState extends State<GuardianPage> {
     }
   }
 
+  /// The rules counted by the "Profit risks" card (same as the backend).
+  static const profitRiskRules = {'G2a', 'G2b', 'G3'};
+
   Future<void> _allAlerts({
     GuardianSeverity? severity,
-    String? category,
+    Set<String>? rules,
   }) async {
     final action = await showAllAlerts(
       context,
@@ -176,7 +179,7 @@ class _GuardianPageState extends State<GuardianPage> {
       year: _year,
       month: _month,
       severity: severity,
-      category: category,
+      rules: rules,
     );
     if (action != null && mounted) await _act(action);
   }
@@ -414,7 +417,7 @@ class _GuardianPageState extends State<GuardianPage> {
       note: incomplete == 0 ? null : g.incompleteCost(incomplete),
       actionLabel: g.viewAll,
       actionKey: const Key('guardianViewProfit'),
-      onAction: () => _allAlerts(category: 'PROFIT'),
+      onAction: () => _allAlerts(rules: profitRiskRules),
     );
   }
 
@@ -480,6 +483,10 @@ class _GuardianPageState extends State<GuardianPage> {
     return ReportCard(
       key: const Key('guardianRecommendations'),
       title: g.recommendations,
+      trailing: Text(
+        g.now,
+        style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

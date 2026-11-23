@@ -81,14 +81,14 @@ class GuardianRulesTest {
                             double cost) {
             double tax = Math.round((subtotal - discount) * 16) / 100.0;
             InvoiceFact i = new InvoiceFact(id, "INV-%06d".formatted(id), AHMAD, "Ahmad", subtotal, discount,
-                    subtotal - discount + tax, at, lines, withoutCost, cost);
+                    subtotal - discount + tax, at, lines, withoutCost, cost, lines, 0);
             invoices.add(i);
             return i;
         }
 
         /** A completed invoice paid {@code total} (no discount, cost unknown) – for the returns rule. */
         InvoiceFact sale(long id, double total, LocalDateTime at) {
-            InvoiceFact i = new InvoiceFact(id, "INV-%06d".formatted(id), AHMAD, "Ahmad", total, 0, total, at, 1, 1, 0);
+            InvoiceFact i = new InvoiceFact(id, "INV-%06d".formatted(id), AHMAD, "Ahmad", total, 0, total, at, 1, 1, 0, 1, 0);
             invoices.add(i);
             return i;
         }
@@ -288,9 +288,9 @@ class GuardianRulesTest {
         void lineBelowItsOwnCostIsGroupedPerProductAndDay() {
             Data d = new Data();
             d.product(7, "Milk", "dairy", 2, 3.2, 20, 5, 60);
-            d.lines.add(new LineFact(1, "INV-1", 7L, "Milk", 2, 2.0, 3.2, at(20, 10)));
-            d.lines.add(new LineFact(2, "INV-2", 7L, "Milk", 1, 2.0, 3.2, at(20, 12)));
-            d.lines.add(new LineFact(3, "INV-3", 7L, "Milk", 1, 2.0, 3.2, at(21, 9)));
+            d.lines.add(new LineFact(1, "INV-1", 7L, "Milk", 2, 2.0, 3.2, at(20, 10), 0));
+            d.lines.add(new LineFact(2, "INV-2", 7L, "Milk", 1, 2.0, 3.2, at(20, 12), 0));
+            d.lines.add(new LineFact(3, "INV-3", 7L, "Milk", 1, 2.0, 3.2, at(21, 9), 0));
             List<Alert> a = new BelowCostRule().evaluate(d.build());
             assertThat(a).hasSize(2).allMatch(x -> x.rule().equals("G2a") && x.severity() == Severity.HIGH);
             Alert first = a.stream().filter(x -> x.day().equals(LocalDate.of(2026, 11, 20))).findFirst().orElseThrow();
@@ -626,5 +626,68 @@ class GuardianRulesTest {
         assertThat(r.criticalCount()).isEqualTo(2);
         assertThat(r.profitRiskCount()).isEqualTo(1);
         assertThat(r.costData().productsWithoutCost()).isZero();
+    }
+
+    // ── Final audit ─────────────────────────────────────────────────────
+
+    /**
+     * Audit item 2: two products, one invoice discount. The invoice is
+     * profitable, but the cheaper product's share of the discount (the same
+     * proportional rule as the Reports profit) puts it below its cost.
+     * Approved rules: G2b is per invoice (no loss here) and G2a compares the
+     * price BEFORE the invoice discount, so neither reports this line; G4
+     * still warns about the product itself (its maximum discount sells below
+     * cost). Documents the current behaviour; no allocation rule was changed.
+     */
+    @Test
+    void auditDiscountSharedOverTwoProducts() {
+        Data d = new Data();
+        d.product(1, "Milk", "dairy", 5, 4.6, 50, 5, 60);
+        d.product(2, "Chocolate", "snacks", 20, 8.0, 50, 5, 60);
+        // 1 × Milk 5.00 + 1 × Chocolate 20.00 = 25.00, discount 10% = 2.50 → net 22.50, cost 12.60.
+        d.invoice(1, 25, 2.5, at(20, 10), 2, 0, 12.6);
+        // Milk's share: 5.00 × 22.50 / 25.00 = 4.50 < cost 4.60 (a hidden 0.10 loss on that line).
+        GuardianData g = d.build();
+        assertThat(InvoiceCostStatus.of(d.invoices.get(0))).isEqualTo(InvoiceCostStatus.NO_LOSS);
+        assertThat(new BelowCostRule().evaluate(g)).isEmpty();
+        List<Alert> g4 = new MaxDiscountRiskRule().evaluate(g);
+        assertThat(g4).extracting(a -> a.params().get("productName")).containsExactly("Milk");
+        assertThat(g4.get(0).params()).containsEntry("priceAfterMax", 4.5).containsEntry("cost", 4.6);
+    }
+
+    /** Audit item 4: a sale-time loss later returned keeps its sale-time numbers and says what was returned. */
+    @Test
+    void auditLossLaterReturnedIsReportedAsSaleTimeLossWithTheReturnedUnits() {
+        Data d = new Data();
+        d.product(7, "Cake", "bakery", 2, 3.0, 20, 2, 60);
+        d.invoices.add(new InvoiceFact(1, "INV-000001", AHMAD, "Ahmad", 10, 0, 11.6, at(20, 10), 1, 0, 15.0, 5, 5));
+        d.lines.add(new LineFact(1, "INV-000001", 7L, "Cake", 5, 2.0, 3.0, at(20, 10), 5));
+        List<Alert> a = new BelowCostRule().evaluate(d.build());
+        Alert g2b = a.stream().filter(x -> x.rule().equals("G2b")).findFirst().orElseThrow();
+        assertThat(g2b.params()).containsEntry("loss", 5.0).containsEntry("unitsSold", 5).containsEntry("unitsReturned", 5);
+        Alert g2a = a.stream().filter(x -> x.rule().equals("G2a")).findFirst().orElseThrow();
+        assertThat(g2a.params()).containsEntry("unitsReturned", 5).containsEntry("units", 5);
+    }
+
+    /** Audit item 5: Flyway's UTC install time is shown in the server's own time zone. */
+    @Test
+    void auditFlywayUtcTimeIsConvertedToTheServerTimeZone() {
+        assertThat(GuardianRepository.flywayTimeToLocal("2026-11-23 00:01:52.123", java.time.ZoneId.of("Asia/Jerusalem")))
+                .isEqualTo(LocalDateTime.of(2026, 11, 23, 2, 1, 52));
+        assertThat(GuardianRepository.flywayTimeToLocal("2026-07-01 22:30:00.000", java.time.ZoneId.of("Asia/Jerusalem")))
+                .isEqualTo(LocalDateTime.of(2026, 7, 2, 1, 30, 0)); // summer time (UTC+3)
+        assertThat(GuardianRepository.flywayTimeToLocal("2026-11-23 00:01:52", java.time.ZoneId.of("UTC")))
+                .isEqualTo(LocalDateTime.of(2026, 11, 23, 0, 1, 52));
+    }
+
+    /** Audit item 5: day bounds also match times stored without seconds (a sale at exactly midnight). */
+    @Test
+    void auditDayBoundMatchesTimesStoredWithoutSeconds() {
+        String start = GuardianRepository.dayStart(LocalDate.of(2026, 11, 23));
+        assertThat(LocalDateTime.of(2026, 11, 23, 0, 0).toString()).isEqualTo("2026-11-23T00:00");
+        assertThat("2026-11-23T00:00".compareTo(start)).isGreaterThanOrEqualTo(0);   // midnight: this day
+        assertThat("2026-11-23T00:00:00".compareTo(start)).isGreaterThanOrEqualTo(0);
+        assertThat("2026-11-22T23:59:59".compareTo(start)).isLessThan(0);           // the day before
+        assertThat("2026-11-22T23:59".compareTo(start)).isLessThan(0);
     }
 }

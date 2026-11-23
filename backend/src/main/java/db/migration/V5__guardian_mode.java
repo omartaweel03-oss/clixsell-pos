@@ -54,8 +54,10 @@ public class V5__guardian_mode extends BaseJavaMigration {
         Connection c = context.getConnection();
         Map<String, Long> before = counts(c, tables(c));
         if (before.values().stream().anyMatch(n -> n > 0)) {
+            // Milliseconds in the name: a second attempt (e.g. right after a failure)
+            // never collides with the previous backup file.
             String backup = BACKUP_PREFIX
-                    + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")) + ".db";
+                    + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS")) + ".db";
             exec(c, "VACUUM INTO '" + backup + "'");
             verifyBackup(backup, before);
             log.info("Database backup written and checked: {}", Path.of(backup).toAbsolutePath());

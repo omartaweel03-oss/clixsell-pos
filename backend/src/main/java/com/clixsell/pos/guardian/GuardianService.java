@@ -136,8 +136,8 @@ public class GuardianService {
         if (!status.enabled()) {
             return new ActivityPage(false, null, null, p, ACTIVITY_PAGE_SIZE, 0, null, List.of());
         }
-        String start = period.from() + "T00:00:00";
-        String end = period.to().plusDays(1) + "T00:00:00";
+        String start = GuardianRepository.dayStart(period.from());
+        String end = GuardianRepository.dayStart(period.to().plusDays(1));
         return new ActivityPage(true, period.from(), period.to(), p, ACTIVITY_PAGE_SIZE,
                 repo.activityCount(storeId, start, end, type), status.activityTrackedSince(),
                 repo.activity(storeId, start, end, type, ACTIVITY_PAGE_SIZE, p * ACTIVITY_PAGE_SIZE));
@@ -152,8 +152,8 @@ public class GuardianService {
     /** Net sales of today so far vs. yesterday up to the same time, and the last 7 days (as Sales Analytics). */
     TodaySales todaySales(long storeId, LocalDateTime now) {
         LocalDate today = now.toLocalDate();
-        double todayNet = Amounts.round2(repo.netSales(storeId, today.atStartOfDay(), now));
-        double yesterday = Amounts.round2(repo.netSales(storeId, today.minusDays(1).atStartOfDay(), now.minusDays(1)));
+        double todayNet = Amounts.round2(repo.netSales(storeId, today, now));
+        double yesterday = Amounts.round2(repo.netSales(storeId, today.minusDays(1), now.minusDays(1)));
         Double change = yesterday > 0 ? Amounts.round1((todayNet - yesterday) * 100 / yesterday) : null;
         List<DaySales> days = reports.dailySales(storeId, ReportPeriod.of(today.minusDays(6), today)).stream()
                 .map(p -> new DaySales(p.date(), p.netSales())).toList();

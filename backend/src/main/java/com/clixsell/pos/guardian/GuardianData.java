@@ -74,17 +74,21 @@ public record GuardianData(
     }
 
     /**
-     * A completed invoice. {@code cost} is the sum of unit_cost × quantity of
+     * A completed invoice AS SOLD. {@code cost} is the sum of unit_cost × quantity of
      * the lines that HAVE a sale-time cost; {@code linesWithoutCost} counts the others.
+     * {@code unitsReturned} (returned later) never changes the sale-time figures; it is
+     * only shown so a sale-time loss is not read as a loss that still exists.
      */
     public record InvoiceFact(long saleId, String invoiceNumber, long startedByUserId, String startedByName,
                               double subtotal,
                               double discount, double total, LocalDateTime completedAt,
-                              int lines, int linesWithoutCost, double cost) {
+                              int lines, int linesWithoutCost, double cost, int unitsSold, int unitsReturned) {
     }
 
+    /** A sold line; {@code returnedQuantity} = units of it returned later. */
     public record LineFact(long saleId, String invoiceNumber, Long productId, String productName,
-                           int quantity, double unitPrice, double unitCost, LocalDateTime completedAt) {
+                           int quantity, double unitPrice, double unitCost, LocalDateTime completedAt,
+                           int returnedQuantity) {
     }
 
     public record CancelFact(long saleId, String invoiceNumber, double total, long startedByUserId,
