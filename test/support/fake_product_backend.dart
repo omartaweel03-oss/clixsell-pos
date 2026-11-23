@@ -99,6 +99,100 @@ class FakeProductBackend {
 
   late final http.Client client = MockClient(_handle);
 
+  // ── Guardian Mode (the real rules are tested in the backend) ───────────
+
+  /// storeId → Guardian Mode on (every store starts OFF, like the backend).
+  final Map<int, bool> guardianOn = {};
+
+  /// storeId → the dashboard JSON the backend would send while ON.
+  final Map<int, Map<String, dynamic>> guardianDashboards = {};
+
+  /// storeId → activity log rows (newest first), as /api/guardian/activity.
+  final Map<int, List<Map<String, dynamic>>> guardianLog = {};
+
+  /// Query of the last /api/guardian/dashboard call.
+  Map<String, String>? lastGuardianQuery;
+
+  Future<http.Response> _guardian(
+    Map<String, dynamic> user,
+    int storeId,
+    String path,
+    String method,
+    Map<String, dynamic> Function() body,
+    Map<String, String> query,
+  ) async {
+    final log = guardianLog.putIfAbsent(storeId, () => []);
+    Map<String, dynamic> status() {
+      final last = log.where(
+        (e) =>
+            e['type'] == 'GUARDIAN_ENABLED' || e['type'] == 'GUARDIAN_DISABLED',
+      );
+      return {
+        'enabled': guardianOn[storeId] ?? false,
+        'changedAt': last.isEmpty ? null : last.first['createdAt'],
+        'changedBy': last.isEmpty ? null : last.first['userName'],
+        'activityTrackedSince': '2026-11-01T09:00:00',
+      };
+    }
+
+    if (path == '/api/guardian/status' && method == 'GET') {
+      return _json(200, status());
+    }
+    if (path == '/api/guardian/status' && method == 'PUT') {
+      final on = body()['enabled'];
+      if (on is! bool) {
+        return _error(400, 'VALIDATION_FAILED', 'Send true or false');
+      }
+      if ((guardianOn[storeId] ?? false) != on) {
+        guardianOn[storeId] = on;
+        log.insert(0, {
+          'logId': log.length + 1,
+          'type': on ? 'GUARDIAN_ENABLED' : 'GUARDIAN_DISABLED',
+          'createdAt': saleTime,
+          'userId': user['userId'],
+          'userName': user['fullName'],
+          'entityName': _find(stores, 'storeId', storeId)!['name'],
+          'details': <String, dynamic>{},
+        });
+      }
+      return _json(200, status());
+    }
+    final on = guardianOn[storeId] ?? false;
+    if (path == '/api/guardian/dashboard') {
+      lastGuardianQuery = query;
+      if (!on) return _json(200, {'enabled': false, 'status': status()});
+      return _json(200, {
+        ...(guardianDashboards[storeId] ?? const {}),
+        'enabled': true,
+        'status': status(),
+      });
+    }
+    if (path == '/api/guardian/alerts') {
+      final d = guardianDashboards[storeId] ?? const {};
+      return _json(200, {
+        'enabled': on,
+        'alerts': on ? (d['allAlerts'] ?? d['topAlerts'] ?? []) : [],
+      });
+    }
+    if (path == '/api/guardian/activity') {
+      final type = query['type'];
+      final rows = [
+        for (final e in log)
+          if (type == null || e['type'] == type) e,
+      ];
+      final page = int.tryParse(query['page'] ?? '0') ?? 0;
+      return _json(200, {
+        'enabled': on,
+        'page': page,
+        'pageSize': 50,
+        'total': on ? rows.length : 0,
+        'trackedSince': '2026-11-01T09:00:00',
+        'entries': on ? rows.skip(page * 50).take(50).toList() : [],
+      });
+    }
+    return _error(404, 'NOT_FOUND', 'Unknown Guardian path');
+  }
+
   // ── Seeding helpers ────────────────────────────────────────────────────
 
   int addStore(String name, {String? address, bool active = true}) {
@@ -262,6 +356,18 @@ class FakeProductBackend {
         return _error(500, 'SERVER_ERROR', 'Report server error');
       }
       return _reports(storeId!, path, request.url.queryParameters);
+    }
+    // Guardian Mode (Figure 3.1): Store Admin only, own store.
+    if (path.startsWith('/api/guardian')) {
+      if (role != 'STORE_ADMIN') return _forbidden();
+      return _guardian(
+        user,
+        storeId!,
+        path,
+        method,
+        body,
+        request.url.queryParameters,
+      );
     }
     // Products: Store Admin (all) and Cashier (read only), own store
     if (path.startsWith('/api/products')) {

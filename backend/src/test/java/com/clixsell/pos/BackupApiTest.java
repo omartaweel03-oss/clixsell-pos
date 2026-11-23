@@ -1,5 +1,8 @@
 package com.clixsell.pos;
 
+import com.clixsell.pos.support.OwnedFiles;
+
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -12,10 +15,8 @@ import java.nio.file.attribute.PosixFilePermission;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
-import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -30,18 +31,28 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 class BackupApiTest extends ApiTestBase {
 
-    private static final Path FOLDER = Path.of("target/test-backups");
+    /** The backup folder of the test application (ApiTestBase: clixsell.backup.dir=test-backups). */
+    private static final Path FOLDER = Path.of("test-backups");
 
     private StoreSetup shini;
     private StoreSetup neshan;
+    /** Entries this test adds to the folder; files that were there before are never touched. */
+    private OwnedFiles mine;
+    /** Backups listed by the API before the test (normally none; older files are kept, not deleted). */
+    private int listedBefore;
+
+    @AfterEach
+    void removeOwnFiles() {
+        mine.deleteCreated();
+    }
 
     @BeforeEach
     void data() throws Exception {
-        if (Files.exists(FOLDER)) {
-            try (Stream<Path> files = Files.walk(FOLDER)) {
-                for (Path p : files.sorted(Comparator.reverseOrder()).toList()) Files.delete(p);
-            }
-        }
+        Files.createDirectories(FOLDER);
+        mine = OwnedFiles.watch(FOLDER, n -> true);
+        listedBefore = ((Number) com.jayway.jsonpath.JsonPath.read(mvc.perform(get("/api/admin/backups")
+                .header("Authorization", bearer(sysadminToken()))).andReturn().getResponse().getContentAsString(),
+                "$.backups.length()")).intValue();
         shini = setupStore("Shini Supermarket", "shini");
         neshan = setupStore("Neshan Market", "neshan");
         long milk = createProduct(shini.adminToken(), "Milk", "11111111", 5.00, 10);
@@ -64,11 +75,8 @@ class BackupApiTest extends ApiTestBase {
         }
     }
 
-    private static List<Path> backupFiles() throws IOException {
-        if (!Files.exists(FOLDER)) return List.of();
-        try (Stream<Path> files = Files.list(FOLDER)) {
-            return files.toList();
-        }
+    private List<Path> newFiles() {
+        return mine.created();
     }
 
     @Test
@@ -110,7 +118,7 @@ class BackupApiTest extends ApiTestBase {
         mvc.perform(get("/api/admin/backups").header("Authorization", bearer(sys)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.folder").value(org.hamcrest.Matchers.endsWith("test-backups")))
-                .andExpect(jsonPath("$.backups.length()").value(1))
+                .andExpect(jsonPath("$.backups.length()").value(listedBefore + 1))
                 .andExpect(jsonPath("$.backups[0].fileName").value(file.getFileName().toString()))
                 .andExpect(jsonPath("$.backups[0].sizeBytes").value(Files.size(file)));
     }
@@ -124,19 +132,20 @@ class BackupApiTest extends ApiTestBase {
                 .andExpect(status().isCreated()).andReturn(), "fileName");
         assertThat(second).isNotEqualTo(first);
         mvc.perform(get("/api/admin/backups").header("Authorization", bearer(sys)))
-                .andExpect(jsonPath("$.backups.length()").value(2))
+                .andExpect(jsonPath("$.backups.length()").value(listedBefore + 2))
                 .andExpect(jsonPath("$.backups[0].fileName").value(second))
                 .andExpect(jsonPath("$.backups[1].fileName").value(first));
     }
 
     @Test
     void onlyFilesNamedLikeABackupAreListed() throws Exception {
-        Files.createDirectories(FOLDER.resolve("clixsell-backup-20260101-000000.db.d"));
-        Files.writeString(FOLDER.resolve("notes.txt"), "not a backup");
-        Files.writeString(FOLDER.resolve("clixsell.db"), "not a backup");
+        // Created only if missing: an existing file is never overwritten.
+        createIfMissing(FOLDER.resolve("clixsell-backup-20260101-000000.db.d"), null);
+        createIfMissing(FOLDER.resolve("notes.txt"), "not a backup");
+        createIfMissing(FOLDER.resolve("clixsell.db"), "not a backup");
         mvc.perform(get("/api/admin/backups").header("Authorization", bearer(sysadminToken())))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.backups.length()").value(0));
+                .andExpect(jsonPath("$.backups.length()").value(listedBefore));
     }
 
     @Test
@@ -149,7 +158,7 @@ class BackupApiTest extends ApiTestBase {
         }
         mvc.perform(post("/api/admin/backups")).andExpect(status().isUnauthorized());
         mvc.perform(get("/api/admin/backups")).andExpect(status().isUnauthorized());
-        assertThat(backupFiles()).isEmpty();
+        assertThat(newFiles()).as("no file was written").isEmpty();
     }
 
     @Test
@@ -166,5 +175,11 @@ class BackupApiTest extends ApiTestBase {
                         .delete("/api/admin/backups/" + name).header("Authorization", bearer(sys)))
                 .andExpect(r -> assertThat(r.getResponse().getStatus()).isIn(404, 405));
         assertThat(FOLDER.resolve(name)).exists();
+    }
+
+    private static void createIfMissing(Path path, String content) throws IOException {
+        if (Files.exists(path)) return;
+        if (content == null) Files.createDirectory(path);
+        else Files.writeString(path, content, java.nio.file.StandardOpenOption.CREATE_NEW);
     }
 }

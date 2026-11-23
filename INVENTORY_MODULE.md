@@ -165,6 +165,82 @@ How the figures are calculated (backend `ReportService`, never in the app):
   * *Not available* – no line of the period has a cost.
 * **Cost price** is an optional product field for Store Admins; cashiers never receive it.
 
+## Guardian Mode – Phase 1 (Figure 3.1, UR-M16 / SR30, UR-M17 / SR31)
+A Store Admin screen (first item of the menu). **Off by default** for every store; the Store
+Admin turns it on (confirmation), and off again with the switch. When it is on it is the Store
+Admin's first page after login (as in Figure 3.1); when it is off Products stays first.
+
+**Rule-based, not a trained AI model** – the screen says so. The backend reads the store's real
+records (sales and their lines with the sale-time cost, returns, canceled invoices, products and
+the activity log) and applies fixed, explainable rules (`backend/…/guardian/GuardianThresholds.java`):
+
+| Rule | When | Severity |
+|---|---|---|
+| G1 high discount | discount ≥ 75% of the store's maximum discount **and** ≥ 5 ₪ | MEDIUM; HIGH when the same logged user does it 3+ times in a day |
+| G2a sold below cost | a line with a known sale-time cost sold at a lower unit price | HIGH |
+| G2b confirmed loss | **every** line has a cost and subtotal − discount < cost (tax excluded) | HIGH |
+| G2c discount share below cost | a line with a known sale-time cost, priced at or above it, whose share of the invoice discount (the Reports rule: line total × (subtotal − discount) ÷ subtotal) is below its cost, on an invoice that is **not** a confirmed loss; one alert per product per day | MEDIUM |
+| G3 price ≤ cost | current price below (HIGH) or equal to (MEDIUM) the recorded cost | HIGH / MEDIUM |
+| G4 profit protection | the store's maximum discount would sell the product below cost | LOW |
+| G5 stock | out of stock / low stock (same rules as Stock Alerts) | HIGH / MEDIUM |
+| G6 stockout soon | own sales rate of the last 14 days (≥ 7 days observed, ≥ 3 net units) → ≤ 3 days | HIGH (≤ 7 days: at-risk list) |
+| G7 canceled invoices | per day ≥ 3 and ≥ 10% of the day's invoices (≥ 6 and ≥ 20% → HIGH) | MEDIUM / HIGH |
+| G8 returns | G8a: per day refunds ≥ 50 ₪ and ≥ 10% of the day's sales (≥ 25% HIGH); G8b: same product returned 3× in 7 days (see below) | MEDIUM / HIGH |
+| G9 deletions | same user deletes ≥ 5 products in a day (≥ 10 HIGH) | MEDIUM / HIGH |
+
+Recommendations (suggestions only, nothing changes automatically): T1 order before stockout
+(G6; "Create purchase request" stays disabled until purchase orders exist), T2 margin under
+10%, T3 not sold for 30 days with stock above the minimum.
+
+* **Missing costs are never guessed**: an invoice with a line without cost is "incomplete
+  cost" – never a loss and not part of the profit part of the health score.
+* **Sale-time facts** (decision U7): G2a, G2b and G2c describe the sale when it was made. Units
+  returned later are shown next to them, never subtracted: they are not the current net result.
+* **G2c** (decision U4) is an *allocation-based product margin risk, not a confirmed invoice
+  loss*: it uses the same discount allocation as the Reports profit and only the line's own
+  recorded cost (an invoice whose other lines have no cost can still show it; their cost is never
+  guessed). The alert shows the worst line of the day (lowest share per unit) and the total
+  shortfall. It is not part of the "Profit risks" number (G2a, G2b, G3, unchanged), but it is never
+  hidden: when there are G2c alerts the card shows a separate line ("+ 1 margin risk after discount
+  sharing, not included in this number · View") that opens the G2c alerts, and the card never says
+  just "None" while they exist. The dashboard sends the count as `marginRiskCount`.
+* **G8b** (same product returned 3 times within 7 days) also reads the returns of the 14 days
+  before the chosen month, so a 7-day window can start in the previous month. For each return
+  the returns of that product in the 7 days ending at it are counted; an *episode* starts at the
+  return that reaches 3. It is reported once, in the month of that return (never again in the
+  next month), one alert per product per month (the largest window; `episodes` = how many).
+* **Same incident** (decision U8): different rules can report the same invoice or product
+  (e.g. G3 price below cost, G2a sold below cost, G2b that invoice's loss). They stay separate
+  alerts, each one lists the others in `related` ("Also reported as: … – one issue"), and the Critical card
+  shows how many separate issues the critical alerts are (`criticalIssues`). A "repeated high
+  discounts" alert (G1) keeps every invoice in its count and is linked to the other alerts of
+  those invoices (e.g. G2b). Alerts about a day or a list of products (G5, G6, G7, G8a, G9) are
+  never linked.
+* **Cashier area** of the map (decision U2) = POS alerts of the period: G1, G7, G8a, **by any
+  user** – every alert shows the recorded user with their role (Store Admin / Cashier), so a
+  Store Admin's action is never shown as a cashier's.
+* **Who did it** comes only from the activity log, written by the backend with the logged-in
+  user in the same transaction (the user who completed a sale set its final discount; the
+  user who canceled an invoice). Events from before the log started show no name.
+* **Store Health Score**: 4 parts × 25 points (stock, profit, discounts, activity); a part
+  without enough data is "not available" with the reason; a number is shown only with 3 or more
+  parts. 80+ Good, 60–79 Needs follow-up, below 60 Risk.
+  * Activity part (decision U1) = 25 × (1 − days with an activity alert (G7, G8a, G9) ÷ active
+    days), where an **active day is a day with a completed sale OR an activity alert** (a day
+    with an alert but no sale counts).
+  * The score is a general measure (ratios of the period); it does not say there are no risks
+    (decision U3). The card names the open critical alerts next to it, and while any critical
+    alert is open the band is at most "Needs follow-up" (`bandLimited`); the number is not changed.
+* Not in Phase 1 (later phases, not built): saved alerts / read / dismiss, statistical limits,
+  removed invoice lines in the POS, suppliers, purchase recommendations and orders, WhatsApp.
+
+### Known issue (U5) – must be fixed before the production release
+Reports and Sales Analytics (`ReportPeriod`) bound a day with `"<day>T00:00:00"`, but a time
+saved exactly at midnight is stored as `"<day>T00:00"` (Java omits `:00` seconds), which sorts
+before the bound: such a sale is counted in the previous day / month. Guardian Mode already uses
+`"<day>T00:00"` (fixed in its audit). Left unchanged here on purpose (no change outside Guardian
+Mode); it is a separate regression item.
+
 ## Run (Windows / macOS)
 Requires **Java JDK 17+** (backend) and **Flutter 3.38+** (frontend). Maven and SQLite need no installation.
 
@@ -211,6 +287,20 @@ give it a Store Admin). The version with profit adds `products.cost_price` and `
 (`V4__cost_price.java`): only two empty columns are added, a backup
 `clixsell-backup-before-v4-<date>.db` is written first and nothing is changed or deleted; old
 sales keep an unknown cost (never guessed).
+Guardian Mode adds `stores.guardian_enabled` (0 = off for every store) and the empty table
+`activity_log` (`V5__guardian_mode.java`): a backup `clixsell-backup-before-v5-<date>-<ms>.db` is
+written first and **checked** (SQLite integrity check and the same number of rows in every
+table) before anything changes; nothing existing is changed or deleted.
+If V5 ever stops half-way, it rolls its own change back (every row is kept, tested in
+`GuardianMigrationTest`), but Flyway remembers a failed V5 and the next start stops with
+"Detected failed migration to version 5". **There is no automatic repair** (decision U6: no
+Flyway `repair`, nothing is fixed on start). Recover by hand, only from the real error:
+1. Stop the backend and copy `backend/clixsell.db` (and keep the `clixsell-backup-before-v5-…db`).
+2. Read the first error of the failed start in the log: it says why V5 stopped. Fix that cause.
+3. Only if the log shows that V5 failed and its cause is fixed, remove that one row with any
+   SQLite tool (e.g. DB Browser for SQLite):
+   `DELETE FROM flyway_schema_history WHERE version = '5' AND success = 0;` and start again.
+4. Or put the V5 backup file back in place of `clixsell.db`.
 The sales version adds the sales tables (`V3__sales.sql`); existing stores get tax 16% and
 maximum discount 10%, and every existing store, user and product is kept (tested in
 `UpgradeToSalesVersionTest`). To start from an empty database instead, stop the backend and delete
@@ -239,6 +329,9 @@ maximum discount 10%, and every existing store, user and product is kept (tested
 | `GET /api/reports/daily-sales?from=&to=` · `GET /api/reports/monthly-sales?year=` | Store Admin | `SELECT` (one point per day / month, 0 when no sales) |
 | `GET /api/reports/top-products?from=&to=&limit=` | Store Admin | `SELECT` sale_items of completed sales |
 | `GET /api/reports/inventory` | Store Admin | `SELECT` products (inventory report, products to reorder) |
+| `GET /api/guardian/status` · `PUT /api/guardian/status {"enabled": true\|false}` | Store Admin (Cashier, System Admin 403) | `stores.guardian_enabled`; `INSERT activity_log` when it changes |
+| `GET /api/guardian/dashboard?year=&month=` · `GET /api/guardian/alerts?…&severity=&rule=` | Store Admin | `SELECT` (rules G1–G9, health, recommendations; nothing when off) |
+| `GET /api/guardian/activity?year=&month=&type=&page=` | Store Admin | `SELECT activity_log` (own store) |
 
 Sale request: `{"saleId": null, "items": [{"productId": 1, "quantity": 2}], "discountType": "PERCENT",
 "discountValue": 5, "paymentMethod": "CARD"}` — the app sends only ids and quantities; prices
@@ -247,7 +340,9 @@ always come from the database.
 ## Database
 ```
 stores (store_id PK, name UNIQUE, address, phone, status, tax_rate, max_discount_percent,
-        next_invoice_number, created_at)
+        next_invoice_number, created_at, guardian_enabled 0|1)
+ ├─< activity_log (log_id PK, store_id FK, user_id FK, event_type, entity_type, entity_id,
+ │                 entity_name, details JSON, created_at)   -- written by the backend only
  ├─< users (user_id PK, store_id FK NULL only for SYSTEM_ADMIN, username UNIQUE, full_name,
  │          password_hash, role, status, failed_login_attempts, locked_until, created_at)
  │     └─< user_sessions (session_id PK, user_id FK, token_hash UNIQUE, created_at, expires_at)
@@ -266,15 +361,27 @@ stores (store_id PK, name UNIQUE, address, phone, status, tax_rate, max_discount
 Migrations: `backend/src/main/resources/db/migration/V1__initial_schema.sql` (original tables)
 , `backend/src/main/java/db/migration/V2__multi_store.java` (stores, users, store_id) and
 `V3__sales.sql` (sales, sale_items, payments, receipts, returns; store tax settings) and
-`V4__cost_price.java` (purchase cost for profit).
+`V4__cost_price.java` (purchase cost for profit) and `V5__guardian_mode.java` (Guardian Mode).
 
 ## Tests
 ```bash
-cd backend && .\mvnw.cmd test     # 130 backend tests: business logic (Sale, ReturnProduct, …),
-                                 #   API + database, two-store isolation, roles, lockout, migration,
-                                 #   settings, own password, backups
-flutter test                     # 152 Flutter tests (use a fake server), incl. POS cart + screens
+cd backend && .\mvnw.cmd test     # 204 backend tests: business logic (Sale, ReturnProduct, …),
+                                 #   API + database, two-store isolation, roles, lockout, migrations,
+                                 #   settings, own password, backups, Guardian rules and activity log
+flutter test                     # 195 Flutter tests (use a fake server), incl. POS cart + screens
 ```
+**Test files and backups are safe:**
+* Maven runs the backend tests in `backend/target/test-work` (`pom.xml`, surefire
+  `workingDirectory`). Every test database (`test-clixsell.db`, `migration-test.db`, …) and every
+  backup a test makes is written there, never next to `backend/clixsell.db`. `mvnw clean` removes it.
+* A test deletes only what it created: `OwnedFiles` reads the folder when the test starts and later
+  deletes only the new entries. No test deletes by wildcard, and none overwrites a file
+  (migrations use `VACUUM INTO`, which fails on an existing file; test files use `CREATE_NEW`).
+* `BackupPreservationTest` puts older backups (upgrade v2 / v4 / v5 and a Settings backup) in a
+  fresh folder, runs every test class that makes or lists backups there in a separate JVM, and
+  checks that each older file is still there, byte for byte. It also fails if a new test that
+  touches backups is not in its list.
+* Still, run the tests in a separate clone of the project, never in the folder of a real store.
 
 ## Files
 | Path | Purpose |
@@ -321,6 +428,10 @@ flutter test                     # 152 Flutter tests (use a fake server), incl. 
 | `backend/…/demo/DemoDataInitializer.java` | Demo stores, staff, products, sales (`demo` profile, new database only) |
 | `backend/…/supplier/*` | Supplier entity (per store) |
 | `backend/…/common/*` | JSON errors, date converter, shared exceptions |
+| `backend/…/activity/*` | Activity log (who did what), written by the backend with the logged-in user |
+| `backend/…/guardian/*`, `guardian/rules/*` | Guardian Mode: thresholds, data queries, rules G1–G9, recommendations, health score, API |
+| `lib/screens/guardian/*` | Guardian Mode screen (Fig 3.1), widgets, dialogs (all alerts, health, activity report) |
+| `lib/services/guardian_api_client.dart`, `lib/models/guardian.dart`, `lib/l10n/guardian_strings.dart` | Guardian API client, models, English / Arabic text |
 
 ## Product rules
 * Out of stock: quantity == 0

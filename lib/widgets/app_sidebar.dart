@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_strings.dart';
+import '../l10n/guardian_strings.dart';
 import '../models/app_user.dart';
 import '../theme/app_theme.dart';
 
@@ -18,6 +19,7 @@ enum SidebarDestination {
   stockAlerts,
   suspendedInvoices,
   settings,
+  guardian,
 }
 
 /// Which pages each role may open (the backend enforces the same rules).
@@ -28,7 +30,11 @@ extension RoleDestinations on UserRole {
       SidebarDestination.settings,
     ],
     UserRole.storeAdmin => const [
+      // Home stays Products; when Guardian Mode is ON the shell opens
+      // Guardian Mode first instead (Figure 3.1, decision D9).
       SidebarDestination.products,
+      // Guardian Mode (Figure 3.1): Store Admin only (UR-M16 / UR-M17).
+      SidebarDestination.guardian,
       SidebarDestination.addProduct,
       SidebarDestination.editProduct,
       // Product Details (Figure 3.4) is a Store Admin screen (UR-M5).
@@ -101,9 +107,9 @@ class AppSidebar extends StatelessWidget {
     final s = AppStrings.of(context);
 
     Widget section(String label) => compact
-        ? const SizedBox(height: AppSpacing.md)
+        ? const SizedBox(height: AppSpacing.sm)
         : Padding(
-            padding: const EdgeInsetsDirectional.fromSTEB(24, 12, 24, 8),
+            padding: const EdgeInsetsDirectional.fromSTEB(24, 10, 24, 6),
             child: Text(
               label,
               style: const TextStyle(
@@ -135,6 +141,16 @@ class AppSidebar extends StatelessWidget {
     );
 
     final items = <Widget>[
+      // Guardian Mode (Figure 3.1) is the manager's first item.
+      if (user.role == UserRole.storeAdmin) ...[
+        const SizedBox(height: AppSpacing.sm),
+        item(
+          SidebarDestination.guardian,
+          Icons.shield_outlined,
+          Icons.shield_rounded,
+          GuardianStrings.of(context).navGuardian,
+        ),
+      ],
       if (user.role == UserRole.systemAdmin) ...[
         section(s.navSectionAdmin),
         item(
@@ -501,7 +517,9 @@ class _NavItem extends StatelessWidget {
     final fg = selected ? Colors.white : AppColors.sidebarText;
     final content = AnimatedContainer(
       duration: const Duration(milliseconds: 160),
-      padding: EdgeInsets.symmetric(horizontal: compact ? 0 : 14, vertical: 12),
+      // Compact enough that every Store Admin item (with Guardian Mode) fits
+      // on a 768 px high screen without scrolling.
+      padding: EdgeInsets.symmetric(horizontal: compact ? 0 : 14, vertical: 10),
       decoration: BoxDecoration(
         color: selected ? AppColors.primary : Colors.transparent,
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
@@ -581,7 +599,7 @@ class _NavItem extends StatelessWidget {
     );
 
     final item = Padding(
-      padding: EdgeInsets.symmetric(horizontal: compact ? 14 : 16, vertical: 3),
+      padding: EdgeInsets.symmetric(horizontal: compact ? 14 : 16, vertical: 2),
       child: Material(
         color: Colors.transparent,
         child: InkWell(

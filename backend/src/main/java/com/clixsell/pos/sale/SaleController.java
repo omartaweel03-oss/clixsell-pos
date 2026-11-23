@@ -65,7 +65,7 @@ public class SaleController {
 
     @DeleteMapping("/suspended/{id}")
     public SaleResponse cancel(@AuthenticationPrincipal CurrentUser user, @PathVariable long id) {
-        return service.cancelSuspended(user.requireStoreId(), id);
+        return service.cancelSuspended(user, id);
     }
 
     @GetMapping("/lookup")

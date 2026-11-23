@@ -13,12 +13,12 @@ import java.nio.file.Path;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /** With the normal settings (no "demo" profile) a new database stays empty. */
-@SpringBootTest(properties = "spring.datasource.url=jdbc:sqlite:target/no-demo-clixsell.db?foreign_keys=on")
+@SpringBootTest(properties = "spring.datasource.url=jdbc:sqlite:no-demo-clixsell.db?foreign_keys=on")
 class DemoDataDisabledByDefaultTest {
 
     static {
         try {
-            Files.deleteIfExists(Path.of("target/no-demo-clixsell.db"));
+            Files.deleteIfExists(Path.of("no-demo-clixsell.db"));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

@@ -1,5 +1,8 @@
 package com.clixsell.pos.product;
 
+import com.clixsell.pos.activity.ActivityEventType;
+import com.clixsell.pos.activity.ActivityLogService;
+import com.clixsell.pos.auth.CurrentUser;
 import com.clixsell.pos.store.Store;
 import com.clixsell.pos.store.StoreRepository;
 import com.clixsell.pos.supplier.Supplier;
@@ -8,7 +11,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Random;
 
 /**
@@ -21,6 +27,10 @@ import java.util.Random;
  * <p>Every method takes the {@code storeId} of the logged-in user and only
  * ever reads or changes that store's products. A product of another store is
  * treated as not found.
+ *
+ * <p>Changes that Guardian Mode watches (price, cost, stock by hand, delete)
+ * are written to the activity log with the logged-in user, in the same
+ * transaction. Nothing else about these operations changes.
  */
 @Service
 @Transactional
@@ -29,12 +39,15 @@ public class ProductService {
     private final ProductRepository products;
     private final SupplierService suppliers;
     private final StoreRepository stores;
+    private final ActivityLogService activity;
     private final Random random = new SecureRandom();
 
-    public ProductService(ProductRepository products, SupplierService suppliers, StoreRepository stores) {
+    public ProductService(ProductRepository products, SupplierService suppliers, StoreRepository stores,
+                          ActivityLogService activity) {
         this.products = products;
         this.suppliers = suppliers;
         this.stores = stores;
+        this.activity = activity;
     }
 
     @Transactional(readOnly = true)
@@ -60,22 +73,63 @@ public class ProductService {
         return products.save(Product.create(request, supplier, store));
     }
 
-    /** UPDATE: finds the product in the store, validates, checks the barcode, then saves. */
-    public Product updateProduct(long storeId, long productId, ProductRequest request) {
+    /**
+     * UPDATE: finds the product in the logged-in user's store, validates, checks
+     * the barcode, then saves. A changed price, cost or quantity is logged with
+     * the old and new value (an unchanged value is not logged).
+     */
+    public Product updateProduct(CurrentUser user, long productId, ProductRequest request) {
+        long storeId = user.requireStoreId();
         Product product = getProduct(storeId, productId);
         Product.validate(request);
         String barcode = request.barcode().trim();
         if (products.existsByStore_StoreIdAndBarcodeAndProductIdNot(storeId, barcode, productId)) {
             throw new DuplicateBarcodeException(barcode);
         }
+        double oldPrice = product.getSellingPrice();
+        Double oldCost = product.getCostPrice();
+        int oldQuantity = product.getQuantity();
         Supplier supplier = suppliers.findOrCreate(product.getStore(), request.supplierName());
         product.updateDetails(request, supplier);
-        return products.save(product);
+        Product saved = products.save(product);
+
+        if (Double.compare(oldPrice, saved.getSellingPrice()) != 0) {
+            logChange(user, saved, ActivityEventType.PRICE_CHANGED, oldPrice, saved.getSellingPrice());
+        }
+        if (!Objects.equals(oldCost, saved.getCostPrice())) {
+            logChange(user, saved, ActivityEventType.COST_CHANGED, oldCost, saved.getCostPrice());
+        }
+        if (oldQuantity != saved.getQuantity()) {
+            Map<String, Object> d = new LinkedHashMap<>();
+            d.put("old", oldQuantity);
+            d.put("new", saved.getQuantity());
+            d.put("change", saved.getQuantity() - oldQuantity);
+            activity.record(user, ActivityEventType.STOCK_ADJUSTED, "PRODUCT", saved.getProductId(), saved.getName(), d);
+        }
+        return saved;
     }
 
-    /** DELETE: removes the product's row (only if it belongs to the store). */
-    public void deleteProduct(long storeId, long productId) {
-        products.delete(getProduct(storeId, productId));
+    /**
+     * DELETE: removes the product's row (only if it belongs to the logged-in
+     * user's store). The log keeps a snapshot, because the row is gone.
+     */
+    public void deleteProduct(CurrentUser user, long productId) {
+        Product product = getProduct(user.requireStoreId(), productId);
+        Map<String, Object> d = new LinkedHashMap<>();
+        d.put("barcode", product.getBarcode());
+        d.put("category", product.getCategory());
+        d.put("sellingPrice", product.getSellingPrice());
+        d.put("costPrice", product.getCostPrice());
+        d.put("quantity", product.getQuantity());
+        activity.record(user, ActivityEventType.PRODUCT_DELETED, "PRODUCT", product.getProductId(), product.getName(), d);
+        products.delete(product);
+    }
+
+    private void logChange(CurrentUser user, Product p, ActivityEventType type, Double oldValue, Double newValue) {
+        Map<String, Object> d = new LinkedHashMap<>();
+        d.put("old", oldValue);
+        d.put("new", newValue);
+        activity.record(user, type, "PRODUCT", p.getProductId(), p.getName(), d);
     }
 
     /** Generates a barcode that no product of the store uses yet. */

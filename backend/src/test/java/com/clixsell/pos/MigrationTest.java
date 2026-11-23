@@ -1,18 +1,21 @@
 package com.clixsell.pos;
 
+import com.clixsell.pos.support.OwnedFiles;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
-import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -23,15 +26,21 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class MigrationTest {
 
-    private static final Path DB = Path.of("target/migration-test.db");
+    private static final Path DB = Path.of("migration-test.db");
     private static final String URL = "jdbc:sqlite:" + DB + "?foreign_keys=on";
+
+    /** Backups the migrations write in the working folder; only the ones made by THIS test are removed. */
+    private OwnedFiles backups;
+
+    @BeforeEach
+    void watchBackups() {
+        backups = OwnedFiles.migrationBackups();
+    }
 
     @AfterEach
     void removeFiles() throws IOException {
-        Files.deleteIfExists(DB);
-        try (DirectoryStream<Path> backups = Files.newDirectoryStream(Path.of("."), "clixsell-backup-before-v*.db")) {
-            for (Path p : backups) Files.delete(p);
-        }
+        Files.deleteIfExists(DB); // this test's own database
+        backups.deleteCreated();  // never a backup that existed before the test
     }
 
     private static void migrate() {
@@ -72,7 +81,11 @@ class MigrationTest {
         Files.deleteIfExists(DB);
         // A database exactly as the previous version created it.
         try (Connection c = DriverManager.getConnection(URL); Statement s = c.createStatement()) {
-            for (String sql : Files.readString(Path.of("src/main/resources/db/migration/V1__initial_schema.sql"))
+            String v1;
+            try (var in = MigrationTest.class.getResourceAsStream("/db/migration/V1__initial_schema.sql")) {
+                v1 = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+            }
+            for (String sql : v1
                     .replaceAll("(?m)^--.*$", "").split(";")) {
                 if (!sql.isBlank()) s.execute(sql);
             }
@@ -113,9 +126,7 @@ class MigrationTest {
                     .hasMessageContaining("FOREIGN KEY");
         }
 
-        try (DirectoryStream<Path> backups = Files.newDirectoryStream(Path.of("."), "clixsell-backup-before-v2-*.db")) {
-            assertThat(backups.iterator().hasNext()).as("backup file written before migrating").isTrue();
-        }
+        assertThat(backups.created("clixsell-backup-before-v2-")).as("backup file written before migrating").hasSize(1);
     }
 
     @Test
@@ -175,7 +186,7 @@ class MigrationTest {
             for (String[] t : tables) before.put(t[0], rows(c, t[0], t[1]));
         }
 
-        migrate(); // → V4
+        migrateTo("4"); // → V4 only (V5, Guardian Mode, has its own test: GuardianMigrationTest)
 
         try (Connection c = DriverManager.getConnection(URL); Statement s = c.createStatement()) {
             for (String[] t : tables) {
@@ -193,10 +204,9 @@ class MigrationTest {
             assertThat(count(c, "PRAGMA foreign_key_check")).isEqualTo(-1); // no broken links
         }
         // A backup of the database was written before the change, with all the data.
-        Path backup;
-        try (DirectoryStream<Path> b = Files.newDirectoryStream(Path.of("."), "clixsell-backup-before-v4-*.db")) {
-            backup = b.iterator().next();
-        }
+        List<Path> made = backups.created("clixsell-backup-before-v4-");
+        assertThat(made).as("one V4 backup written by this upgrade").hasSize(1);
+        Path backup = made.get(0);
         try (Connection c = DriverManager.getConnection("jdbc:sqlite:" + backup)) {
             assertThat(count(c, "SELECT COUNT(*) FROM sales")).isEqualTo(3);
             assertThat(count(c, "SELECT COUNT(*) FROM returns")).isEqualTo(1);

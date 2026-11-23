@@ -67,10 +67,28 @@
             <artifactId>spring-boot-starter-webmvc-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Runs test classes in a separate JVM (BackupPreservationTest). Version from the Spring Boot BOM. -->
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-launcher</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
         <plugins>
+            <!--
+              Tests run in their own folder, backend/target/test-work (created by Maven, removed by
+              "mvnw clean"). Every database and backup a test makes is written there, never next to
+              backend/clixsell.db or its backups. Tests also delete only the files they created.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <workingDirectory>${project.build.directory}/test-work</workingDirectory>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>

@@ -83,6 +83,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/products", "/api/products/**").hasRole("STORE_ADMIN")
                         // Reports and Sales Analytics are Manager (Store Admin) features.
                         .requestMatchers("/api/reports", "/api/reports/**").hasRole("STORE_ADMIN")
+                        // Guardian Mode (Figure 3.1): the Store Admin of the store only. This rule
+                        // must stay explicit: the last rule below lets any logged-in user through.
+                        .requestMatchers("/api/guardian", "/api/guardian/**").hasRole("STORE_ADMIN")
                         .requestMatchers("/api/sales", "/api/sales/**", "/api/returns", "/api/returns/**")
                         .hasAnyRole("STORE_ADMIN", "CASHIER")
                         .anyRequest().authenticated())
