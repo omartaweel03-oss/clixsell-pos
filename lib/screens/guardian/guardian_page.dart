@@ -435,7 +435,8 @@ class _GuardianPageState extends State<GuardianPage> {
           ? null
           : Align(
               alignment: AlignmentDirectional.centerStart,
-              child: TextButton(
+              // No underline: in Arabic it cuts through the letters like a strikethrough.
+              child: TextButton.icon(
                 key: const Key('guardianMarginRisks'),
                 style: TextButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 2),
@@ -444,13 +445,13 @@ class _GuardianPageState extends State<GuardianPage> {
                   alignment: AlignmentDirectional.centerStart,
                 ),
                 onPressed: () => _allAlerts(rules: marginRiskRules),
-                child: Text(
+                icon: const Icon(Icons.info_outline_rounded, size: 16),
+                label: Text(
                   g.marginRisks(margin),
                   textAlign: TextAlign.start,
                   style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
-                    decoration: TextDecoration.underline,
                   ),
                 ),
               ),
