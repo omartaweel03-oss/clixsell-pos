@@ -110,14 +110,16 @@ public final class HighDiscountRule implements GuardianRule {
             InvoiceFact i = e.invoice();
             if (grouped.contains(i.saleId())) continue;
             if (InvoiceCostStatus.of(i) == InvoiceCostStatus.CONFIRMED_LOSS) continue; // G2b covers it
-            String startedBy = e.log() != null && e.log().userId() != i.startedByUserId() ? i.startedByName() : null;
+            boolean other = e.log() != null && e.log().userId() != i.startedByUserId();
+            String startedBy = other ? i.startedByName() : null;
             out.add(GuardianRule.alert("G1:sale:" + i.saleId(), "G1", "HIGH_DISCOUNT", Severity.MEDIUM, "DISCOUNT",
                     params("invoiceNumber", i.invoiceNumber(), "subtotal", i.subtotal(), "discount", i.discount(),
                             "percent", e.percent().setScale(2, RoundingMode.HALF_UP).doubleValue(),
                             "maxPercent", e.maxPercent(), "maxSource", e.maxSource(),
                             "thresholdPercent", e.threshold().setScale(2, RoundingMode.HALF_UP).doubleValue(),
                             "sharePercent", 75, "minAmount", GuardianThresholds.HIGH_DISCOUNT_MIN_AMOUNT.doubleValue(),
-                            "total", i.total(), "startedBy", startedBy),
+                            "total", i.total(), "startedBy", startedBy,
+                            "startedByRole", other ? i.startedByRole() : null),
                     List.of(GuardianRule.sale(i.saleId(), i.invoiceNumber())),
                     GuardianRule.actor(e.log()), e.log() == null ? NOT_RECORDED : null, i.completedAt(),
                     GuardianRule.action("INVOICE", i.saleId())));

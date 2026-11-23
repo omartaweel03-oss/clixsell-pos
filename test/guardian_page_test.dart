@@ -1,4 +1,6 @@
 import 'package:clixsell_pos/main.dart';
+import 'package:clixsell_pos/models/guardian.dart';
+import 'package:clixsell_pos/screens/guardian/guardian_widgets.dart';
 import 'package:clixsell_pos/screens/reports/report_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -864,5 +866,335 @@ void main() {
     await _tapKey(tester, 'guardianAllAlerts');
     expect(find.bySemanticsLabel('All alerts'), findsWidgets);
     handle.dispose();
+  });
+
+  // ── Management decisions U2, U3, U4, U8 ─────────────────────────────────
+
+  group('decisions', () {
+    final adminDiscount = _alert(
+      'G1:sale:9',
+      'G1',
+      'HIGH_DISCOUNT',
+      'MEDIUM',
+      'DISCOUNT',
+      {
+        ...(_discount['params'] as Map<String, dynamic>),
+        'invoiceNumber': 'INV-000009',
+        'startedBy': 'Ahmad Odeh',
+        'startedByRole': 'CASHIER',
+      },
+      actor: {
+        'userId': 3,
+        'name': 'Shini Manager',
+        'source': 'ACTIVITY_LOG',
+        'role': 'STORE_ADMIN',
+      },
+      at: '2026-11-22T13:00:00',
+      action: {'type': 'INVOICE', 'id': 9},
+    );
+    final cancels = _alert(
+      'G7:day:2026-11-20',
+      'G7',
+      'CANCELED_INVOICES',
+      'MEDIUM',
+      'ACTIVITY',
+      {
+        'count': 3,
+        'completed': 10,
+        'percent': 23.1,
+        'minCount': 3,
+        'minPercent': 10,
+        'day': '2026-11-20',
+        'byUser': [
+          {'name': 'Sara Nasser', 'count': 2, 'role': 'CASHIER'},
+          {'name': 'Shini Manager', 'count': 1, 'role': 'STORE_ADMIN'},
+        ],
+        'notRecorded': 0,
+      },
+      at: '2026-11-20T18:00:00',
+    );
+    final share = _alert(
+      'G2c:product:1:2026-11-22',
+      'G2c',
+      'DISCOUNT_SHARE_BELOW_COST',
+      'MEDIUM',
+      'PROFIT',
+      {
+        'productName': 'Milk',
+        'times': 2,
+        'units': 2,
+        'unitPrice': 5.0,
+        'unitCost': 4.6,
+        'allocatedUnitRevenue': 4.5,
+        'discountPercent': 10.0,
+        'shortfall': 0.2,
+        'unitsReturned': 1,
+        'invoices': ['INV-000011', 'INV-000012'],
+        'day': '2026-11-22',
+      },
+      at: '2026-11-22T14:00:00',
+      action: {'type': 'PRODUCT', 'id': 1},
+    );
+    final linkedLoss = {
+      ..._loss,
+      'related': ['G2a:product:7:2026-11-22', 'G3:product:7'],
+    };
+
+    FakeProductBackend decisionsBackend() {
+      final b = _onBackend();
+      final d = _dashboard();
+      d['topAlerts'] = [linkedLoss, adminDiscount, cancels, share];
+      d['criticalCount'] = 3;
+      d['criticalIssues'] = 2;
+      d['health'] = {
+        ...(d['health'] as Map<String, dynamic>),
+        'band': 'ATTENTION',
+        'criticalAlerts': 3,
+        'bandLimited': true,
+      };
+      b.guardianDashboards[1] = d;
+      return b;
+    }
+
+    testWidgets('U2: the recorded role is shown; the cashier area counts POS '
+        'alerts by any user (English)', (tester) async {
+      await _open(tester, decisionsBackend());
+      expect(
+        find.text(
+          'Completed by: Shini Manager (Store Admin) · started by: Ahmad Odeh (Cashier)',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          'By: Sara Nasser – Cashier (2), Shini Manager – Store Admin (1)',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('1 POS alert this period, by any user'), findsOneWidget);
+      expect(
+        find.textContaining('by any user, not only cashiers'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('U2: without a recorded role the text is unchanged', (
+      tester,
+    ) async {
+      // Nothing is guessed.
+      await _open(tester, _onBackend());
+      expect(
+        find.text('Completed by: Sara Nasser · started by: Ahmad Odeh'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('U2: Arabic role and cashier-area wording', (tester) async {
+      await _open(tester, decisionsBackend(), locale: const Locale('ar'));
+      expect(
+        find.text(
+          'أكملها: Shini Manager (مدير المتجر) · بدأها: Ahmad Odeh (كاشير)',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          'بواسطة: Sara Nasser – كاشير (2)، Shini Manager – مدير المتجر (1)',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text('تنبيهات نقطة البيع هذه الفترة (من أي مستخدم): 1'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('من أي مستخدم، وليس الكاشير فقط'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('U3: a high score with open critical alerts is not shown as '
+        'Good, and says so', (tester) async {
+      await _open(tester, decisionsBackend());
+      final card = find.byKey(const Key('guardianCardHealth'));
+      expect(
+        find.descendant(of: card, matching: find.text('92/100')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: card, matching: find.text('Needs follow-up')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: card, matching: find.text('Good')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(
+          of: card,
+          matching: find.text(
+            'The score measures general store health · 3 critical alerts need review',
+          ),
+        ),
+        findsOneWidget,
+      );
+      final ring = tester.widget<HealthRing>(
+        find.descendant(of: card, matching: find.byType(HealthRing)),
+      );
+      expect(ring.band, HealthBand.attention);
+      await _tapKey(tester, 'guardianHealthDetails');
+      expect(
+        find.text(
+          'Shown as "Needs follow-up", not "Good", while critical alerts are open. '
+          'The score itself is not changed.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('it does not mean there are no risks'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('U3: a store without critical alerts shows no warning line', (
+      tester,
+    ) async {
+      final b = _onBackend();
+      final d = _dashboard();
+      d['criticalCount'] = 0;
+      d['health'] = {
+        ...(d['health'] as Map<String, dynamic>),
+        'criticalAlerts': 0,
+        'bandLimited': false,
+      };
+      b.guardianDashboards[1] = d;
+      await _open(tester, b);
+      final card = find.byKey(const Key('guardianCardHealth'));
+      expect(
+        find.descendant(of: card, matching: find.text('Good')),
+        findsOneWidget,
+      );
+      expect(find.textContaining('critical alerts need review'), findsNothing);
+      expect(find.textContaining('critical alert needs review'), findsNothing);
+    });
+
+    testWidgets('U3: Arabic health note', (tester) async {
+      await _open(tester, decisionsBackend(), locale: const Locale('ar'));
+      expect(
+        find.text('النسبة تقيس الوضع العام · تنبيهات حرجة تحتاج مراجعة: 3'),
+        findsOneWidget,
+      );
+      expect(find.text('يحتاج متابعة'), findsWidgets);
+    });
+
+    testWidgets('U4: G2c is a product margin risk, not a confirmed invoice '
+        'loss', (tester) async {
+      await _open(tester, decisionsBackend());
+      final tile = find.byKey(
+        const Key('guardianAlert-G2c:product:1:2026-11-22'),
+      );
+      expect(
+        find.descendant(
+          of: tile,
+          matching: find.text('Below cost after its share of the discount'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: tile,
+          matching: find.textContaining(
+            'Milk: after its share of the invoice discount (10%), a unit brought ₪ 4.50, '
+            'below its sale-time cost ₪ 4.60',
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: tile,
+          matching: find.textContaining(
+            'Allocation-based product margin risk, NOT a confirmed invoice loss.',
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: tile,
+          matching: find.textContaining('Later returned: 1 unit'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('U4: Arabic G2c text', (tester) async {
+      await _open(tester, decisionsBackend(), locale: const Locale('ar'));
+      expect(
+        find.textContaining(
+          'خطر على هامش المنتج حسب توزيع الخصم، وليس خسارة فاتورة مؤكدة.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('U8: linked alerts say they are one incident; the critical '
+        'card counts separate issues', (tester) async {
+      await _open(tester, decisionsBackend());
+      final card = find.byKey(const Key('guardianCardCritical'));
+      expect(
+        find.descendant(of: card, matching: find.text('3')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: card, matching: find.text('2 separate issues')),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          'Same incident as: Sold below cost, Price at or below cost (not a separate problem).',
+        ),
+        findsOneWidget,
+      );
+      // Not linked: no note.
+      expect(find.textContaining('Same incident as'), findsOneWidget);
+    });
+
+    testWidgets('U8: Arabic separate issues and incident line', (tester) async {
+      await _open(tester, decisionsBackend(), locale: const Locale('ar'));
+      expect(find.text('حالات منفصلة: 2'), findsOneWidget);
+      expect(
+        find.text(
+          'نفس الحالة في: بيع بأقل من التكلفة، سعر عند التكلفة أو أقل (ليست مشكلة منفصلة).',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('U8: when every critical alert is its own issue, the card '
+        'is unchanged', (tester) async {
+      await _open(tester, _onBackend());
+      final card = find.byKey(const Key('guardianCardCritical'));
+      expect(
+        find.descendant(of: card, matching: find.text('Need attention')),
+        findsOneWidget,
+      );
+      expect(find.textContaining('separate issue'), findsNothing);
+    });
+
+    for (final locale in const [Locale('en'), Locale('ar')]) {
+      testWidgets(
+        'decisions: no overflow at 390 wide (${locale.languageCode})',
+        (tester) async {
+          await _open(
+            tester,
+            decisionsBackend(),
+            size: const Size(390, 900),
+            locale: locale,
+          );
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
   });
 }

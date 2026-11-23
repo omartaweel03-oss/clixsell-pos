@@ -394,7 +394,12 @@ class _GuardianPageState extends State<GuardianPage> {
       color: AppColors.danger,
       softColor: AppColors.dangerSoft,
       icon: Icons.notifications_active_outlined,
-      subtitle: d.criticalCount == 0 ? g.none : g.needAttention,
+      // Decision U8: alerts about one invoice / product are one issue.
+      subtitle: d.criticalCount == 0
+          ? g.none
+          : d.criticalIssues > 0 && d.criticalIssues < d.criticalCount
+          ? g.separateIssues(d.criticalIssues)
+          : g.needAttention,
       subtitleColor: d.criticalCount == 0 ? null : AppColors.danger,
       actionLabel: g.viewAll,
       actionKey: const Key('guardianViewCritical'),
@@ -424,6 +429,10 @@ class _GuardianPageState extends State<GuardianPage> {
   Widget _healthCard(GuardianDashboard d) {
     final g = GuardianStrings.of(context);
     final h = d.health;
+    final notes = [
+      if (h?.score != null && h!.partsUsed < 4) g.partsUsed(h.partsUsed),
+      if ((h?.criticalAlerts ?? 0) > 0) g.healthCritical(h!.criticalAlerts),
+    ];
     return GuardianCard(
       key: const Key('guardianCardHealth'),
       title: g.health,
@@ -436,9 +445,9 @@ class _GuardianPageState extends State<GuardianPage> {
           ? g.notEnoughData
           : g.band(h.band),
       subtitleColor: bandColor(h?.band),
-      note: h?.score != null && h!.partsUsed < 4
-          ? g.partsUsed(h.partsUsed)
-          : null,
+      // Decision U3: the open critical alerts are named next to the number.
+      note: notes.isEmpty ? null : notes.join('\n'),
+      noteColor: (h?.criticalAlerts ?? 0) > 0 ? AppColors.danger : null,
       visual: HealthRing(score: h?.score, band: h?.band),
       actionLabel: g.healthDetails,
       actionKey: const Key('guardianHealthDetails'),

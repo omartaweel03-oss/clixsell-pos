@@ -41,7 +41,7 @@ public interface GuardianRule {
 
     /** The user recorded by the backend in the activity log, or null. */
     static Actor actor(LogFact log) {
-        return log == null ? null : new Actor(log.userId(), log.userName(), ACTIVITY_LOG);
+        return log == null ? null : new Actor(log.userId(), log.userName(), ACTIVITY_LOG, log.userRole());
     }
 
     static Ref sale(long id, String invoiceNumber) {

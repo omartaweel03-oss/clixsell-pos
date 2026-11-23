@@ -13,9 +13,11 @@ import com.clixsell.pos.guardian.GuardianResponses.Health;
 import com.clixsell.pos.guardian.GuardianResponses.MapTile;
 import com.clixsell.pos.guardian.GuardianResponses.ProfitProtection;
 import com.clixsell.pos.guardian.GuardianResponses.Recommendation;
+import com.clixsell.pos.guardian.GuardianResponses.Ref;
 import com.clixsell.pos.guardian.GuardianResponses.Severity;
 import com.clixsell.pos.guardian.rules.BelowCostRule;
 import com.clixsell.pos.guardian.rules.CanceledInvoicesRule;
+import com.clixsell.pos.guardian.rules.DiscountShareRule;
 import com.clixsell.pos.guardian.rules.GuardianRule;
 import com.clixsell.pos.guardian.rules.HighDiscountRule;
 import com.clixsell.pos.guardian.rules.MaxDiscountRiskRule;
@@ -31,7 +33,9 @@ import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -43,16 +47,20 @@ import java.util.TreeMap;
  */
 public final class GuardianAnalysis {
 
-    /** G1 … G9, in this order. */
+    /** G1 … G9, in this order (G2c, decision U4, with G2). */
     public static final List<GuardianRule> RULES = List.of(new HighDiscountRule(), new BelowCostRule(),
-            new PriceBelowCostRule(), new MaxDiscountRiskRule(), new StockRule(), new StockoutSoonRule(),
+            new DiscountShareRule(), new PriceBelowCostRule(), new MaxDiscountRiskRule(), new StockRule(), new StockoutSoonRule(),
             new CanceledInvoicesRule(), new ReturnsRule(), new ProductDeletionsRule());
 
     /** Alerts about what a cashier does at the POS (the "cashier area" tile). */
     static final Set<String> CASHIER_RULES = Set.of("G1", "G7", "G8a");
     static final Set<String> PROFIT_RULES = Set.of("G2a", "G2b", "G3");
 
-    public record Result(List<Alert> alerts, int criticalCount, int profitRiskCount, CostData costData,
+    /** Alerts about many records at once (a day, a user's day, a list of products): never linked to others. */
+    static final Set<String> GROUP_KEYS = Set.of("G1:user:", "G5:", "G6:", "G7:", "G8a:", "G9:");
+
+    public record Result(List<Alert> alerts, int criticalCount, int criticalIssues, int profitRiskCount,
+                         CostData costData,
                          Health health, List<Recommendation> recommendations, List<MapTile> storeMap,
                          List<AtRiskProduct> atRisk, List<ProfitProtection> profitProtection,
                          ActivitySummary activity) {
@@ -68,7 +76,94 @@ public final class GuardianAnalysis {
         all.sort(Comparator.comparingInt((Alert a) -> -a.severity().weight())
                 .thenComparing((Alert a) -> a.occurredAt() == null ? now : a.occurredAt(), Comparator.reverseOrder())
                 .thenComparing(Alert::key));
-        return all;
+        return linked(all);
+    }
+
+    /**
+     * Decision U8: different rules may report the same invoice or product (for
+     * example G3 price below cost, G2a sold below cost and G2b the loss invoice).
+     * They stay separate alerts, but each one lists the keys of the others in
+     * {@code related}, so the screen and the counts never show them as separate
+     * incidents. The subjects of an alert:
+     * <ul>
+     *   <li>G1 (one invoice), G2b: the invoice;</li>
+     *   <li>G2a, G2c: the product and the invoices it was sold in;</li>
+     *   <li>G3, G4, G8b: the product;</li>
+     *   <li>alerts about a group (a day, a user's day, a list of products): only
+     *       themselves, so they never join other alerts together.</li>
+     * </ul>
+     * Alerts that share a subject, directly or through others, are one incident.
+     */
+    static List<Alert> linked(List<Alert> alerts) {
+        int n = alerts.size();
+        int[] parent = new int[n];
+        for (int i = 0; i < n; i++) parent[i] = i;
+        Map<String, Integer> owner = new HashMap<>();
+        for (int i = 0; i < n; i++) {
+            for (String subject : subjects(alerts.get(i))) {
+                Integer j = owner.putIfAbsent(subject, i);
+                if (j != null) parent[find(parent, i)] = find(parent, j);
+            }
+        }
+        Map<Integer, List<String>> groups = new HashMap<>();
+        for (int i = 0; i < n; i++) groups.computeIfAbsent(find(parent, i), k -> new ArrayList<>()).add(alerts.get(i).key());
+        List<Alert> out = new ArrayList<>(n);
+        for (int i = 0; i < n; i++) {
+            Alert a = alerts.get(i);
+            List<String> others = groups.get(find(parent, i)).stream().filter(k -> !k.equals(a.key())).toList();
+            out.add(a.withRelated(others));
+        }
+        return out;
+    }
+
+    /** Separate incidents among the critical (HIGH) alerts: linked alerts count once. */
+    static int criticalIssues(List<Alert> alerts) {
+        Map<String, Alert> byKey = new HashMap<>();
+        for (Alert a : alerts) byKey.put(a.key(), a);
+        Set<String> counted = new HashSet<>();
+        int issues = 0;
+        for (Alert a : alerts) {
+            if (a.severity() != Severity.HIGH || counted.contains(a.key())) continue;
+            issues++;
+            counted.add(a.key());
+            for (String k : a.related()) {
+                Alert other = byKey.get(k);
+                if (other != null && other.severity() == Severity.HIGH) counted.add(k);
+            }
+        }
+        return issues;
+    }
+
+    private static Set<String> subjects(Alert a) {
+        Set<String> s = new LinkedHashSet<>();
+        if (GROUP_KEYS.stream().anyMatch(a.key()::startsWith)) {
+            s.add("alert:" + a.key());
+            return s;
+        }
+        for (Ref r : a.evidence()) {
+            if (r.id() == null) continue;
+            switch (a.rule()) {
+                case "G1", "G2b" -> {
+                    if ("SALE".equals(r.type())) s.add("sale:" + r.id());
+                }
+                case "G2a", "G2c" -> {
+                    if ("SALE".equals(r.type()) || "PRODUCT".equals(r.type())) s.add(r.type().toLowerCase() + ":" + r.id());
+                }
+                default -> {
+                    if ("PRODUCT".equals(r.type())) s.add("product:" + r.id());
+                }
+            }
+        }
+        if (s.isEmpty()) s.add("alert:" + a.key());
+        return s;
+    }
+
+    private static int find(int[] parent, int i) {
+        while (parent[i] != i) {
+            parent[i] = parent[parent[i]];
+            i = parent[i];
+        }
+        return i;
     }
 
     public static Result analyze(GuardianData d) {
@@ -77,7 +172,7 @@ public final class GuardianAnalysis {
         List<StockoutForecast> forecasts = StockoutSoonRule.forecasts(d);
         int critical = (int) alerts.stream().filter(a -> a.severity() == Severity.HIGH).count();
         int profitRisks = (int) alerts.stream().filter(a -> PROFIT_RULES.contains(a.rule())).count();
-        return new Result(alerts, critical, profitRisks, costData(d),
+        return new Result(alerts, critical, criticalIssues(alerts), profitRisks, costData(d),
                 HealthScore.of(d, highDiscounts.size(), alerts),
                 Recommendations.of(d, forecasts), storeMap(d, alerts), atRisk(forecasts),
                 profitProtection(d), activity(d, alerts, highDiscounts.size()));

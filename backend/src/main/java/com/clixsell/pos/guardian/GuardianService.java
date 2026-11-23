@@ -43,7 +43,7 @@ import java.util.Set;
 public class GuardianService {
 
     static final int ACTIVITY_PAGE_SIZE = 50;
-    static final Set<String> RULE_IDS = Set.of("G1", "G2a", "G2b", "G3", "G4", "G5", "G6", "G7", "G8a", "G8b", "G9");
+    static final Set<String> RULE_IDS = Set.of("G1", "G2a", "G2b", "G2c", "G3", "G4", "G5", "G6", "G7", "G8a", "G8b", "G9");
 
     private final GuardianRepository repo;
     private final StoreRepository stores;
@@ -104,7 +104,7 @@ public class GuardianService {
         GuardianAnalysis.Result r = GuardianAnalysis.analyze(load(storeId, period, now, status));
         List<Alert> top = r.alerts().subList(0, Math.min(3, r.alerts().size()));
         return new Dashboard(true, status, period.from(), period.to(), period.current(), todaySales(storeId, now),
-                r.criticalCount(), r.profitRiskCount(), r.costData(), r.health(), top, r.alerts().size(),
+                r.criticalCount(), r.criticalIssues(), r.profitRiskCount(), r.costData(), r.health(), top, r.alerts().size(),
                 r.recommendations(), r.storeMap(), r.atRisk(), r.profitProtection(), r.activity());
     }
 

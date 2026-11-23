@@ -59,29 +59,33 @@ public final class CanceledInvoicesRule implements GuardianRule {
             }
             if (sev == null) continue;
             Map<String, Integer> byUser = new LinkedHashMap<>();
+            Map<String, String> roles = new LinkedHashMap<>();
             int notRecorded = 0;
             List<Ref> refs = new ArrayList<>();
             LocalDateTime last = list.get(0).canceledAt();
             for (CancelFact c : list) {
                 LogFact log = d.cancelLogs().get(c.saleId());
                 if (log == null) notRecorded++;
-                else byUser.merge(log.userName(), 1, Integer::sum);
+                else {
+                    byUser.merge(log.userName(), 1, Integer::sum);
+                    roles.put(log.userName(), log.userRole());
+                }
                 refs.add(GuardianRule.sale(c.saleId(), c.invoiceNumber()));
                 if (c.canceledAt().isAfter(last)) last = c.canceledAt();
             }
             out.add(GuardianRule.alert("G7:day:" + e.getKey(), "G7", "CANCELED_INVOICES", sev, "ACTIVITY",
                     params("count", n, "completed", done, "percent", Amounts.round1(n * 100.0 / all),
                             "minCount", minCount, "minPercent", minPercent, "day", e.getKey().toString(),
-                            "byUser", toList(byUser), "notRecorded", notRecorded),
+                            "byUser", toList(byUser, roles), "notRecorded", notRecorded),
                     refs, null, notRecorded == n ? NOT_RECORDED : null, last,
                     notRecorded < n ? GuardianRule.action("ACTIVITY", null) : null));
         }
         return out;
     }
 
-    static List<Map<String, Object>> toList(Map<String, Integer> byUser) {
+    static List<Map<String, Object>> toList(Map<String, Integer> byUser, Map<String, String> roles) {
         List<Map<String, Object>> out = new ArrayList<>();
-        byUser.forEach((name, count) -> out.add(params("name", name, "count", count)));
+        byUser.forEach((name, count) -> out.add(params("name", name, "count", count, "role", roles.get(name))));
         return out;
     }
 }

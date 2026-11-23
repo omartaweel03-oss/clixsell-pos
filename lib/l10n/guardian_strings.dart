@@ -129,6 +129,10 @@ class GuardianStrings {
   String get netSalesHint =>
       _t('Paid − refunds, like Sales Analytics', 'المدفوع − المرتجعات');
   String get critical => _t('Critical alerts', 'تنبيهات حرجة');
+
+  /// Decision U8: alerts about the same invoice or product count once.
+  String separateIssues(int n) =>
+      _t(en(n, 'separate issue', 'separate issues'), 'حالات منفصلة: $n');
   String get profitRisks => _t('Profit risks', 'مخاطر الربح');
   String get needAttention => _t('Need attention', 'تحتاج انتباه');
   String get none => _t('None', 'لا توجد');
@@ -151,14 +155,33 @@ class GuardianStrings {
   };
   String get healthDetails => _t('How is it calculated?', 'كيف يُحسب؟');
 
+  /// Decision U3 (P1): the number is a general measure, open critical alerts
+  /// are named next to it.
+  String healthCritical(int n) => _t(
+    'The score measures general store health · '
+        '${en(n, 'critical alert needs', 'critical alerts need')} review',
+    'النسبة تقيس الوضع العام · تنبيهات حرجة تحتاج مراجعة: $n',
+  );
+
+  /// Decision U3 (P2).
+  String get bandLimited => _t(
+    'Shown as "Needs follow-up", not "Good", while critical alerts are open. '
+        'The score itself is not changed.',
+    'يظهر "يحتاج متابعة" وليس "جيد" ما دامت هناك تنبيهات حرجة مفتوحة. الرقم نفسه لا يتغير.',
+  );
+
   // ── Health breakdown ────────────────────────────────────────────────────
   String get healthFormula => _t(
     'Score = points of the available parts ÷ (25 × number of available parts) × 100. '
         'A number is shown only when at least 3 of the 4 parts have enough data. '
-        '80+ Good · 60–79 Needs follow-up · below 60 Risk.',
+        '80+ Good · 60–79 Needs follow-up · below 60 Risk. '
+        'The score is a general measure of the period (ratios): it does not mean there are no risks. '
+        'While a critical alert is open, it is never shown as Good.',
     'النتيجة = مجموع نقاط الأجزاء المتوفرة ÷ (25 × عددها) × 100. '
         'يظهر الرقم فقط إذا توفرت بيانات كافية لـ 3 أجزاء من 4 على الأقل. '
-        '80 فأكثر جيد · 60–79 يحتاج متابعة · أقل من 60 خطر.',
+        '80 فأكثر جيد · 60–79 يحتاج متابعة · أقل من 60 خطر. '
+        'النتيجة مقياس عام للفترة (نِسَب): لا تعني عدم وجود مخاطر. '
+        'ما دام هناك تنبيه حرج مفتوح، لا تظهر أبداً كـ"جيد".',
   );
   String partName(String p) => switch (p) {
     'STOCK' => _t('Stock', 'المخزون'),
@@ -250,6 +273,10 @@ class GuardianStrings {
       'Confirmed loss at the time of sale',
       'خسارة مؤكدة وقت البيع',
     ),
+    'DISCOUNT_SHARE_BELOW_COST' => _t(
+      'Below cost after its share of the discount',
+      'أقل من التكلفة بعد حصته من الخصم',
+    ),
     'PRICE_BELOW_COST' => _t('Price below cost', 'سعر أقل من التكلفة'),
     'PRICE_EQUALS_COST' => _t('Price equals cost', 'سعر يساوي التكلفة'),
     'MAX_DISCOUNT_RISK' => _t('Profit protection', 'حماية الربح'),
@@ -306,6 +333,17 @@ class GuardianStrings {
         'الفاتورة ${_iso(p['invoiceNumber'])} وقت البيع: الصافي ${m('netRevenue')} '
             '(بعد خصم ${m('discount')}، بدون الضريبة) والتكلفة ${m('cost')} ← خسارة '
             '${m('loss')}. كل منتجاتها لها تكلفة مسجلة.${returnedNote(p['unitsReturned'], p['unitsSold'])}',
+      ),
+      'DISCOUNT_SHARE_BELOW_COST' => _t(
+        '${_iso(p['productName'])}: after its share of the invoice discount (${n('discountPercent')}%), '
+            'a unit brought ${m('allocatedUnitRevenue')}, below its sale-time cost ${m('unitCost')} '
+            '(price ${m('unitPrice')}; ${en(p['times'], 'time', 'times')}, ${en(p['units'], 'unit', 'units')}; '
+            'short by ${m('shortfall')}). Allocation-based product margin risk, NOT a confirmed invoice '
+            'loss.${saleTimeNote(p['unitsReturned'])}',
+        '${_iso(p['productName'])}: بعد حصته من خصم الفاتورة (${n('discountPercent')}%) صار نصيب القطعة '
+            '${m('allocatedUnitRevenue')}، أقل من تكلفتها وقت البيع ${m('unitCost')} (السعر ${m('unitPrice')}؛ '
+            'عدد المرات: ${p['times']}، القطع: ${p['units']}؛ الفرق: ${m('shortfall')}). '
+            'خطر على هامش المنتج حسب توزيع الخصم، وليس خسارة فاتورة مؤكدة.${saleTimeNote(p['unitsReturned'])}',
       ),
       'PRICE_BELOW_COST' => _t(
         '${_iso(p['productName'])}: price ${m('price')}, cost ${m('cost')}. Every sale loses money.',
@@ -405,14 +443,66 @@ class GuardianStrings {
     );
   }
 
-  /// Who did it, from the backend's records only.
+  /// G2c: " Later returned: …" – the numbers are from the time of sale.
+  String saleTimeNote(Object? returned) {
+    final r = (returned as num?)?.toInt() ?? 0;
+    if (r <= 0) return '';
+    return _t(
+      ' Later returned: ${en(r, 'unit', 'units')} – these are the numbers of the time of sale.',
+      ' قطع أُرجعت لاحقاً: $r. هذه أرقام وقت البيع.',
+    );
+  }
+
+  /// Short name of a rule, for "the same incident as …" (decision U8).
+  String ruleName(String rule) => switch (rule) {
+    'G1' => _t('High discount', 'خصم عالٍ'),
+    'G2a' => _t('Sold below cost', 'بيع بأقل من التكلفة'),
+    'G2b' => _t('Confirmed loss', 'خسارة مؤكدة'),
+    'G2c' => _t(
+      'Below cost after the discount share',
+      'أقل من التكلفة بعد حصته من الخصم',
+    ),
+    'G3' => _t('Price at or below cost', 'سعر عند التكلفة أو أقل'),
+    'G4' => _t('Profit protection', 'حماية الربح'),
+    'G8b' => _t('Same product returned again', 'مرتجعات متكررة لنفس المنتج'),
+    _ => rule,
+  };
+
+  /// Decision U8: other alerts about the same invoice or product, or null.
+  String? relatedLine(GuardianAlert a) {
+    final rules = a.relatedRules;
+    if (rules.isEmpty) return null;
+    final names = [for (final r in rules) ruleName(r)];
+    return _t(
+      'Same incident as: ${names.join(', ')} (not a separate problem).',
+      'نفس الحالة في: ${names.join('، ')} (ليست مشكلة منفصلة).',
+    );
+  }
+
+  /// STORE_ADMIN / CASHIER as recorded by the backend (decision U2), or null.
+  String? role(Object? r) => switch (r) {
+    'STORE_ADMIN' => _t('Store Admin', 'مدير المتجر'),
+    'CASHIER' => _t('Cashier', 'كاشير'),
+    _ => null,
+  };
+
+  /// "Name (Role)" – the role only when it was recorded.
+  String _who(String name, Object? r) {
+    final label = role(r);
+    return label == null ? name : '$name ($label)';
+  }
+
+  /// Who did it, from the backend's records only. The role is shown, so an
+  /// action of a Store Admin is never read as a cashier's (decision U2).
   String? actorLine(GuardianAlert a) {
     final p = a.params;
     final byUser = p['byUser'] as List<dynamic>?;
     if (byUser != null) {
       final parts = [
         for (final u in byUser.cast<Map<String, dynamic>>())
-          '${u['name']} (${u['count']})',
+          role(u['role']) == null
+              ? '${u['name']} (${u['count']})'
+              : '${u['name']} – ${role(u['role'])} (${u['count']})',
       ];
       final missing = (p['notRecorded'] as num?)?.toInt() ?? 0;
       // Nobody recorded at all (before the activity log): say so plainly.
@@ -423,14 +513,18 @@ class GuardianStrings {
       return _t('By: ${parts.join(', ')}', 'بواسطة: ${parts.join('، ')}');
     }
     if (a.actorName != null) {
+      final actor = _who(a.actorName!, a.actorRole);
       final started = p['startedBy'] as String?;
+      final startedBy = started == null
+          ? null
+          : _who(started, p['startedByRole']);
       return switch (a.code) {
         'HIGH_DISCOUNT' || 'CONFIRMED_LOSS' =>
-          _t('Completed by: ${a.actorName}', 'أكملها: ${a.actorName}') +
-              (started == null
+          _t('Completed by: $actor', 'أكملها: $actor') +
+              (startedBy == null
                   ? ''
-                  : _t(' · started by: $started', ' · بدأها: $started')),
-        _ => _t('By: ${a.actorName}', 'بواسطة: ${a.actorName}'),
+                  : _t(' · started by: $startedBy', ' · بدأها: $startedBy')),
+        _ => _t('By: $actor', 'بواسطة: $actor'),
       };
     }
     if (a.actorNote == 'NOT_RECORDED') return notRecorded;
@@ -502,16 +596,18 @@ class GuardianStrings {
   String get storeMap => _t('Live store map', 'خريطة المتجر الحية');
   String get storeMapNote => _t(
     'By product category (the store layout is not recorded). Categories: current stock · '
-        'Cashier area: the chosen period.',
+        'Cashier area: the chosen period\'s POS alerts (high discounts, canceled invoices, returns) '
+        'by any user, not only cashiers.',
     'حسب تصنيف المنتجات (مخطط المتجر غير مسجّل). التصنيفات: المخزون الحالي · '
-        'منطقة الكاشير: الفترة المختارة.',
+        'منطقة الكاشير: تنبيهات نقطة البيع للفترة المختارة (خصومات عالية، إلغاء فواتير، مرتجعات) '
+        'من أي مستخدم، وليس الكاشير فقط.',
   );
   String stockHealth(int p) => _t('Stock health $p%', 'صحة المخزون $p%');
   String get cashierArea => _t('Cashier area', 'منطقة الكاشير');
   String get noProblems => _t('No problems', 'لا توجد مشاكل');
   String cashierAlerts(int high, int medium) => _t(
-    '${en(high + medium, 'alert', 'alerts')} this period',
-    'تنبيهات هذه الفترة: ${high + medium}',
+    '${en(high + medium, 'POS alert', 'POS alerts')} this period, by any user',
+    'تنبيهات نقطة البيع هذه الفترة (من أي مستخدم): ${high + medium}',
   );
   String get legendGood => _t('Good', 'جيد');
   String get legendAttention => _t('Needs follow-up', 'يحتاج متابعة');

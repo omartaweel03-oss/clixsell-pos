@@ -72,7 +72,7 @@ public final class ReturnsRule implements GuardianRule {
             List<Ref> refs = new ArrayList<>();
             LocalDateTime last = list.get(0).returnDate();
             for (ReturnFact r : list) {
-                Object[] u = byUser.computeIfAbsent(r.userName(), k -> new Object[]{0, BigDecimal.ZERO});
+                Object[] u = byUser.computeIfAbsent(r.userName(), k -> new Object[]{0, BigDecimal.ZERO, r.userRole()});
                 u[0] = (int) u[0] + 1;
                 u[1] = ((BigDecimal) u[1]).add(Amounts.money(r.refund()));
                 refs.add(GuardianRule.sale(r.saleId(), null));
@@ -80,7 +80,7 @@ public final class ReturnsRule implements GuardianRule {
             }
             List<Map<String, Object>> users = new ArrayList<>();
             byUser.forEach((name, u) -> users.add(params("name", name, "count", u[0],
-                    "amount", ((BigDecimal) u[1]).doubleValue())));
+                    "amount", ((BigDecimal) u[1]).doubleValue(), "role", u[2])));
             out.add(GuardianRule.alert("G8a:day:" + e.getKey(), "G8a", "RETURNS_SPIKE", sev, "ACTIVITY",
                     params("count", list.size(), "refunds", refunds.doubleValue(), "sales", daySales.doubleValue(),
                             "percent", percent, "minAmount", GuardianThresholds.RETURNS_MIN_AMOUNT.doubleValue(),
@@ -92,48 +92,78 @@ public final class ReturnsRule implements GuardianRule {
         return out;
     }
 
+    /**
+     * G8b. A 7-day window may start before the chosen month: returns of the 14
+     * days before it are read too ({@code productReturns}). For each product,
+     * in time order, the count of returns in the 7 days ending at each return is
+     * computed. An EPISODE starts at the return where that count reaches 3 (the
+     * return before it was below 3) and goes on while it stays at 3 or more. An
+     * episode is reported once, in the period of the return that reached the
+     * limit: never again in the next month, never for an episode that reached
+     * the limit before the period. One alert per product per period (the
+     * episode with the most returns; "episodes" says how many there were).
+     */
     private static List<Alert> perProduct(GuardianData d) {
         Map<String, List<ReturnFact>> byProduct = new LinkedHashMap<>();
-        for (ReturnFact r : d.returns()) {
+        for (ReturnFact r : d.productReturns()) {
             String key = r.productId() != null ? r.productId().toString() : "name:" + r.productName();
             byProduct.computeIfAbsent(key, k -> new ArrayList<>()).add(r);
         }
+        LocalDateTime start = d.from().atStartOfDay();
+        LocalDateTime end = d.to().plusDays(1).atStartOfDay();
         List<Alert> out = new ArrayList<>();
         for (var e : byProduct.entrySet()) {
             List<ReturnFact> list = new ArrayList<>(e.getValue());
-            list.sort(Comparator.comparing(ReturnFact::returnDate));
-            int best = 0;
-            int bestEnd = 0;
+            list.sort(Comparator.comparing(ReturnFact::returnDate).thenComparingLong(ReturnFact::returnId));
+            int[] count = new int[list.size()];
+            for (int j = 0; j < list.size(); j++) count[j] = windowCount(list, j);
+            int episodes = 0, bestPeak = 0, bestEnd = -1;
             for (int j = 0; j < list.size(); j++) {
-                // returns in the 7 days ending at return j: (date_j − 7 days, date_j]
-                LocalDateTime start = list.get(j).returnDate().minusDays(GuardianThresholds.PRODUCT_RETURNS_DAYS);
-                int n = 0;
-                for (int i = 0; i <= j; i++) if (list.get(i).returnDate().isAfter(start)) n++;
-                if (n > best) {
-                    best = n;
-                    bestEnd = j;
+                boolean trigger = count[j] >= GuardianThresholds.PRODUCT_RETURNS_REPEAT
+                        && (j == 0 || count[j - 1] < GuardianThresholds.PRODUCT_RETURNS_REPEAT);
+                LocalDateTime t = list.get(j).returnDate();
+                if (!trigger || t.isBefore(start) || !t.isBefore(end)) continue;
+                episodes++;
+                // The episode's peak: the largest window while it lasts (inside the period).
+                int peakAt = j;
+                for (int k = j + 1; k < list.size() && count[k] >= GuardianThresholds.PRODUCT_RETURNS_REPEAT
+                        && list.get(k).returnDate().isBefore(end); k++) {
+                    if (count[k] > count[peakAt]) peakAt = k;
+                }
+                if (count[peakAt] > bestPeak) {
+                    bestPeak = count[peakAt];
+                    bestEnd = peakAt;
                 }
             }
-            if (best < GuardianThresholds.PRODUCT_RETURNS_REPEAT) continue;
+            if (bestEnd < 0) continue;
             ReturnFact last = list.get(bestEnd);
+            LocalDateTime from = last.returnDate().minusDays(GuardianThresholds.PRODUCT_RETURNS_DAYS);
             int units = 0;
-            LocalDateTime start = last.returnDate().minusDays(GuardianThresholds.PRODUCT_RETURNS_DAYS);
             List<Ref> refs = new ArrayList<>();
             for (int i = 0; i <= bestEnd; i++) {
-                if (list.get(i).returnDate().isAfter(start)) {
+                if (list.get(i).returnDate().isAfter(from)) {
                     units += list.get(i).quantity();
                     refs.add(GuardianRule.sale(list.get(i).saleId(), null));
                 }
             }
+            if (last.productId() != null) refs.add(GuardianRule.product(last.productId(), last.productName()));
             boolean exists = d.product(last.productId()).isPresent();
             out.add(GuardianRule.alert("G8b:product:" + e.getKey(), "G8b", "PRODUCT_RETURNS_REPEATED", Severity.MEDIUM,
                     "ACTIVITY",
-                    params("productName", last.productName(), "count", best, "units", units,
+                    params("productName", last.productName(), "count", bestPeak, "units", units,
                             "days", GuardianThresholds.PRODUCT_RETURNS_DAYS,
-                            "minCount", GuardianThresholds.PRODUCT_RETURNS_REPEAT),
+                            "minCount", GuardianThresholds.PRODUCT_RETURNS_REPEAT, "episodes", episodes),
                     refs, null, null, last.returnDate(),
                     exists ? GuardianRule.action("PRODUCT", last.productId()) : null));
         }
         return out;
+    }
+
+    /** Returns of the product in the 7 days ending at return j: (date_j − 7 days, date_j]. */
+    private static int windowCount(List<ReturnFact> list, int j) {
+        LocalDateTime from = list.get(j).returnDate().minusDays(GuardianThresholds.PRODUCT_RETURNS_DAYS);
+        int n = 0;
+        for (int i = 0; i <= j; i++) if (list.get(i).returnDate().isAfter(from)) n++;
+        return n;
     }
 }

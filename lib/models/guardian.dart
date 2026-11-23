@@ -86,9 +86,11 @@ class GuardianAlert {
     required this.params,
     required this.evidence,
     this.actorName,
+    this.actorRole,
     this.actorNote,
     this.occurredAt,
     this.action,
+    this.related = const [],
   });
 
   factory GuardianAlert.fromJson(Map<String, dynamic> j) => GuardianAlert(
@@ -100,9 +102,13 @@ class GuardianAlert {
     params: (j['params'] as Map<String, dynamic>?) ?? const {},
     evidence: [for (final r in _maps(j['evidence'])) GuardianRef.fromJson(r)],
     actorName: (j['actor'] as Map<String, dynamic>?)?['name'] as String?,
+    actorRole: (j['actor'] as Map<String, dynamic>?)?['role'] as String?,
     actorNote: j['actorNote'] as String?,
     occurredAt: _dt(j['occurredAt']),
     action: GuardianAction.fromJson(j['action']),
+    related: [
+      for (final k in (j['related'] as List<dynamic>? ?? const [])) k as String,
+    ],
   );
 
   final String key;
@@ -116,12 +122,24 @@ class GuardianAlert {
   /// The user recorded by the backend (activity log), or null.
   final String? actorName;
 
+  /// STORE_ADMIN or CASHIER: the role of [actorName], so a cashier is never
+  /// blamed for what a Store Admin did (decision U2).
+  final String? actorRole;
+
   /// NOT_RECORDED when the user is unknown (before the activity log started).
   final String? actorNote;
 
   /// Null for a "current state" alert (stock, prices).
   final DateTime? occurredAt;
   final GuardianAction? action;
+
+  /// Keys of other alerts about the same invoice or product (decision U8):
+  /// one incident reported by several rules.
+  final List<String> related;
+
+  /// The rules of [related] (G2a, G3 …), without repeats.
+  List<String> get relatedRules =>
+      {for (final k in related) k.split(':').first}.toList();
 }
 
 class TodaySales {
@@ -203,6 +221,8 @@ class StoreHealth {
     required this.partsUsed,
     required this.reason,
     required this.parts,
+    this.criticalAlerts = 0,
+    this.bandLimited = false,
   });
 
   factory StoreHealth.fromJson(Map<String, dynamic> j) => StoreHealth(
@@ -211,6 +231,8 @@ class StoreHealth {
     partsUsed: _i(j['partsUsed']),
     reason: j['reason'] as String?,
     parts: [for (final p in _maps(j['parts'])) HealthPart.fromJson(p)],
+    criticalAlerts: _i(j['criticalAlerts']),
+    bandLimited: j['bandLimited'] == true,
   );
 
   /// Null when fewer than 3 parts have enough data.
@@ -219,6 +241,13 @@ class StoreHealth {
   final int partsUsed;
   final String? reason;
   final List<HealthPart> parts;
+
+  /// Open critical (HIGH) alerts of the dashboard (decision U3).
+  final int criticalAlerts;
+
+  /// The score would be GOOD, but the band is ATTENTION because critical
+  /// alerts are open. The score itself is never changed.
+  final bool bandLimited;
 }
 
 class MapTile {
@@ -396,6 +425,7 @@ class GuardianDashboard {
     this.currentPeriod = false,
     this.todaySales,
     this.criticalCount = 0,
+    this.criticalIssues = 0,
     this.profitRiskCount = 0,
     this.costData,
     this.health,
@@ -421,6 +451,7 @@ class GuardianDashboard {
             ? null
             : TodaySales.fromJson(j['todaySales'] as Map<String, dynamic>),
         criticalCount: _i(j['criticalCount']),
+        criticalIssues: _i(j['criticalIssues']),
         profitRiskCount: _i(j['profitRiskCount']),
         costData: j['costData'] == null
             ? null
@@ -456,6 +487,10 @@ class GuardianDashboard {
   final bool currentPeriod;
   final TodaySales? todaySales;
   final int criticalCount;
+
+  /// Separate incidents behind [criticalCount] (alerts about the same invoice
+  /// or product count once, decision U8).
+  final int criticalIssues;
   final int profitRiskCount;
   final CostData? costData;
   final StoreHealth? health;

@@ -34,6 +34,10 @@ import static com.clixsell.pos.guardian.GuardianThresholds.HEALTH_MIN_PARTS;
  * band  = ≥ 80 GOOD, 60–79 ATTENTION, &lt; 60 RISK
  * </pre>
  * Invoices with a missing cost never count as losses (they reduce the coverage instead).
+ *
+ * <p>Decision U3: the number is a GENERAL health measure (ratios). While any
+ * critical (HIGH) alert is open, the band is never shown as GOOD: it is limited
+ * to ATTENTION and {@code bandLimited} says so. The score itself is not changed.
  */
 public final class HealthScore {
 
@@ -50,9 +54,14 @@ public final class HealthScore {
                 used++;
             }
         }
-        if (used < HEALTH_MIN_PARTS) return new Health(null, null, used, "INSUFFICIENT_DATA", round(parts));
+        int critical = (int) alerts.stream().filter(a -> a.severity() == GuardianResponses.Severity.HIGH).count();
+        if (used < HEALTH_MIN_PARTS) {
+            return new Health(null, null, used, "INSUFFICIENT_DATA", round(parts), critical, false);
+        }
         int score = (int) Math.round(points / (25.0 * used) * 100);
-        return new Health(score, band(score), used, null, round(parts));
+        String band = band(score);
+        boolean limited = critical > 0 && "GOOD".equals(band);
+        return new Health(score, limited ? "ATTENTION" : band, used, null, round(parts), critical, limited);
     }
 
     public static String band(int percent) {

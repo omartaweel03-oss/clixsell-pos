@@ -57,7 +57,8 @@ public final class BelowCostRule implements GuardianRule {
                             "netRevenue", net.doubleValue(), "cost", cost.doubleValue(),
                             "loss", cost.subtract(net).doubleValue(), "lines", i.lines(),
                             "unitsSold", i.unitsSold(), "unitsReturned", i.unitsReturned(),
-                            "startedBy", log != null && log.userId() != i.startedByUserId() ? i.startedByName() : null),
+                            "startedBy", log != null && log.userId() != i.startedByUserId() ? i.startedByName() : null,
+                            "startedByRole", log != null && log.userId() != i.startedByUserId() ? i.startedByRole() : null),
                     List.of(GuardianRule.sale(i.saleId(), i.invoiceNumber())),
                     discounted ? GuardianRule.actor(log) : null,
                     discounted && log == null ? NOT_RECORDED : null,
@@ -94,12 +95,14 @@ public final class BelowCostRule implements GuardianRule {
             LocalDate day = last.toLocalDate();
             Long productId = worst.productId();
             boolean exists = d.product(productId).isPresent();
+            List<Ref> evidence = new ArrayList<>(sales);
+            if (productId != null) evidence.add(GuardianRule.product(productId, worst.productName()));
             out.add(GuardianRule.alert("G2a:product:" + e.getKey(), "G2a", "BELOW_COST_SALE", Severity.HIGH, "PROFIT",
                     params("productName", worst.productName(), "times", lines.size(), "units", units,
                             "unitPrice", worst.unitPrice(), "unitCost", worst.unitCost(),
                             "lossBeforeDiscount", Amounts.round2(loss.doubleValue()), "day", day.toString(),
                             "unitsReturned", returned),
-                    new ArrayList<>(sales), null, null, last,
+                    evidence, null, null, last,
                     exists ? GuardianRule.action("PRODUCT", productId) : null));
         }
         return out;

@@ -179,12 +179,13 @@ the activity log) and applies fixed, explainable rules (`backend/…/guardian/Gu
 | G1 high discount | discount ≥ 75% of the store's maximum discount **and** ≥ 5 ₪ | MEDIUM; HIGH when the same logged user does it 3+ times in a day |
 | G2a sold below cost | a line with a known sale-time cost sold at a lower unit price | HIGH |
 | G2b confirmed loss | **every** line has a cost and subtotal − discount < cost (tax excluded) | HIGH |
+| G2c discount share below cost | a line with a known sale-time cost, priced at or above it, whose share of the invoice discount (the Reports rule: line total × (subtotal − discount) ÷ subtotal) is below its cost, on an invoice that is **not** a confirmed loss; one alert per product per day | MEDIUM |
 | G3 price ≤ cost | current price below (HIGH) or equal to (MEDIUM) the recorded cost | HIGH / MEDIUM |
 | G4 profit protection | the store's maximum discount would sell the product below cost | LOW |
 | G5 stock | out of stock / low stock (same rules as Stock Alerts) | HIGH / MEDIUM |
 | G6 stockout soon | own sales rate of the last 14 days (≥ 7 days observed, ≥ 3 net units) → ≤ 3 days | HIGH (≤ 7 days: at-risk list) |
 | G7 canceled invoices | per day ≥ 3 and ≥ 10% of the day's invoices (≥ 6 and ≥ 20% → HIGH) | MEDIUM / HIGH |
-| G8 returns | per day refunds ≥ 50 ₪ and ≥ 10% of the day's sales (≥ 25% HIGH); same product returned 3× in 7 days | MEDIUM / HIGH |
+| G8 returns | G8a: per day refunds ≥ 50 ₪ and ≥ 10% of the day's sales (≥ 25% HIGH); G8b: same product returned 3× in 7 days (see below) | MEDIUM / HIGH |
 | G9 deletions | same user deletes ≥ 5 products in a day (≥ 10 HIGH) | MEDIUM / HIGH |
 
 Recommendations (suggestions only, nothing changes automatically): T1 order before stockout
@@ -193,14 +194,47 @@ Recommendations (suggestions only, nothing changes automatically): T1 order befo
 
 * **Missing costs are never guessed**: an invoice with a line without cost is "incomplete
   cost" – never a loss and not part of the profit part of the health score.
+* **Sale-time facts** (decision U7): G2a, G2b and G2c describe the sale when it was made. Units
+  returned later are shown next to them, never subtracted: they are not the current net result.
+* **G2c** (decision U4) is an *allocation-based product margin risk, not a confirmed invoice
+  loss*: it uses the same discount allocation as the Reports profit and only the line's own
+  recorded cost (an invoice whose other lines have no cost can still show it; their cost is never
+  guessed). The alert shows the worst line of the day (lowest share per unit) and the total
+  shortfall. It is not counted in the "Profit risks" card (G2a, G2b, G3).
+* **G8b** (same product returned 3 times within 7 days) also reads the returns of the 14 days
+  before the chosen month, so a 7-day window can start in the previous month. For each return
+  the returns of that product in the 7 days ending at it are counted; an *episode* starts at the
+  return that reaches 3. It is reported once, in the month of that return (never again in the
+  next month), one alert per product per month (the largest window; `episodes` = how many).
+* **Same incident** (decision U8): different rules can report the same invoice or product
+  (e.g. G3 price below cost, G2a sold below cost, G2b that invoice's loss). They stay separate
+  alerts, each one lists the others in `related` ("Same incident as: …"), and the Critical card
+  shows how many separate issues the critical alerts are (`criticalIssues`). Alerts about a group
+  (a day, a user's day, a list of products: G1 repeated, G5, G6, G7, G8a, G9) are never linked.
+* **Cashier area** of the map (decision U2) = POS alerts of the period: G1, G7, G8a, **by any
+  user** – every alert shows the recorded user with their role (Store Admin / Cashier), so a
+  Store Admin's action is never shown as a cashier's.
 * **Who did it** comes only from the activity log, written by the backend with the logged-in
   user in the same transaction (the user who completed a sale set its final discount; the
   user who canceled an invoice). Events from before the log started show no name.
 * **Store Health Score**: 4 parts × 25 points (stock, profit, discounts, activity); a part
   without enough data is "not available" with the reason; a number is shown only with 3 or more
   parts. 80+ Good, 60–79 Needs follow-up, below 60 Risk.
+  * Activity part (decision U1) = 25 × (1 − days with an activity alert (G7, G8a, G9) ÷ active
+    days), where an **active day is a day with a completed sale OR an activity alert** (a day
+    with an alert but no sale counts).
+  * The score is a general measure (ratios of the period); it does not say there are no risks
+    (decision U3). The card names the open critical alerts next to it, and while any critical
+    alert is open the band is at most "Needs follow-up" (`bandLimited`); the number is not changed.
 * Not in Phase 1 (later phases, not built): saved alerts / read / dismiss, statistical limits,
   removed invoice lines in the POS, suppliers, purchase recommendations and orders, WhatsApp.
+
+### Known issue (U5) – must be fixed before the production release
+Reports and Sales Analytics (`ReportPeriod`) bound a day with `"<day>T00:00:00"`, but a time
+saved exactly at midnight is stored as `"<day>T00:00"` (Java omits `:00` seconds), which sorts
+before the bound: such a sale is counted in the previous day / month. Guardian Mode already uses
+`"<day>T00:00"` (fixed in its audit). Left unchanged here on purpose (no change outside Guardian
+Mode); it is a separate regression item.
 
 ## Run (Windows / macOS)
 Requires **Java JDK 17+** (backend) and **Flutter 3.38+** (frontend). Maven and SQLite need no installation.
@@ -254,10 +288,14 @@ written first and **checked** (SQLite integrity check and the same number of row
 table) before anything changes; nothing existing is changed or deleted.
 If V5 ever stops half-way, it rolls its own change back (every row is kept, tested in
 `GuardianMigrationTest`), but Flyway remembers a failed V5 and the next start stops with
-"Detected failed migration to version 5". To retry: stop the backend, fix the cause shown in
-the log, then remove that one row with any SQLite tool (e.g. DB Browser for SQLite):
-`DELETE FROM flyway_schema_history WHERE version = '5' AND success = 0;` and start again.
-Or put the backup file back in place of `clixsell.db`.
+"Detected failed migration to version 5". **There is no automatic repair** (decision U6: no
+Flyway `repair`, nothing is fixed on start). Recover by hand, only from the real error:
+1. Stop the backend and copy `backend/clixsell.db` (and keep the `clixsell-backup-before-v5-…db`).
+2. Read the first error of the failed start in the log: it says why V5 stopped. Fix that cause.
+3. Only if the log shows that V5 failed and its cause is fixed, remove that one row with any
+   SQLite tool (e.g. DB Browser for SQLite):
+   `DELETE FROM flyway_schema_history WHERE version = '5' AND success = 0;` and start again.
+4. Or put the V5 backup file back in place of `clixsell.db`.
 The sales version adds the sales tables (`V3__sales.sql`); existing stores get tax 16% and
 maximum discount 10%, and every existing store, user and product is kept (tested in
 `UpgradeToSalesVersionTest`). To start from an empty database instead, stop the backend and delete
@@ -322,10 +360,10 @@ Migrations: `backend/src/main/resources/db/migration/V1__initial_schema.sql` (or
 
 ## Tests
 ```bash
-cd backend && .\mvnw.cmd test     # 183 backend tests: business logic (Sale, ReturnProduct, …),
+cd backend && .\mvnw.cmd test     # 198 backend tests: business logic (Sale, ReturnProduct, …),
                                  #   API + database, two-store isolation, roles, lockout, migrations,
                                  #   settings, own password, backups, Guardian rules and activity log
-flutter test                     # 175 Flutter tests (use a fake server), incl. POS cart + screens
+flutter test                     # 188 Flutter tests (use a fake server), incl. POS cart + screens
 ```
 
 ## Files

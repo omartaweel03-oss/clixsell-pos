@@ -6,6 +6,7 @@ import com.clixsell.pos.guardian.GuardianData.LineFact;
 import com.clixsell.pos.guardian.GuardianData.LogFact;
 import com.clixsell.pos.guardian.GuardianData.ProductFact;
 import com.clixsell.pos.guardian.GuardianData.ReturnFact;
+import com.clixsell.pos.guardian.GuardianData.ShareLineFact;
 import com.clixsell.pos.guardian.GuardianResponses.ActivityEntry;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -68,7 +69,10 @@ public class GuardianRepository {
                 saleLogs(storeId, "INVOICE_CANCELED", "CANCELED", "updated_at", start, end),
                 logs(storeId, "PRODUCT_DELETED", start, end),
                 netUnitsSince(storeId, dayStart(today.minusDays(13))),
-                soldSince(storeId, dayStart(today.minusDays(29))));
+                soldSince(storeId, dayStart(today.minusDays(29))),
+                // G8b: 14 days before the period, so a 7-day window may start in the previous month.
+                returns(storeId, dayStart(from.minusDays(14)), end),
+                discountLines(storeId, start, end));
     }
 
     List<ProductFact> products(long storeId) {
@@ -86,7 +90,7 @@ public class GuardianRepository {
                        s.completed_at, COUNT(si.sale_item_id),
                        COALESCE(SUM(CASE WHEN si.unit_cost IS NULL THEN 1 ELSE 0 END), 0),
                        COALESCE(SUM(CASE WHEN si.unit_cost IS NOT NULL THEN si.unit_cost * si.quantity ELSE 0 END), 0),
-                       COALESCE(SUM(si.quantity), 0), COALESCE(SUM(si.returned_quantity), 0)
+                       COALESCE(SUM(si.quantity), 0), COALESCE(SUM(si.returned_quantity), 0), u.role
                 FROM sales s
                 JOIN users u ON u.user_id = s.cashier_id
                 JOIN sale_items si ON si.sale_id = s.sale_id
@@ -96,7 +100,8 @@ public class GuardianRepository {
                 ORDER BY s.completed_at, s.sale_id""",
                 (rs, i) -> new InvoiceFact(rs.getLong(1), rs.getString(2), rs.getLong(3), rs.getString(4),
                         rs.getDouble(5), rs.getDouble(6), rs.getDouble(7), time(rs.getString(8)),
-                        rs.getInt(9), rs.getInt(10), rs.getDouble(11), rs.getInt(12), rs.getInt(13)),
+                        rs.getInt(9), rs.getInt(10), rs.getDouble(11), rs.getInt(12), rs.getInt(13),
+                        rs.getString(14)),
                 storeId, start, end);
     }
 
@@ -129,14 +134,33 @@ public class GuardianRepository {
     List<ReturnFact> returns(long storeId, String start, String end) {
         return db.query("""
                 SELECT r.return_id, r.sale_id, r.product_id, si.product_name, r.quantity, r.refund_amount,
-                       r.return_date, r.cashier_id, u.full_name
+                       r.return_date, r.cashier_id, u.full_name, u.role
                 FROM returns r
                 JOIN sale_items si ON si.sale_item_id = r.sale_item_id
                 JOIN users u ON u.user_id = r.cashier_id
                 WHERE r.store_id = ? AND r.return_date >= ? AND r.return_date < ?
                 ORDER BY r.return_date, r.return_id""",
                 (rs, i) -> new ReturnFact(rs.getLong(1), rs.getLong(2), nullableLong(rs, 3), rs.getString(4),
-                        rs.getInt(5), rs.getDouble(6), time(rs.getString(7)), rs.getLong(8), rs.getString(9)),
+                        rs.getInt(5), rs.getDouble(6), time(rs.getString(7)), rs.getLong(8), rs.getString(9),
+                        rs.getString(10)),
+                storeId, start, end);
+    }
+
+    /**
+     * Lines with a sale-time cost of the period's DISCOUNTED completed invoices
+     * (G2c). The rule works out each line's share of the invoice discount.
+     */
+    List<ShareLineFact> discountLines(long storeId, String start, String end) {
+        return db.query("""
+                SELECT s.sale_id, s.invoice_number, si.product_id, si.product_name, si.quantity, si.unit_price,
+                       si.unit_cost, si.line_total, s.subtotal, s.discount, s.completed_at, si.returned_quantity
+                FROM sale_items si JOIN sales s ON s.sale_id = si.sale_id
+                WHERE s.store_id = ? AND s.status = 'COMPLETED' AND s.completed_at >= ? AND s.completed_at < ?
+                  AND s.subtotal > 0 AND s.discount > 0 AND si.unit_cost IS NOT NULL
+                ORDER BY s.completed_at, si.sale_item_id""",
+                (rs, i) -> new ShareLineFact(rs.getLong(1), rs.getString(2), nullableLong(rs, 3), rs.getString(4),
+                        rs.getInt(5), rs.getDouble(6), rs.getDouble(7), rs.getDouble(8), rs.getDouble(9),
+                        rs.getDouble(10), time(rs.getString(11)), rs.getInt(12)),
                 storeId, start, end);
     }
 
@@ -144,7 +168,8 @@ public class GuardianRepository {
     Map<Long, LogFact> saleLogs(long storeId, String type, String status, String dateColumn, String start, String end) {
         Map<Long, LogFact> out = new HashMap<>();
         db.query("""
-                SELECT l.log_id, l.event_type, l.user_id, u.full_name, l.entity_id, l.entity_name, l.details, l.created_at
+                SELECT l.log_id, l.event_type, l.user_id, u.full_name, l.entity_id, l.entity_name, l.details, l.created_at,
+                       u.role
                 FROM activity_log l JOIN users u ON u.user_id = l.user_id
                 WHERE l.store_id = ? AND l.event_type = ? AND l.entity_type = 'SALE'
                   AND l.entity_id IN (SELECT sale_id FROM sales WHERE store_id = ? AND status = ?
@@ -159,7 +184,8 @@ public class GuardianRepository {
 
     List<LogFact> logs(long storeId, String type, String start, String end) {
         return db.query("""
-                SELECT l.log_id, l.event_type, l.user_id, u.full_name, l.entity_id, l.entity_name, l.details, l.created_at
+                SELECT l.log_id, l.event_type, l.user_id, u.full_name, l.entity_id, l.entity_name, l.details, l.created_at,
+                       u.role
                 FROM activity_log l JOIN users u ON u.user_id = l.user_id
                 WHERE l.store_id = ? AND l.event_type = ? AND l.created_at >= ? AND l.created_at < ?
                 ORDER BY l.created_at, l.log_id""",
@@ -272,7 +298,7 @@ public class GuardianRepository {
 
     private static LogFact log(ResultSet rs) throws SQLException {
         return new LogFact(rs.getLong(1), rs.getString(2), rs.getLong(3), rs.getString(4), nullableLong(rs, 5),
-                rs.getString(6), details(rs.getString(7)), time(rs.getString(8)));
+                rs.getString(6), details(rs.getString(7)), time(rs.getString(8)), rs.getString(9));
     }
 
     static Map<String, Object> details(String json) {

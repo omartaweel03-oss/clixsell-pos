@@ -232,6 +232,24 @@ Future<void> showHealthDetails(BuildContext context, StoreHealth health) {
                 ),
               ],
             ),
+            if (health.bandLimited) ...[
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                g.bandLimited,
+                key: const Key('guardianBandLimited'),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.danger,
+                ),
+              ),
+            ],
+            if (health.criticalAlerts > 0) ...[
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                g.healthCritical(health.criticalAlerts),
+                style: const TextStyle(color: AppColors.danger),
+              ),
+            ],
             const SizedBox(height: AppSpacing.md),
             for (final p in health.parts)
               Container(

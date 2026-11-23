@@ -43,15 +43,31 @@ public final class GuardianResponses {
      */
     public record Alert(String key, String rule, String code, Severity severity, String category,
                         Map<String, Object> params, List<Ref> evidence, Actor actor, String actorNote,
-                        LocalDateTime occurredAt, LocalDate day, Action action) {
+                        LocalDateTime occurredAt, LocalDate day, Action action, List<String> related) {
+
+        public Alert(String key, String rule, String code, Severity severity, String category,
+                     Map<String, Object> params, List<Ref> evidence, Actor actor, String actorNote,
+                     LocalDateTime occurredAt, LocalDate day, Action action) {
+            this(key, rule, code, severity, category, params, evidence, actor, actorNote, occurredAt, day, action,
+                    List.of());
+        }
+
+        /** The same alert with the keys of the other alerts about the same incident (decision U8). */
+        public Alert withRelated(List<String> keys) {
+            return new Alert(key, rule, code, severity, category, params, evidence, actor, actorNote, occurredAt, day,
+                    action, keys);
+        }
     }
 
     /** A record an alert is based on: SALE, PRODUCT or LOG. */
     public record Ref(String type, Long id, String label) {
     }
 
-    /** @param source ACTIVITY_LOG or RETURN_RECORD (where the backend recorded the user) */
-    public record Actor(long userId, String name, String source) {
+    /**
+     * @param source ACTIVITY_LOG or RETURN_RECORD (where the backend recorded the user)
+     * @param role   STORE_ADMIN or CASHIER, so a cashier is never blamed for a Store Admin's action (U2)
+     */
+    public record Actor(long userId, String name, String source, String role) {
     }
 
     /** @param type INVOICE, PRODUCT, STOCK_ALERTS or ACTIVITY */
@@ -84,8 +100,14 @@ public final class GuardianResponses {
                              Map<String, Object> numbers) {
     }
 
-    /** @param score null with reason INSUFFICIENT_DATA when fewer than 3 parts are available */
-    public record Health(Integer score, String band, int partsUsed, String reason, List<HealthPart> parts) {
+    /**
+     * @param score          null with reason INSUFFICIENT_DATA when fewer than 3 parts are available
+     * @param criticalAlerts open HIGH alerts of the dashboard (decision U3)
+     * @param bandLimited    true when the band would be GOOD but is shown as ATTENTION because of
+     *                       critical alerts; the score itself is never changed
+     */
+    public record Health(Integer score, String band, int partsUsed, String reason, List<HealthPart> parts,
+                         int criticalAlerts, boolean bandLimited) {
     }
 
     /** @param kind CATEGORY (stock health of a category, now) or CASHIER_AREA (POS activity of the period) */
@@ -113,14 +135,16 @@ public final class GuardianResponses {
                                   int days, double perDay, LocalDateTime trackedSince) {
     }
 
+    /** @param criticalIssues separate incidents behind the critical alerts (alerts about one invoice / product = 1) */
     public record Dashboard(boolean enabled, Status status, LocalDate from, LocalDate to, boolean currentPeriod,
-                            TodaySales todaySales, int criticalCount, int profitRiskCount, CostData costData,
+                            TodaySales todaySales, int criticalCount, int criticalIssues, int profitRiskCount,
+                            CostData costData,
                             Health health, List<Alert> topAlerts, int alertCount, List<Recommendation> recommendations,
                             List<MapTile> storeMap, List<AtRiskProduct> atRiskProducts,
                             List<ProfitProtection> profitProtection, ActivitySummary activity) {
 
         static Dashboard disabled(Status status) {
-            return new Dashboard(false, status, null, null, false, null, 0, 0, null, null, List.of(), 0, List.of(),
+            return new Dashboard(false, status, null, null, false, null, 0, 0, 0, null, null, List.of(), 0, List.of(),
                     List.of(), List.of(), List.of(), null);
         }
     }

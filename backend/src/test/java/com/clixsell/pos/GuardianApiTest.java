@@ -252,7 +252,10 @@ class GuardianApiTest extends GuardianApiTestBase {
         // 7 fully-costed invoices, no loss, no high discount, no unusual activity, healthy stock → 100.
         assertThat((Integer) read(d, "$.health.score")).isEqualTo(100);
         assertThat((Integer) read(d, "$.health.partsUsed")).isEqualTo(4);
-        assertThat((String) read(d, "$.health.band")).isEqualTo("GOOD");
+        // Decision U3: the score stays 100, but the open HIGH alert (Water runs out, G6) limits the band.
+        assertThat((String) read(d, "$.health.band")).isEqualTo("ATTENTION");
+        assertThat((Boolean) read(d, "$.health.bandLimited")).isTrue();
+        assertThat((Integer) read(d, "$.health.criticalAlerts")).isEqualTo(1);
         // Severity filter.
         String high = getJson(shini.adminToken(), "/api/guardian/alerts?severity=HIGH");
         assertThat(alerts(high)).allMatch(a -> "HIGH".equals(a.get("severity")));

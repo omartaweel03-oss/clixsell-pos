@@ -248,6 +248,7 @@ class GuardianCard extends StatelessWidget {
     this.subtitle,
     this.subtitleColor,
     this.note,
+    this.noteColor,
     this.visual,
     this.actionLabel,
     this.actionKey,
@@ -262,6 +263,7 @@ class GuardianCard extends StatelessWidget {
   final String? subtitle;
   final Color? subtitleColor;
   final String? note;
+  final Color? noteColor;
   final Widget? visual;
   final String? actionLabel;
   final Key? actionKey;
@@ -312,9 +314,10 @@ class GuardianCard extends StatelessWidget {
                   const SizedBox(height: AppSpacing.xs),
                   Text(
                     note!,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11.5,
-                      color: AppColors.textSecondary,
+                      color: noteColor ?? AppColors.textSecondary,
+                      fontWeight: noteColor == null ? null : FontWeight.w600,
                     ),
                   ),
                 ],
@@ -490,6 +493,7 @@ class AlertTile extends StatelessWidget {
     final g = GuardianStrings.of(context);
     final c = severityColor(alert.severity);
     final actor = g.actorLine(alert);
+    final related = g.relatedLine(alert);
     final at = alert.occurredAt;
     final action = alert.action;
     return Container(
@@ -547,6 +551,19 @@ class AlertTile extends StatelessWidget {
                         fontSize: 12,
                         color: AppColors.textSecondary,
                         fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                if (related != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      related,
+                      key: Key('guardianRelated-${alert.key}'),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                        fontStyle: FontStyle.italic,
                       ),
                     ),
                   ),

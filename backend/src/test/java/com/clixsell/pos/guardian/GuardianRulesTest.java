@@ -6,6 +6,7 @@ import com.clixsell.pos.guardian.GuardianData.LineFact;
 import com.clixsell.pos.guardian.GuardianData.LogFact;
 import com.clixsell.pos.guardian.GuardianData.ProductFact;
 import com.clixsell.pos.guardian.GuardianData.ReturnFact;
+import com.clixsell.pos.guardian.GuardianData.ShareLineFact;
 import com.clixsell.pos.guardian.GuardianResponses.Alert;
 import com.clixsell.pos.guardian.GuardianResponses.AtRiskProduct;
 import com.clixsell.pos.guardian.GuardianResponses.Health;
@@ -14,6 +15,7 @@ import com.clixsell.pos.guardian.GuardianResponses.Recommendation;
 import com.clixsell.pos.guardian.GuardianResponses.Severity;
 import com.clixsell.pos.guardian.rules.BelowCostRule;
 import com.clixsell.pos.guardian.rules.CanceledInvoicesRule;
+import com.clixsell.pos.guardian.rules.DiscountShareRule;
 import com.clixsell.pos.guardian.rules.HighDiscountRule;
 import com.clixsell.pos.guardian.rules.MaxDiscountRiskRule;
 import com.clixsell.pos.guardian.rules.PriceBelowCostRule;
@@ -63,11 +65,25 @@ class GuardianRulesTest {
         final List<LogFact> deletions = new ArrayList<>();
         final Map<Long, Long> net14 = new HashMap<>();
         final Set<Long> sold30 = new HashSet<>();
+        /** Returns of the 14 days before the period (read for G8b only). */
+        final List<ReturnFact> earlierReturns = new ArrayList<>();
+        final List<ShareLineFact> shareLines = new ArrayList<>();
         long nextId = 1000;
 
         GuardianData build() {
+            List<ReturnFact> productReturns = new ArrayList<>(earlierReturns);
+            productReturns.addAll(returns);
             return new GuardianData(NOW, from, to, current, max, tracked, products, invoices, lines, cancels,
-                    returns, discountLogs, cancelLogs, deletions, net14, sold30);
+                    returns, discountLogs, cancelLogs, deletions, net14, sold30, productReturns, shareLines);
+        }
+
+        /** A line of a discounted invoice with a recorded sale-time cost (for G2c). */
+        ShareLineFact shareLine(InvoiceFact i, long productId, String name, int qty, double price, double cost,
+                                int returned) {
+            ShareLineFact l = new ShareLineFact(i.saleId(), i.invoiceNumber(), productId, name, qty, price, cost,
+                    qty * price, i.subtotal(), i.discount(), i.completedAt(), returned);
+            shareLines.add(l);
+            return l;
         }
 
         ProductFact product(long id, String name, String cat, double price, Double cost, int qty, int min, int ageDays) {
@@ -634,10 +650,10 @@ class GuardianRulesTest {
      * Audit item 2: two products, one invoice discount. The invoice is
      * profitable, but the cheaper product's share of the discount (the same
      * proportional rule as the Reports profit) puts it below its cost.
-     * Approved rules: G2b is per invoice (no loss here) and G2a compares the
-     * price BEFORE the invoice discount, so neither reports this line; G4
-     * still warns about the product itself (its maximum discount sells below
-     * cost). Documents the current behaviour; no allocation rule was changed.
+     * G2b is per invoice (no loss here) and G2a compares the price BEFORE the
+     * invoice discount, so neither reports this line; G4 warns about the
+     * product itself. Since decision U4 the line itself is reported by G2c
+     * (see {@link Decisions}).
      */
     @Test
     void auditDiscountSharedOverTwoProducts() {
@@ -653,6 +669,225 @@ class GuardianRulesTest {
         List<Alert> g4 = new MaxDiscountRiskRule().evaluate(g);
         assertThat(g4).extracting(a -> a.params().get("productName")).containsExactly("Milk");
         assertThat(g4.get(0).params()).containsEntry("priceAfterMax", 4.5).containsEntry("cost", 4.6);
+    }
+
+    // ── Management decisions U1, U3, U4, U8 and the G8b month boundary ──
+
+    @Nested
+    class Decisions {
+
+        static Alert high(String key, String rule) {
+            return new Alert(key, rule, "X", Severity.HIGH, "STOCK", Map.of(), List.of(), null, null, null, null, null);
+        }
+
+        /** U1: the activity part divides by days with a sale OR an activity alert; a day without sales counts. */
+        @Test
+        void u1ADayWithAnActivityAlertButNoSaleIsAnActiveDay() {
+            Data d = new Data();
+            for (int i = 1; i <= 5; i++) d.invoice(i, 100, 0, at(i, 10), 1, 1, 0);
+            Alert noSales = new Alert("G7:day:2026-11-10", "G7", "CANCELED_INVOICES", Severity.MEDIUM, "ACTIVITY",
+                    Map.of(), List.of(), null, null, at(10, 10), LocalDate.of(2026, 11, 10), null);
+            var part = HealthScore.activity(d.build(), List.of(noSales));
+            assertThat(part.numbers()).containsEntry("activeDays", 6).containsEntry("daysWithAlert", 1);
+            assertThat(part.points()).isCloseTo(25.0 * 5 / 6, org.assertj.core.data.Offset.offset(1e-9));
+            Alert salesDay = new Alert("G7:day:2026-11-03", "G7", "CANCELED_INVOICES", Severity.MEDIUM, "ACTIVITY",
+                    Map.of(), List.of(), null, null, at(3, 10), LocalDate.of(2026, 11, 3), null);
+            var part2 = HealthScore.activity(d.build(), List.of(salesDay));
+            assertThat(part2.numbers()).containsEntry("activeDays", 5).containsEntry("daysWithAlert", 1);
+            assertThat(part2.points()).isEqualTo(20.0);
+            // Only alert days and no sales at all: every active day has an alert (but < 5 invoices → unavailable).
+            Data none = new Data();
+            var part3 = HealthScore.activity(none.build(), List.of(noSales));
+            assertThat(part3.available()).isFalse();
+            assertThat(part3.numbers()).containsEntry("activeDays", 1);
+        }
+
+        /** U3: a critical alert limits a GOOD band to ATTENTION; the score is not changed. */
+        @Test
+        void u3CriticalAlertsLimitAGoodBandButNeverTheScore() {
+            Health_ h = new Health_();
+            List<Alert> alerts = new ArrayList<>(Health_.twoActivityDays());
+            Health without = HealthScore.of(h.example(90).build(), 6, alerts);
+            assertThat(without.score()).isEqualTo(92);
+            assertThat(without.band()).isEqualTo("GOOD");
+            assertThat(without.bandLimited()).isFalse();
+            assertThat(without.criticalAlerts()).isZero();
+            alerts.add(high("G5:out", "G5"));
+            alerts.add(high("G3:product:7", "G3"));
+            Health with = HealthScore.of(h.example(90).build(), 6, alerts);
+            assertThat(with.score()).isEqualTo(92);
+            assertThat(with.parts()).extracting(p -> p.points()).containsExactly(21.25, 24.44, 23.75, 22.5);
+            assertThat(with.band()).isEqualTo("ATTENTION");
+            assertThat(with.bandLimited()).isTrue();
+            assertThat(with.criticalAlerts()).isEqualTo(2);
+            // A band that is already ATTENTION or RISK is not changed (nothing to limit).
+            Data risky = h.example(90);
+            risky.products.replaceAll(p -> new ProductFact(p.id(), p.name(), p.category(), p.price(), p.cost(), 0,
+                    p.minStock(), p.createdAt()));
+            Health r = HealthScore.of(risky.build(), 120, alerts);
+            assertThat(r.band()).isEqualTo("RISK");
+            assertThat(r.bandLimited()).isFalse();
+            // Not enough data: no score, no band, the critical alerts are still counted.
+            Health no = HealthScore.of(new Data().build(), 0, alerts);
+            assertThat(no.score()).isNull();
+            assertThat(no.band()).isNull();
+            assertThat(no.criticalAlerts()).isEqualTo(2);
+            assertThat(no.bandLimited()).isFalse();
+        }
+
+        /** U4: the audit's two-product invoice — Milk's share 4.50 is below its cost 4.60. */
+        @Test
+        void u4G2cReportsTheLineWhoseShareOfTheDiscountIsBelowItsCost() {
+            Data d = new Data();
+            d.product(1, "Milk", "dairy", 5, 4.6, 50, 5, 60);
+            d.product(2, "Chocolate", "snacks", 20, 8.0, 50, 5, 60);
+            InvoiceFact inv = d.invoice(1, 25, 2.5, at(20, 10), 2, 0, 12.6);
+            d.shareLine(inv, 1, "Milk", 1, 5, 4.6, 0);
+            d.shareLine(inv, 2, "Chocolate", 1, 20, 8.0, 0);
+            List<Alert> a = new DiscountShareRule().evaluate(d.build());
+            assertThat(a).hasSize(1);
+            Alert g2c = a.get(0);
+            assertThat(g2c.rule()).isEqualTo("G2c");
+            assertThat(g2c.code()).isEqualTo("DISCOUNT_SHARE_BELOW_COST");
+            assertThat(g2c.severity()).isEqualTo(Severity.MEDIUM);
+            assertThat(g2c.key()).isEqualTo("G2c:product:1:2026-11-20");
+            assertThat(g2c.params()).containsEntry("productName", "Milk").containsEntry("allocatedUnitRevenue", 4.5)
+                    .containsEntry("unitCost", 4.6).containsEntry("shortfall", 0.1)
+                    .containsEntry("discountPercent", 10.0).containsEntry("units", 1);
+            assertThat(g2c.action().type()).isEqualTo("PRODUCT");
+            assertThat(g2c.actor()).isNull(); // about the product's margin, not a person
+            // The invoice is still profitable: no G2b.
+            assertThat(only(new BelowCostRule().evaluate(d.build()), "G2b")).isEmpty();
+        }
+
+        @Test
+        void u4NoG2cWhenTheShareEqualsTheCostThePriceIsBelowCostOrTheInvoiceIsALoss() {
+            Data d = new Data();
+            d.product(1, "Milk", "dairy", 5, 4.5, 50, 5, 60);
+            // Share 5 × 22.5 / 25 = 4.50 = cost → not below.
+            InvoiceFact equal = d.invoice(1, 25, 2.5, at(20, 10), 2, 0, 12.5);
+            d.shareLine(equal, 1, "Milk", 1, 5, 4.5, 0);
+            // Price 4.00 below the cost 4.50 before any discount → G2a, not G2c.
+            InvoiceFact below = d.invoice(2, 24, 2.4, at(20, 11), 2, 0, 12.5);
+            d.shareLine(below, 1, "Milk", 1, 4, 4.5, 0);
+            // A confirmed-loss invoice (net 9.00 < cost 9.20) → G2b only.
+            InvoiceFact loss = d.invoice(3, 10, 1, at(20, 12), 1, 0, 9.2);
+            d.shareLine(loss, 1, "Milk", 2, 5, 4.6, 0);
+            // Share 4.599996 rounds to 4.60 = cost → not below (amounts are compared to the agora).
+            InvoiceFact rounding = d.invoice(4, 30, 2.40001, at(20, 13), 2, 0, 12.6);
+            d.shareLine(rounding, 1, "Milk", 1, 5, 4.6, 0);
+            assertThat(new DiscountShareRule().evaluate(d.build())).isEmpty();
+        }
+
+        @Test
+        void u4AnInvoiceWithAnotherLineWithoutCostStillQualifiesAndReturnsAreShownNotSubtracted() {
+            Data d = new Data();
+            d.product(1, "Milk", "dairy", 5, 4.6, 50, 5, 60);
+            // Milk + Bread (no cost): incomplete cost, so never a loss; Milk's own share is still known.
+            InvoiceFact inv = d.invoice(1, 10, 1, at(20, 10), 2, 1, 4.6);
+            d.shareLine(inv, 1, "Milk", 1, 5, 4.6, 1);
+            InvoiceFact inv2 = d.invoice(2, 25, 2.5, at(20, 15), 2, 0, 12.6);
+            d.shareLine(inv2, 1, "Milk", 1, 5, 4.6, 0);
+            List<Alert> a = new DiscountShareRule().evaluate(d.build());
+            assertThat(a).hasSize(1); // one per product per day
+            assertThat(a.get(0).params()).containsEntry("times", 2).containsEntry("units", 2)
+                    .containsEntry("unitsReturned", 1).containsEntry("shortfall", 0.2)
+                    .containsEntry("invoices", List.of("INV-000001", "INV-000002"));
+        }
+
+        /** Two invoices of the day with different discounts: the numbers shown are the worst line's. */
+        @Test
+        void u4TheNumbersShownAreThoseOfTheWorstLine() {
+            Data d = new Data();
+            d.product(1, "Milk", "dairy", 5, 4.6, 50, 5, 60);
+            InvoiceFact small = d.invoice(1, 25, 2.5, at(20, 10), 2, 0, 12.6);   // 10% → 4.50
+            d.shareLine(small, 1, "Milk", 1, 5, 4.6, 0);
+            InvoiceFact big = d.invoice(2, 25, 5, at(20, 11), 2, 0, 12.6);       // 20% → 4.00
+            d.shareLine(big, 1, "Milk", 1, 5, 4.6, 0);
+            Alert a = new DiscountShareRule().evaluate(d.build()).get(0);
+            assertThat(a.params()).containsEntry("allocatedUnitRevenue", 4.0).containsEntry("discountPercent", 20.0)
+                    .containsEntry("shortfall", 0.7).containsEntry("times", 2);
+        }
+
+        /** U8: G3, G2a and G2b about one product and invoice are one incident; G5 stays separate. */
+        @Test
+        void u8AlertsAboutTheSameProductOrInvoiceAreLinkedAndCountedOnce() {
+            Data d = new Data();
+            d.product(7, "Cake", "bakery", 2, 3.0, 0, 5, 60);          // G3 HIGH + G5 HIGH (out of stock)
+            d.invoices.add(new InvoiceFact(1, "INV-000001", AHMAD, "Ahmad", 10, 0, 11.6, at(20, 10), 1, 0, 15.0, 5, 0));
+            d.lines.add(new LineFact(1, "INV-000001", 7L, "Cake", 5, 2.0, 3.0, at(20, 10), 0)); // G2a + G2b
+            d.invoice(2, 100, 9, at(21, 10), 1, 1, 0);                  // G1 MEDIUM on another invoice
+            GuardianAnalysis.Result r = GuardianAnalysis.analyze(d.build());
+            Map<String, Alert> byRule = new HashMap<>();
+            for (Alert a : r.alerts()) byRule.put(a.rule(), a);
+            assertThat(byRule.get("G2b").related()).containsExactlyInAnyOrder("G3:product:7", "G2a:product:7:2026-11-20");
+            assertThat(byRule.get("G3").related()).containsExactlyInAnyOrder("G2b:sale:1", "G2a:product:7:2026-11-20");
+            assertThat(byRule.get("G5").related()).isEmpty();   // a list of products: never linked
+            assertThat(byRule.get("G1").related()).isEmpty();   // another invoice
+            assertThat(r.criticalCount()).isEqualTo(4);
+            assertThat(r.criticalIssues()).isEqualTo(2);
+            // The alert list itself is unchanged: still one alert per rule and subject.
+            assertThat(r.alerts()).extracting(Alert::rule).containsExactlyInAnyOrder("G2a", "G2b", "G3", "G5", "G1");
+        }
+
+        /** Month boundary: Oct 30, Oct 31 and Nov 1 are 3 returns in 7 days; reported once, in November. */
+        @Test
+        void g8bAnEpisodeThatReachesTheLimitInThisMonthCountsReturnsOfTheMonthBefore() {
+            Data nov = new Data();
+            nov.product(5, "Juice", "drinks", 3, null, 10, 2, 60);
+            nov.earlierReturns.add(new ReturnFact(1, 11, 5L, "Juice", 1, 3, LocalDateTime.of(2026, 10, 30, 9, 0), SARA, "Sara"));
+            nov.earlierReturns.add(new ReturnFact(2, 12, 5L, "Juice", 1, 3, LocalDateTime.of(2026, 10, 31, 9, 0), SARA, "Sara"));
+            nov.returns.add(new ReturnFact(3, 13, 5L, "Juice", 1, 3, LocalDateTime.of(2026, 11, 1, 9, 0), SARA, "Sara"));
+            List<Alert> a = only(new ReturnsRule().evaluate(nov.build()), "G8b");
+            assertThat(a).hasSize(1);
+            assertThat(a.get(0).params()).containsEntry("count", 3).containsEntry("units", 3).containsEntry("episodes", 1);
+            assertThat(a.get(0).evidence()).extracting(x -> x.id()).containsExactly(11L, 12L, 13L, 5L);
+            // October alone (the November return is not part of it): 2 returns → nothing.
+            Data oct = october();
+            oct.returns.add(nov.earlierReturns.get(0));
+            oct.returns.add(nov.earlierReturns.get(1));
+            assertThat(only(new ReturnsRule().evaluate(oct.build()), "G8b")).isEmpty();
+            // G8a still uses only the period's own returns.
+            assertThat(nov.build().returns()).hasSize(1);
+        }
+
+        /** An episode that reached the limit in October is October's; going on into November adds no alert. */
+        @Test
+        void g8bAnEpisodeIsNeverCountedAgainInTheNextMonth() {
+            ReturnFact r1 = new ReturnFact(1, 11, 5L, "Jam", 1, 3, LocalDateTime.of(2026, 10, 29, 9, 0), SARA, "Sara");
+            ReturnFact r2 = new ReturnFact(2, 12, 5L, "Jam", 1, 3, LocalDateTime.of(2026, 10, 30, 9, 0), SARA, "Sara");
+            ReturnFact r3 = new ReturnFact(3, 13, 5L, "Jam", 1, 3, LocalDateTime.of(2026, 10, 31, 9, 0), SARA, "Sara");
+            ReturnFact r4 = new ReturnFact(4, 14, 5L, "Jam", 1, 3, LocalDateTime.of(2026, 11, 1, 9, 0), SARA, "Sara");
+            Data oct = october();
+            oct.returns.addAll(List.of(r1, r2, r3));
+            List<Alert> inOct = only(new ReturnsRule().evaluate(oct.build()), "G8b");
+            assertThat(inOct).hasSize(1);
+            assertThat(inOct.get(0).params()).containsEntry("count", 3);
+            Data nov = new Data();
+            nov.earlierReturns.addAll(List.of(r1, r2, r3));
+            nov.returns.add(r4);
+            assertThat(only(new ReturnsRule().evaluate(nov.build()), "G8b")).isEmpty();
+        }
+
+        /** Two separate episodes in one month: one alert (unique key), with the larger window and "episodes" 2. */
+        @Test
+        void g8bTwoEpisodesInOneMonthGiveOneAlertWithBothCounted() {
+            Data d = new Data();
+            for (int day : new int[]{1, 2, 3}) d.returned(5, "Yogurt", 3, at(day, 9), SARA, "Sara");
+            for (int day : new int[]{15, 16, 17, 18}) d.returned(5, "Yogurt", 3, at(day, 9), SARA, "Sara");
+            List<Alert> a = only(new ReturnsRule().evaluate(d.build()), "G8b");
+            assertThat(a).hasSize(1);
+            assertThat(a.get(0).params()).containsEntry("count", 4).containsEntry("episodes", 2).containsEntry("units", 4);
+            assertThat(a.get(0).occurredAt()).isEqualTo(at(18, 9));
+        }
+
+        Data october() {
+            Data d = new Data();
+            d.from = LocalDate.of(2026, 10, 1);
+            d.to = LocalDate.of(2026, 10, 31);
+            d.current = false;
+            return d;
+        }
     }
 
     /** Audit item 4: a sale-time loss later returned keeps its sale-time numbers and says what was returned. */
