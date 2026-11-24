@@ -155,11 +155,16 @@ void main() {
     expect(_in('alertsLow', '2'), findsOneWidget);
   });
 
-  testWidgets('"Create purchase request" is disabled and says why (no fake action)', (tester) async {
+  testWidgets('"Create purchase request" opens the real new purchase order form (Phase 4)', (tester) async {
     await _open(tester, _backend());
     final button = tester.widget<ButtonStyleButton>(find.byKey(const Key('createPurchaseRequest')));
-    expect(button.onPressed, isNull);
-    expect(find.textContaining('Purchase requests are not available yet'), findsOneWidget);
+    expect(button.onPressed, isNotNull);
+    expect(find.textContaining('Purchase requests are not available yet'), findsNothing);
+    await tester.ensureVisible(find.byKey(const Key('createPurchaseRequest')));
+    await tester.tap(find.byKey(const Key('createPurchaseRequest')));
+    await tester.pumpAndSettle();
+    expect(find.text('New Purchase Order'), findsWidgets);
+    expect(find.byKey(const Key('poSupplier')).evaluate().isNotEmpty || find.byKey(const Key('purchaseError')).evaluate().isNotEmpty, isTrue);
   });
 
   testWidgets('cashiers have no Stock Alerts; each store sees only its own', (tester) async {

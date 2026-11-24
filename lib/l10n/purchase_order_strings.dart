@@ -12,9 +12,10 @@ class PurchaseOrderStrings {
 
   final bool isArabic;
 
-  static PurchaseOrderStrings of(BuildContext context) => PurchaseOrderStrings._(
-    Localizations.localeOf(context).languageCode == 'ar',
-  );
+  static PurchaseOrderStrings of(BuildContext context) =>
+      PurchaseOrderStrings._(
+        Localizations.localeOf(context).languageCode == 'ar',
+      );
 
   String _t(String en, String ar) => isArabic ? ar : en;
 
@@ -37,23 +38,39 @@ class PurchaseOrderStrings {
     'Reported by this app; ClixSell cannot verify it.',
     'حسب التطبيق؛ لا يستطيع ClixSell التحقق منه.',
   );
-  String get manualRecord => _t('Recorded manually by a manager', 'تسجيل يدوي من المدير');
-  String by(String name, String? at) =>
-      _t('by ${iso(name)}${at == null ? '' : ' · ${iso(at)}'}', 'بواسطة ${iso(name)}${at == null ? '' : ' · ${iso(at)}'}');
+  String get manualRecord =>
+      _t('Recorded manually by a manager', 'تسجيل يدوي من المدير');
+  String by(String name, String? at) => _t(
+    'by ${iso(name)}${at == null ? '' : ' · ${iso(at)}'}',
+    'بواسطة ${iso(name)}${at == null ? '' : ' · ${iso(at)}'}',
+  );
   String get noCostInMessage => _t(
     'For your information only — never shown in the supplier message.',
     'للعلم فقط — لا تظهر في رسالة المورد أبداً.',
   );
-  String get unknownCost => _t('Unknown (no cost recorded)', 'غير معروفة (لا توجد تكلفة مسجلة)');
+  String get unknownCost =>
+      _t('Unknown (no cost recorded)', 'غير معروفة (لا توجد تكلفة مسجلة)');
 
   // ── statuses ───────────────────────────────────────────────────────────────
   String status(PurchaseOrderStatus s) => switch (s) {
-    PurchaseOrderStatus.pendingApproval => _t('Pending approval', 'بانتظار الموافقة'),
+    PurchaseOrderStatus.pendingApproval => _t(
+      'Pending approval',
+      'بانتظار الموافقة',
+    ),
     PurchaseOrderStatus.approved => _t('Approved', 'موافق عليه'),
-    PurchaseOrderStatus.messageGenerated => _t('Message prepared (not sent)', 'الرسالة جاهزة (لم تُرسل)'),
+    PurchaseOrderStatus.messageGenerated => _t(
+      'Message prepared (not sent)',
+      'الرسالة جاهزة (لم تُرسل)',
+    ),
     PurchaseOrderStatus.sent => _t('Recorded as sent', 'سُجّل كمُرسل'),
-    PurchaseOrderStatus.confirmed => _t('Supplier confirmation recorded', 'سُجّل تأكيد المورد'),
-    PurchaseOrderStatus.closed => _t('Closed (no receiving)', 'مغلق (بدون استلام)'),
+    PurchaseOrderStatus.confirmed => _t(
+      'Supplier confirmation recorded',
+      'سُجّل تأكيد المورد',
+    ),
+    PurchaseOrderStatus.closed => _t(
+      'Closed (no receiving)',
+      'مغلق (بدون استلام)',
+    ),
     PurchaseOrderStatus.rejected => _t('Rejected', 'مرفوض'),
     PurchaseOrderStatus.canceled => _t('Canceled', 'ملغى'),
   };
@@ -61,15 +78,22 @@ class PurchaseOrderStrings {
   String statusShort(PurchaseOrderStatus s) => switch (s) {
     PurchaseOrderStatus.pendingApproval => _t('Pending', 'بانتظار الموافقة'),
     PurchaseOrderStatus.approved => _t('Approved', 'موافق عليه'),
-    PurchaseOrderStatus.messageGenerated => _t('Message prepared', 'الرسالة جاهزة'),
+    PurchaseOrderStatus.messageGenerated => _t(
+      'Message prepared',
+      'الرسالة جاهزة',
+    ),
     PurchaseOrderStatus.sent => _t('Recorded as sent', 'مسجّل كمُرسل'),
-    PurchaseOrderStatus.confirmed => _t('Supplier confirmed', 'تأكيد المورد مسجّل'),
+    PurchaseOrderStatus.confirmed => _t(
+      'Supplier confirmed',
+      'تأكيد المورد مسجّل',
+    ),
     PurchaseOrderStatus.closed => _t('Closed', 'مغلق'),
     PurchaseOrderStatus.rejected => _t('Rejected', 'مرفوض'),
     PurchaseOrderStatus.canceled => _t('Canceled', 'ملغى'),
   };
 
-  String source(String s) => s == 'GUARDIAN' ? _t('Guardian', 'Guardian') : _t('Manual', 'يدوي');
+  String source(String s) =>
+      s == 'GUARDIAN' ? _t('Guardian', 'Guardian') : _t('Manual', 'يدوي');
 
   // ── list (S1) ──────────────────────────────────────────────────────────────
   String get ordersTitle => _t('Purchase Orders', 'أوامر الشراء');
@@ -78,11 +102,14 @@ class PurchaseOrderStrings {
     'طلبات الشراء من الموردين: الموافقة، رسالة المورد، وما سجّلته. ClixSell لا يرسل الرسائل بنفسه.',
   );
   String get newOrder => _t('New Purchase Order', 'أمر شراء جديد');
-  String get searchOrders => _t('Search by order number or supplier', 'ابحث برقم الأمر أو اسم المورد');
+  String get searchOrders =>
+      _t('Search by order number or supplier', 'ابحث برقم الأمر أو اسم المورد');
   String get filterAll => _t('All', 'الكل');
   String get cardPending => _t('Waiting for approval', 'بانتظار الموافقة');
-  String get cardToContact => _t('To contact supplier', 'بانتظار التواصل مع المورد');
-  String get cardAwaitingSupplier => _t('Waiting for supplier', 'بانتظار تأكيد المورد');
+  String get cardToContact =>
+      _t('To contact supplier', 'بانتظار التواصل مع المورد');
+  String get cardAwaitingSupplier =>
+      _t('Waiting for supplier', 'بانتظار تأكيد المورد');
   String get cardOverdue => _t('Overdue', 'متأخرة');
   String get cardOpenHint => _t('open orders', 'أوامر مفتوحة');
   String get colNumber => _t('Order', 'الأمر');
@@ -95,18 +122,21 @@ class PurchaseOrderStrings {
   String get open => _t('Open', 'فتح');
   String openOrderTooltip(String n) => _t('Open $n', 'فتح ${iso(n)}');
   String get overdue => _t('Overdue', 'متأخر');
-  String get noOrdersTitle => _t('No purchase orders yet', 'لا توجد أوامر شراء بعد');
+  String get noOrdersTitle =>
+      _t('No purchase orders yet', 'لا توجد أوامر شراء بعد');
   String get noOrdersBody => _t(
     'Create an order manually or from the reorder suggestions.',
     'أنشئ أمراً يدوياً أو من اقتراحات الطلب.',
   );
   String get noMatchTitle => _t('No matching orders', 'لا توجد أوامر مطابقة');
-  String get noMatchBody => _t('Try another search or filter.', 'جرّب بحثاً أو فلتراً آخر.');
+  String get noMatchBody =>
+      _t('Try another search or filter.', 'جرّب بحثاً أو فلتراً آخر.');
   String showing(int from, int to, int total) => _t(
     'Showing ${iso('$from–$to')} of ${iso('$total')}',
     'عرض ${iso('$from–$to')} من ${iso('$total')}',
   );
-  String get couldNotLoad => _t('Could not load the orders', 'تعذّر تحميل الأوامر');
+  String get couldNotLoad =>
+      _t('Could not load the orders', 'تعذّر تحميل الأوامر');
 
   // ── recommendations (S2) ──────────────────────────────────────────────────
   String get recTitle => _t('Reorder Suggestions', 'اقتراحات الطلب');
@@ -114,13 +144,15 @@ class PurchaseOrderStrings {
     'Products to reorder by supplier, calculated by fixed rules from stock and recent sales (not an AI model).',
     'منتجات يُقترح طلبها حسب المورد، محسوبة بقواعد ثابتة من المخزون والمبيعات الأخيرة (ليست نموذج ذكاء اصطناعي).',
   );
-  String get guardianOffTitle => _t('Guardian Mode is off', 'وضع Guardian مطفأ');
+  String get guardianOffTitle =>
+      _t('Guardian Mode is off', 'وضع Guardian مطفأ');
   String get guardianOffBody => _t(
     'Reorder suggestions are calculated only while Guardian Mode is on. Nothing is shown instead of them. You can still create a manual purchase order.',
     'اقتراحات الطلب تُحسب فقط عندما يكون وضع Guardian مفعّلاً. لا نعرض أي اقتراحات بديلة. يمكنك إنشاء أمر شراء يدوي.',
   );
   String get manualOrder => _t('Create a manual order', 'إنشاء أمر يدوي');
-  String get noRecommendations => _t('Nothing needs reordering now', 'لا يوجد ما يحتاج طلباً الآن');
+  String get noRecommendations =>
+      _t('Nothing needs reordering now', 'لا يوجد ما يحتاج طلباً الآن');
   String get noRecommendationsBody => _t(
     'No product is out of stock, at its minimum or expected to run out within 7 days.',
     'لا يوجد منتج نفد أو وصل للحد الأدنى أو يُتوقع نفاده خلال 7 أيام.',
@@ -139,7 +171,10 @@ class PurchaseOrderStrings {
   );
   String get supplierInactive => _t('Supplier inactive', 'المورد موقوف');
   String get noWhatsapp => _t('No WhatsApp number', 'لا يوجد رقم WhatsApp');
-  String get inconsistentTitle => _t('Products with an invalid stock quantity', 'منتجات بكمية مخزون غير صالحة');
+  String get inconsistentTitle => _t(
+    'Products with an invalid stock quantity',
+    'منتجات بكمية مخزون غير صالحة',
+  );
   String get inconsistentBody => _t(
     'These products cannot be ordered until their stock is corrected in Products.',
     'لا يمكن طلب هذه المنتجات حتى تُصحّح كميتها في صفحة المنتجات.',
@@ -155,7 +190,10 @@ class PurchaseOrderStrings {
   String unavailable(String? r) => switch (r) {
     'SUPPLIER_INACTIVE' => _t('Supplier inactive', 'المورد موقوف'),
     'IN_OPEN_ORDER' => _t('Already in an open order', 'موجود في أمر مفتوح'),
-    'INCONSISTENT_STOCK' => _t('Invalid stock quantity', 'كمية مخزون غير صالحة'),
+    'INCONSISTENT_STOCK' => _t(
+      'Invalid stock quantity',
+      'كمية مخزون غير صالحة',
+    ),
     _ => _t('Not available', 'غير متاح'),
   };
   String inOpenOrder(String number, int qty) => _t(
@@ -168,7 +206,8 @@ class PurchaseOrderStrings {
   String get colSuggested => _t('Suggested', 'المقترح');
   String get colQuantity => _t('Quantity', 'الكمية');
   String get colWhy => _t('How it was calculated', 'طريقة الحساب');
-  String get noSuggestedQty => _t('No basis — choose yourself', 'لا يوجد أساس — اختر بنفسك');
+  String get noSuggestedQty =>
+      _t('No basis — choose yourself', 'لا يوجد أساس — اختر بنفسك');
 
   /// The rule explanation in the UI language, from the server's numbers.
   String explanation(RecommendationItem r) {
@@ -198,10 +237,22 @@ class PurchaseOrderStrings {
 
   // ── cautions ───────────────────────────────────────────────────────────────
   String cautionTitle(String type) => switch (type) {
-    'RECENTLY_CLOSED' => _t('Ordered recently (closed, receiving not recorded)', 'طُلب مؤخراً (أُغلق، ولم يُسجّل استلام)'),
-    'CANCELED_AFTER_CONTACT' => _t('Canceled after the supplier was contacted', 'أُلغي بعد التواصل مع المورد'),
-    'CONTACT_UNKNOWN' => _t('Canceled — unknown whether the supplier got the message', 'أُلغي — غير معروف إن وصلت الرسالة للمورد'),
-    'DECLARED_NOT_SENT' => _t('Canceled as "not sent" after the message was copied/opened', 'أُلغي كـ"لم تُرسل" بعد نسخ/فتح الرسالة'),
+    'RECENTLY_CLOSED' => _t(
+      'Ordered recently (closed, receiving not recorded)',
+      'طُلب مؤخراً (أُغلق، ولم يُسجّل استلام)',
+    ),
+    'CANCELED_AFTER_CONTACT' => _t(
+      'Canceled after the supplier was contacted',
+      'أُلغي بعد التواصل مع المورد',
+    ),
+    'CONTACT_UNKNOWN' => _t(
+      'Canceled — unknown whether the supplier got the message',
+      'أُلغي — غير معروف إن وصلت الرسالة للمورد',
+    ),
+    'DECLARED_NOT_SENT' => _t(
+      'Canceled as "not sent" after the message was copied/opened',
+      'أُلغي كـ"لم تُرسل" بعد نسخ/فتح الرسالة',
+    ),
     _ => type,
   };
   String cautionBody(PurchaseCaution c) => _t(
@@ -212,7 +263,8 @@ class PurchaseOrderStrings {
     'I checked: order this product anyway',
     'تحققت: اطلب هذا المنتج على أي حال',
   );
-  String get cautionsTitle => _t('Recently ordered products', 'منتجات طُلبت مؤخراً');
+  String get cautionsTitle =>
+      _t('Recently ordered products', 'منتجات طُلبت مؤخراً');
   String get cautionsBody => _t(
     'These products are in recent orders that may still arrive. Confirm each one to continue.',
     'هذه المنتجات في أوامر حديثة قد تصل. أكّد كل واحد منها للمتابعة.',
@@ -226,7 +278,8 @@ class PurchaseOrderStrings {
     'اختر المورد والمنتجات المطلوبة. يُحفظ الأمر بانتظار الموافقة.',
   );
   String get stepSupplier => _t('1. Supplier', '1. المورد');
-  String get stepProducts => _t('2. Products and quantities', '2. المنتجات والكميات');
+  String get stepProducts =>
+      _t('2. Products and quantities', '2. المنتجات والكميات');
   String get stepReview => _t('3. Note and review', '3. الملاحظة والمراجعة');
   String get chooseSupplier => _t('Choose a supplier', 'اختر المورد');
   String get inactiveSupplierOption => _t('(inactive)', '(موقوف)');
@@ -234,13 +287,17 @@ class PurchaseOrderStrings {
     'This supplier has no WhatsApp number: you will not be able to prepare the supplier message until you add one in Suppliers.',
     'هذا المورد ليس لديه رقم WhatsApp: لن تستطيع تجهيز رسالة المورد حتى تضيفه من صفحة الموردين.',
   );
-  String get fromSuggestions => _t('From reorder suggestions (Guardian)', 'من اقتراحات الطلب (Guardian)');
+  String get fromSuggestions =>
+      _t('From reorder suggestions (Guardian)', 'من اقتراحات الطلب (Guardian)');
   String get manualSource => _t('Manual order', 'أمر يدوي');
-  String get noProducts => _t('This supplier has no products.', 'لا توجد منتجات لهذا المورد.');
+  String get noProducts =>
+      _t('This supplier has no products.', 'لا توجد منتجات لهذا المورد.');
   String get addProductToOrder => _t('Add', 'إضافة');
   String get removeLine => _t('Remove', 'إزالة');
-  String get quantityError => _t('Whole number 1–100000', 'رقم صحيح من 1 إلى 100000');
-  String get noteLabel => _t('Internal note (optional)', 'ملاحظة داخلية (اختيارية)');
+  String get quantityError =>
+      _t('Whole number 1–100000', 'رقم صحيح من 1 إلى 100000');
+  String get noteLabel =>
+      _t('Internal note (optional)', 'ملاحظة داخلية (اختيارية)');
   String get noteHelp => _t(
     'For your team only. It is not included in the supplier message.',
     'لفريقك فقط. لا تُضاف إلى رسالة المورد.',
@@ -248,23 +305,30 @@ class PurchaseOrderStrings {
   String get noteTooLong => _t('At most 500 characters', '500 حرف كحد أقصى');
   String get expectedCost => _t('Expected cost', 'التكلفة المتوقعة');
   String get selectedItems => _t('Order lines', 'بنود الأمر');
-  String get noLines => _t('Add at least one product.', 'أضف منتجاً واحداً على الأقل.');
+  String get noLines =>
+      _t('Add at least one product.', 'أضف منتجاً واحداً على الأقل.');
   String get save => _t('Save order', 'حفظ الأمر');
   String get saveChanges => _t('Save changes', 'حفظ التغييرات');
-  String get changedQuantity => _t('changed from the suggestion', 'معدّلة عن الاقتراح');
+  String get changedQuantity =>
+      _t('changed from the suggestion', 'معدّلة عن الاقتراح');
   String get deletedLineWillBeRemoved => _t(
     'The product of this line was deleted; saving removes the line.',
     'منتج هذا البند حُذف؛ الحفظ يزيله من الأمر.',
   );
-  String get unresolvedTitle => _t('Saving could not be confirmed', 'تعذّر التأكد من الحفظ');
+  String get unresolvedTitle =>
+      _t('Saving could not be confirmed', 'تعذّر التأكد من الحفظ');
   String get unresolvedBody => _t(
     'The server did not answer. The order may or may not have been saved. The form is locked; "Check and retry" sends exactly the same request again, so it can never create a second order.',
     'لم يرد الخادم. قد يكون الأمر حُفظ أو لم يُحفظ. النموذج مقفل؛ "تحقق وأعد المحاولة" يرسل نفس الطلب بالضبط، فلا يمكن أن يُنشئ أمراً ثانياً.',
   );
   String get checkAndRetry => _t('Check and retry', 'تحقق وأعد المحاولة');
-  String get savedReplayed => _t('The order had already been saved.', 'الأمر كان قد حُفظ مسبقاً.');
+  String get savedReplayed =>
+      _t('The order had already been saved.', 'الأمر كان قد حُفظ مسبقاً.');
   String get leaveTitle => _t('Discard changes?', 'تجاهل التغييرات؟');
-  String get leaveBody => _t('Your changes to this order are not saved.', 'تغييراتك على هذا الأمر غير محفوظة.');
+  String get leaveBody => _t(
+    'Your changes to this order are not saved.',
+    'تغييراتك على هذا الأمر غير محفوظة.',
+  );
   String get discard => _t('Discard', 'تجاهل');
   String get keepEditing => _t('Keep editing', 'متابعة التعديل');
 
@@ -272,13 +336,23 @@ class PurchaseOrderStrings {
   String get tabItems => _t('Items', 'البنود');
   String get tabHistory => _t('History', 'السجل');
   String get stepsTitle => _t('Progress', 'المراحل');
-  String get approvalBlockersTitle => _t('Why it cannot be approved now', 'لماذا لا يمكن الموافقة الآن');
+  String get approvalBlockersTitle =>
+      _t('Why it cannot be approved now', 'لماذا لا يمكن الموافقة الآن');
   String blocker(String b) => switch (b) {
     'SUPPLIER_INACTIVE' => _t('The supplier is inactive.', 'المورد موقوف.'),
     'ORDER_EMPTY' => _t('The order has no products.', 'الأمر لا يحتوي منتجات.'),
-    'ITEM_PRODUCT_DELETED' => _t('A product of the order was deleted: edit the order.', 'أحد منتجات الأمر حُذف: عدّل الأمر.'),
-    'PRODUCT_SUPPLIER_CHANGED' => _t('A product now has another supplier: edit the order.', 'أحد المنتجات أصبح لمورد آخر: عدّل الأمر.'),
-    'MESSAGE_TOO_LONG' => _t('The supplier message would be too long for WhatsApp: move some lines to another order.', 'رسالة المورد ستكون أطول من المسموح: انقل بعض البنود إلى أمر آخر.'),
+    'ITEM_PRODUCT_DELETED' => _t(
+      'A product of the order was deleted: edit the order.',
+      'أحد منتجات الأمر حُذف: عدّل الأمر.',
+    ),
+    'PRODUCT_SUPPLIER_CHANGED' => _t(
+      'A product now has another supplier: edit the order.',
+      'أحد المنتجات أصبح لمورد آخر: عدّل الأمر.',
+    ),
+    'MESSAGE_TOO_LONG' => _t(
+      'The supplier message would be too long for WhatsApp: move some lines to another order.',
+      'رسالة المورد ستكون أطول من المسموح: انقل بعض البنود إلى أمر آخر.',
+    ),
     _ => b,
   };
   String get lengthTitle => _t('Supplier message length', 'طول رسالة المورد');
@@ -290,7 +364,8 @@ class PurchaseOrderStrings {
     'Too long: move at least ${iso('$n')} line(s) to another order. Longest lines:',
     'طويلة جداً: انقل ${iso('$n')} بند/بنود على الأقل إلى أمر آخر. أطول البنود:',
   );
-  String get fitsOk => _t('Fits in one WhatsApp message.', 'تتسع في رسالة WhatsApp واحدة.');
+  String get fitsOk =>
+      _t('Fits in one WhatsApp message.', 'تتسع في رسالة WhatsApp واحدة.');
   String get colBarcode => _t('Barcode', 'الباركود');
   String get colBasis => _t('Basis', 'الأساس');
   String get colUnitCost => _t('Expected unit cost', 'تكلفة الوحدة المتوقعة');
@@ -301,7 +376,8 @@ class PurchaseOrderStrings {
     'MIN_STOCK_ONLY' => _t('Minimum only', 'الحد الأدنى فقط'),
     _ => _t('Manual', 'يدوي'),
   };
-  String get totalExpected => _t('Expected total cost', 'إجمالي التكلفة المتوقعة');
+  String get totalExpected =>
+      _t('Expected total cost', 'إجمالي التكلفة المتوقعة');
   String get noteTitle => _t('Internal note', 'الملاحظة الداخلية');
   String get createdLabel => _t('Created', 'أُنشئ');
   String get approvedLabel => _t('Approved', 'الموافقة');
@@ -315,11 +391,13 @@ class PurchaseOrderStrings {
     'Overdue: the next step has waited longer than usual (pending ≥ 3 days, approved or message prepared ≥ 1 day, sent ≥ 3 days, confirmed ≥ 14 days).',
     'متأخر: الخطوة التالية تنتظر أكثر من المعتاد (بانتظار الموافقة ≥ 3 أيام، موافق عليه أو الرسالة جاهزة ≥ يوم، مُرسل ≥ 3 أيام، مؤكد ≥ 14 يوماً).',
   );
-  String get supplierInactiveBanner => _t('This supplier is inactive.', 'هذا المورد موقوف.');
+  String get supplierInactiveBanner =>
+      _t('This supplier is inactive.', 'هذا المورد موقوف.');
 
   // message card
   String get messageTitle => _t('Supplier message', 'رسالة المورد');
-  String get savedDestination => _t('Saved WhatsApp number', 'رقم WhatsApp المحفوظ');
+  String get savedDestination =>
+      _t('Saved WhatsApp number', 'رقم WhatsApp المحفوظ');
   String preparedBy(String who, String? at) => _t(
     'Prepared by ${iso(who)}${at == null ? '' : ' · ${iso(at)}'} — not sent by ClixSell',
     'جهّزها ${iso(who)}${at == null ? '' : ' · ${iso(at)}'} — ClixSell لم يرسلها',
@@ -334,13 +412,18 @@ class PurchaseOrderStrings {
   );
 
   // communication card
-  String get communicationTitle => _t('Supplier communication', 'التواصل مع المورد');
-  String copies(int n) => _t('Message copied: ${iso('$n')} time(s)', 'نُسخت الرسالة: ${iso('$n')} مرة');
+  String get communicationTitle =>
+      _t('Supplier communication', 'التواصل مع المورد');
+  String copies(int n) => _t(
+    'Message copied: ${iso('$n')} time(s)',
+    'نُسخت الرسالة: ${iso('$n')} مرة',
+  );
   String opens(int n, int reports) => _t(
     'WhatsApp opening requested: ${iso('$n')} time(s) (results reported: ${iso('$reports')})',
     'طُلب فتح WhatsApp: ${iso('$n')} مرة (نتائج مُبلّغ عنها: ${iso('$reports')})',
   );
-  String get sentNotRecorded => _t('Sending: not recorded', 'الإرسال: غير مسجّل');
+  String get sentNotRecorded =>
+      _t('Sending: not recorded', 'الإرسال: غير مسجّل');
   String sentRecorded(String who, String? at) => _t(
     'Sending recorded by ${iso(who)}${at == null ? '' : ' · ${iso(at)}'} (manual record)',
     'سجّل ${iso(who)} الإرسال${at == null ? '' : ' · ${iso(at)}'} (تسجيل يدوي)',
@@ -354,10 +437,22 @@ class PurchaseOrderStrings {
     'أغلقه ${iso(who)}${at == null ? '' : ' · ${iso(at)}'} — لم يُسجّل استلام البضاعة؛ والمخزون لم يتغير',
   );
   String contactAtCancel(String? c) => switch (c) {
-    'NOT_SENT' => _t('Canceled — the manager declared the message was not sent', 'أُلغي — صرّح المدير أن الرسالة لم تُرسل'),
-    'UNKNOWN' => _t('Canceled — unknown whether the supplier got the message', 'أُلغي — غير معروف إن وصلت الرسالة للمورد'),
-    'MANAGER_RECORDED_SENT' => _t('Canceled after the supplier was contacted', 'أُلغي بعد التواصل مع المورد'),
-    _ => _t('Canceled before any supplier message', 'أُلغي قبل أي رسالة للمورد'),
+    'NOT_SENT' => _t(
+      'Canceled — the manager declared the message was not sent',
+      'أُلغي — صرّح المدير أن الرسالة لم تُرسل',
+    ),
+    'UNKNOWN' => _t(
+      'Canceled — unknown whether the supplier got the message',
+      'أُلغي — غير معروف إن وصلت الرسالة للمورد',
+    ),
+    'MANAGER_RECORDED_SENT' => _t(
+      'Canceled after the supplier was contacted',
+      'أُلغي بعد التواصل مع المورد',
+    ),
+    _ => _t(
+      'Canceled before any supplier message',
+      'أُلغي قبل أي رسالة للمورد',
+    ),
   };
   String get cancelNotTold => _t(
     'Cancelling in ClixSell does not mean the supplier was told or agreed.',
@@ -380,15 +475,23 @@ class PurchaseOrderStrings {
   String get actPrepare => _t('Prepare Message', 'تجهيز الرسالة');
   String get actOpen => _t('Open WhatsApp', 'فتح WhatsApp');
   String get actCopy => _t('Copy Message', 'نسخ الرسالة');
-  String get actMarkSent => _t('I Have Sent This Message', 'لقد أرسلت هذه الرسالة');
-  String get actConfirm => _t('Record Supplier Confirmation', 'تسجيل تأكيد المورد');
-  String get actClose => _t('Close Order (no receiving)', 'إغلاق الأمر (بدون استلام)');
-  String get actSupplierCancel => _t('Record Supplier Acceptance of Cancellation', 'تسجيل قبول المورد للإلغاء');
+  String get actMarkSent =>
+      _t('I Have Sent This Message', 'لقد أرسلت هذه الرسالة');
+  String get actConfirm =>
+      _t('Record Supplier Confirmation', 'تسجيل تأكيد المورد');
+  String get actClose =>
+      _t('Close Order (no receiving)', 'إغلاق الأمر (بدون استلام)');
+  String get actSupplierCancel => _t(
+    'Record Supplier Acceptance of Cancellation',
+    'تسجيل قبول المورد للإلغاء',
+  );
   String get actMore => _t('More', 'المزيد');
-  String get actOpenAgain => _t('Open WhatsApp again (follow-up)…', 'فتح WhatsApp مرة أخرى (متابعة)…');
+  String get actOpenAgain =>
+      _t('Open WhatsApp again (follow-up)…', 'فتح WhatsApp مرة أخرى (متابعة)…');
 
   // ── dialogs ────────────────────────────────────────────────────────────────
-  String get approveTitle => _t('Approve this order?', 'الموافقة على هذا الأمر؟');
+  String get approveTitle =>
+      _t('Approve this order?', 'الموافقة على هذا الأمر؟');
   String get approveBody => _t(
     'After approval you can prepare the supplier message. Nothing is sent to the supplier, and stock does not change.',
     'بعد الموافقة يمكنك تجهيز رسالة المورد. لا يُرسل أي شيء للمورد، ولا يتغير المخزون.',
@@ -401,12 +504,16 @@ class PurchaseOrderStrings {
     'No supplier message was prepared: the supplier does not know about this order. The products are released for new orders.',
     'لم تُجهّز رسالة للمورد: المورد لا يعرف بهذا الأمر. تتحرر المنتجات لأوامر جديدة.',
   );
-  String get wasItSent => _t('Did you send this message to the supplier?', 'هل أرسلت هذه الرسالة إلى المورد؟');
+  String get wasItSent => _t(
+    'Did you send this message to the supplier?',
+    'هل أرسلت هذه الرسالة إلى المورد؟',
+  );
   String get wasItSentHelp => _t(
     'The message was prepared and may have been copied or sent by hand. ClixSell cannot know. Choose what is true:',
     'الرسالة جُهّزت وربما نُسخت أو أُرسلت يدوياً. ClixSell لا يستطيع أن يعرف. اختر ما هو صحيح:',
   );
-  String get optNotSent => _t('No — I am sure it was NOT sent', 'لا — أنا متأكد أنها لم تُرسل');
+  String get optNotSent =>
+      _t('No — I am sure it was NOT sent', 'لا — أنا متأكد أنها لم تُرسل');
   String get optUnknown => _t('I do not know', 'لا أعرف');
   String get optSent => _t('Yes — I sent it', 'نعم — أرسلتها');
   String get confirmNotSentLabel => _t(
@@ -425,7 +532,8 @@ class PurchaseOrderStrings {
     'Then record the sending first ("I Have Sent This Message"). After that you can cancel the order as canceled after supplier contact.',
     'إذن سجّل الإرسال أولاً ("لقد أرسلت هذه الرسالة"). بعدها يمكنك إلغاء الأمر كإلغاء بعد التواصل مع المورد.',
   );
-  String get goRecordSending => _t('Record the sending first', 'سجّل الإرسال أولاً');
+  String get goRecordSending =>
+      _t('Record the sending first', 'سجّل الإرسال أولاً');
   String get afterContactWarning => _t(
     'The supplier was contacted. Cancelling in ClixSell does NOT notify the supplier: tell them yourself.',
     'تم التواصل مع المورد. الإلغاء في ClixSell لا يُبلغ المورد: أبلغه بنفسك.',
@@ -437,7 +545,8 @@ class PurchaseOrderStrings {
   String get confirmCancel => _t('Cancel the order', 'إلغاء الأمر');
   String get keepOrder => _t('Keep the order', 'إبقاء الأمر');
 
-  String get previewTitle => _t('Prepare the supplier message', 'تجهيز رسالة المورد');
+  String get previewTitle =>
+      _t('Prepare the supplier message', 'تجهيز رسالة المورد');
   String get previewOnly => _t(
     'Preview only: nothing is saved or sent. ClixSell never sends messages itself.',
     'معاينة فقط: لا يُحفظ أو يُرسل أي شيء. ClixSell لا يرسل الرسائل بنفسه.',
@@ -446,8 +555,12 @@ class PurchaseOrderStrings {
   String get arabic => _t('Arabic', 'العربية');
   String get english => _t('English', 'الإنجليزية');
   String get toNumber => _t('To WhatsApp number', 'إلى رقم WhatsApp');
-  String lengthOf(int len, int limit) => _t('${iso('$len')} / ${iso('$limit')} characters', '${iso('$len')} / ${iso('$limit')} حرف');
-  String get prepareAndSave => _t('Prepare and save the message', 'تجهيز الرسالة وحفظها');
+  String lengthOf(int len, int limit) => _t(
+    '${iso('$len')} / ${iso('$limit')} characters',
+    '${iso('$len')} / ${iso('$limit')} حرف',
+  );
+  String get prepareAndSave =>
+      _t('Prepare and save the message', 'تجهيز الرسالة وحفظها');
   String get previewChanged => _t(
     'Something changed since your preview (the supplier number, a name or the date). Review the new message before saving.',
     'تغيّر شيء منذ المعاينة (رقم المورد أو اسم أو التاريخ). راجع الرسالة الجديدة قبل الحفظ.',
@@ -463,7 +576,8 @@ class PurchaseOrderStrings {
     'Check the number and the full message. Opening WhatsApp does not send anything and does not record sending.',
     'راجع الرقم والرسالة كاملة. فتح WhatsApp لا يرسل شيئاً ولا يسجّل الإرسال.',
   );
-  String get reviewedLabel => _t('I checked the number and the message', 'راجعت الرقم والرسالة');
+  String get reviewedLabel =>
+      _t('I checked the number and the message', 'راجعت الرقم والرسالة');
   String get changedReviewedLabel => _t(
     'I understand this message goes to the SAVED number above, not the supplier\'s new number',
     'أفهم أن هذه الرسالة ستذهب إلى الرقم المحفوظ أعلاه، وليس رقم المورد الجديد',
@@ -499,7 +613,8 @@ class PurchaseOrderStrings {
     'أريد التواصل مع المورد مجدداً بخصوص هذا الأمر (متابعة)، وليس إرسال طلب جديد',
   );
 
-  String get copied => _t('Message copied to the clipboard.', 'نُسخت الرسالة إلى الحافظة.');
+  String get copied =>
+      _t('Message copied to the clipboard.', 'نُسخت الرسالة إلى الحافظة.');
   String get copyFailed => _t(
     'Copying automatically was not allowed. Select the message text and copy it with Ctrl+C.',
     'لم يُسمح بالنسخ التلقائي. حدّد نص الرسالة وانسخه بـ Ctrl+C.',
@@ -509,7 +624,8 @@ class PurchaseOrderStrings {
     'نُسخت، لكن تعذّر تحديث السجل بعد. نعيد المحاولة بأمان…',
   );
 
-  String get sentTitle => _t('Record that you sent the message', 'تسجيل أنك أرسلت الرسالة');
+  String get sentTitle =>
+      _t('Record that you sent the message', 'تسجيل أنك أرسلت الرسالة');
   String sentCheck(String number) => _t(
     'I sent this message myself to ${iso(number)} (WhatsApp or another way)',
     'أرسلت هذه الرسالة بنفسي إلى ${iso(number)} (عبر WhatsApp أو طريقة أخرى)',
@@ -520,10 +636,16 @@ class PurchaseOrderStrings {
   );
   String get recordSending => _t('Record sending', 'تسجيل الإرسال');
 
-  String get confirmTitle => _t('Record supplier confirmation', 'تسجيل تأكيد المورد');
-  String get confirmCheck => _t('The supplier confirmed this order', 'المورد أكّد هذا الطلب');
-  String get confirmNoteLabel => _t('Note (optional), e.g. "phone call"', 'ملاحظة (اختيارية)، مثل "اتصال هاتفي"');
-  String get confirmNoteError => _t('At most 300 characters', '300 حرف كحد أقصى');
+  String get confirmTitle =>
+      _t('Record supplier confirmation', 'تسجيل تأكيد المورد');
+  String get confirmCheck =>
+      _t('The supplier confirmed this order', 'المورد أكّد هذا الطلب');
+  String get confirmNoteLabel => _t(
+    'Note (optional), e.g. "phone call"',
+    'ملاحظة (اختيارية)، مثل "اتصال هاتفي"',
+  );
+  String get confirmNoteError =>
+      _t('At most 300 characters', '300 حرف كحد أقصى');
   String get recordConfirmation => _t('Record confirmation', 'تسجيل التأكيد');
 
   String get closeTitle => _t('Close this order?', 'إغلاق هذا الأمر؟');
@@ -537,19 +659,24 @@ class PurchaseOrderStrings {
   );
   String get closeOrder => _t('Close order', 'إغلاق الأمر');
 
-  String get supplierCancelTitle => _t('Record supplier acceptance of the cancellation', 'تسجيل قبول المورد للإلغاء');
+  String get supplierCancelTitle => _t(
+    'Record supplier acceptance of the cancellation',
+    'تسجيل قبول المورد للإلغاء',
+  );
   String get supplierCancelCheck => _t(
     'The supplier told me they accept the cancellation',
     'أخبرني المورد أنه يقبل الإلغاء',
   );
-  String get channelLabel => _t('How did you reach the supplier?', 'كيف تواصلت مع المورد؟');
+  String get channelLabel =>
+      _t('How did you reach the supplier?', 'كيف تواصلت مع المورد؟');
   String channel(String c) => switch (c) {
     'PHONE' => _t('Phone', 'هاتف'),
     'WHATSAPP' => _t('WhatsApp', 'WhatsApp'),
     'IN_PERSON' => _t('In person', 'شخصياً'),
     _ => _t('Other', 'أخرى'),
   };
-  String get supplierCancelNote => _t('What did the supplier say? (required)', 'ماذا قال المورد؟ (إلزامي)');
+  String get supplierCancelNote =>
+      _t('What did the supplier say? (required)', 'ماذا قال المورد؟ (إلزامي)');
   String get supplierCancelWarning => _t(
     'This is a manual record that cannot be undone. It ends the reorder warning of this order only.',
     'هذا تسجيل يدوي لا يمكن التراجع عنه. يُنهي تحذير إعادة الطلب لهذا الأمر فقط.',
@@ -565,17 +692,45 @@ class PurchaseOrderStrings {
       'APPROVED' => _t('Approved', 'تمت الموافقة'),
       'REJECTED' => _t('Rejected', 'رُفض'),
       'CANCELED' => _t('Canceled', 'أُلغي'),
-      'MESSAGE_GENERATED' => _t('Supplier message prepared (not sent)', 'جُهّزت رسالة المورد (لم تُرسل)'),
-      'MESSAGE_COPIED' => _t('Message copied (reported by the app)', 'نُسخت الرسالة (حسب التطبيق)'),
-      'WHATSAPP_OPEN_REQUESTED' => phase == 'CLIENT_REPORTED'
-          ? (e.details['result'] == 'OPENED'
-                ? _t('Link handed to the browser (reported by the app)', 'سُلّم الرابط للمتصفح (حسب التطبيق)')
-                : _t('Link did not open (reported by the app)', 'لم يُفتح الرابط (حسب التطبيق)'))
-          : _t('WhatsApp opening requested (confirmed by the manager)', 'طُلب فتح WhatsApp (بتأكيد المدير)'),
-      'MARKED_SENT' => _t('Manager recorded that they sent the message', 'سجّل المدير أنه أرسل الرسالة'),
-      'SUPPLIER_CONFIRMATION_RECORDED' => _t('Manager recorded the supplier\'s confirmation', 'سجّل المدير تأكيد المورد'),
-      'CLOSED' => _t('Closed (no receiving recorded)', 'أُغلق (بدون تسجيل استلام)'),
-      'SUPPLIER_CANCELLATION_RECORDED' => _t('Manager recorded the supplier accepted the cancellation', 'سجّل المدير قبول المورد للإلغاء'),
+      'MESSAGE_GENERATED' => _t(
+        'Supplier message prepared (not sent)',
+        'جُهّزت رسالة المورد (لم تُرسل)',
+      ),
+      'MESSAGE_COPIED' => _t(
+        'Message copied (reported by the app)',
+        'نُسخت الرسالة (حسب التطبيق)',
+      ),
+      'WHATSAPP_OPEN_REQUESTED' =>
+        phase == 'CLIENT_REPORTED'
+            ? (e.details['result'] == 'OPENED'
+                  ? _t(
+                      'Link handed to the browser (reported by the app)',
+                      'سُلّم الرابط للمتصفح (حسب التطبيق)',
+                    )
+                  : _t(
+                      'Link did not open (reported by the app)',
+                      'لم يُفتح الرابط (حسب التطبيق)',
+                    ))
+            : _t(
+                'WhatsApp opening requested (confirmed by the manager)',
+                'طُلب فتح WhatsApp (بتأكيد المدير)',
+              ),
+      'MARKED_SENT' => _t(
+        'Manager recorded that they sent the message',
+        'سجّل المدير أنه أرسل الرسالة',
+      ),
+      'SUPPLIER_CONFIRMATION_RECORDED' => _t(
+        'Manager recorded the supplier\'s confirmation',
+        'سجّل المدير تأكيد المورد',
+      ),
+      'CLOSED' => _t(
+        'Closed (no receiving recorded)',
+        'أُغلق (بدون تسجيل استلام)',
+      ),
+      'SUPPLIER_CANCELLATION_RECORDED' => _t(
+        'Manager recorded the supplier accepted the cancellation',
+        'سجّل المدير قبول المورد للإلغاء',
+      ),
       _ => e.type,
     };
   }
@@ -583,21 +738,36 @@ class PurchaseOrderStrings {
   String eventDetail(PurchaseOrderEvent e) {
     final d = e.details;
     final parts = <String>[];
-    if (d['reason'] is String) parts.add(_t('Reason: ', 'السبب: ') + iso(d['reason'] as String));
-    if (d['note'] is String) parts.add(_t('Note: ', 'ملاحظة: ') + iso(d['note'] as String));
-    if (d['channel'] is String) parts.add(_t('Channel: ', 'القناة: ') + channel(d['channel'] as String));
-    if (d['contactStatus'] is String) parts.add(contactAtCancel(d['contactStatus'] as String));
-    if (d['language'] is String) parts.add(d['language'] == 'ar' ? arabic : english);
-    if (d['whatsappNumber'] is String) parts.add(iso('+${d['whatsappNumber']}'));
+    if (d['reason'] is String)
+      parts.add(_t('Reason: ', 'السبب: ') + iso(d['reason'] as String));
+    if (d['note'] is String)
+      parts.add(_t('Note: ', 'ملاحظة: ') + iso(d['note'] as String));
+    if (d['channel'] is String)
+      parts.add(_t('Channel: ', 'القناة: ') + channel(d['channel'] as String));
+    if (d['contactStatus'] is String)
+      parts.add(contactAtCancel(d['contactStatus'] as String));
+    if (d['language'] is String)
+      parts.add(d['language'] == 'ar' ? arabic : english);
+    if (d['whatsappNumber'] is String)
+      parts.add(iso('+${d['whatsappNumber']}'));
     final items = d['items'];
     if (items is List && items.isNotEmpty) {
-      parts.add(_t('Lines: ', 'البنود: ') +
-          items.map((i) => '${iso('${(i as Map)['productName']}')} × ${iso('${i['quantity']}')}').join('، '));
+      parts.add(
+        _t('Lines: ', 'البنود: ') +
+            items
+                .map(
+                  (i) =>
+                      '${iso('${(i as Map)['productName']}')} × ${iso('${i['quantity']}')}',
+                )
+                .join('، '),
+      );
     }
-    if (d['verified'] == false && (e.type == 'MESSAGE_COPIED' || e.type == 'WHATSAPP_OPEN_REQUESTED')) {
+    if (d['verified'] == false &&
+        (e.type == 'MESSAGE_COPIED' || e.type == 'WHATSAPP_OPEN_REQUESTED')) {
       parts.add(_t('not verified', 'غير مُتحقق منه'));
     }
-    if (d['recordedManually'] == true) parts.add(_t('manual record', 'تسجيل يدوي'));
+    if (d['recordedManually'] == true)
+      parts.add(_t('manual record', 'تسجيل يدوي'));
     return parts.join(' · ');
   }
 
@@ -648,21 +818,36 @@ class PurchaseOrderStrings {
       'CONTACT_STATUS_REQUIRED' => wasItSent,
       'RECORD_SENT_FIRST' => sentExplain,
       'ACK_SUPPLIER_NOT_NOTIFIED' => afterContactWarning,
-      'ALREADY_RECORDED' => _t('This was already recorded.', 'هذا مسجّل مسبقاً.'),
-      'NOT_ELIGIBLE' => _t('Not possible for this order.', 'غير ممكن لهذا الأمر.'),
+      'ALREADY_RECORDED' => _t(
+        'This was already recorded.',
+        'هذا مسجّل مسبقاً.',
+      ),
+      'NOT_ELIGIBLE' => _t(
+        'Not possible for this order.',
+        'غير ممكن لهذا الأمر.',
+      ),
       'GUARDIAN_DISABLED' => guardianOffBody,
       'NOT_A_CURRENT_RECOMMENDATION' => _t(
         'A product is no longer a current suggestion. Reload the suggestions or create a manual order.',
         'أحد المنتجات لم يعد ضمن الاقتراحات الحالية. أعد تحميل الاقتراحات أو أنشئ أمراً يدوياً.',
       ),
-      'PURCHASE_ORDER_NOT_FOUND' => _t('This order was not found.', 'لم يُعثر على هذا الأمر.'),
+      'PURCHASE_ORDER_NOT_FOUND' => _t(
+        'This order was not found.',
+        'لم يُعثر على هذا الأمر.',
+      ),
       'IDEMPOTENCY_KEY_REUSED' => _t(
         'This save request was already used for a different order. Start a new order.',
         'طلب الحفظ هذا استُعمل لأمر مختلف. ابدأ أمراً جديداً.',
       ),
-      _ when e.isForbidden => _t('Only the Store Admin can do this.', 'هذا للمدير فقط.'),
+      _ when e.isForbidden => _t(
+        'Only the Store Admin can do this.',
+        'هذا للمدير فقط.',
+      ),
       _ when e.isNotFound => _t('Not found.', 'غير موجود.'),
-      _ when e.statusCode == 400 => _t('Some values are not valid.', 'بعض القيم غير صالحة.'),
+      _ when e.statusCode == 400 => _t(
+        'Some values are not valid.',
+        'بعض القيم غير صالحة.',
+      ),
       _ => _t('The request failed.', 'فشل الطلب.'),
     };
   }

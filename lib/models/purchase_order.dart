@@ -83,7 +83,12 @@ class PurchaseCaution {
 
 /// The open order that already holds a product.
 class OpenOrderRef {
-  const OpenOrderRef(this.orderId, this.orderNumber, this.status, this.quantity);
+  const OpenOrderRef(
+    this.orderId,
+    this.orderNumber,
+    this.status,
+    this.quantity,
+  );
 
   final int orderId;
   final String orderNumber;
@@ -128,19 +133,20 @@ class PurchaseOrderItem {
   final bool reserved;
   final Map<String, dynamic> calculation;
 
-  factory PurchaseOrderItem.fromJson(Map<String, dynamic> j) => PurchaseOrderItem(
-    itemId: _int(j['itemId']),
-    productId: _intOrNull(j['productId']),
-    productDeleted: j['productDeleted'] as bool? ?? false,
-    productName: j['productName'] as String? ?? '',
-    barcode: j['barcode'] as String? ?? '',
-    quantity: _int(j['quantity']),
-    suggestedQuantity: _intOrNull(j['suggestedQuantity']),
-    basis: j['basis'] as String? ?? 'MANUAL',
-    expectedUnitCost: _double(j['expectedUnitCost']),
-    reserved: j['reserved'] as bool? ?? false,
-    calculation: (j['calculation'] as Map<String, dynamic>?) ?? const {},
-  );
+  factory PurchaseOrderItem.fromJson(Map<String, dynamic> j) =>
+      PurchaseOrderItem(
+        itemId: _int(j['itemId']),
+        productId: _intOrNull(j['productId']),
+        productDeleted: j['productDeleted'] as bool? ?? false,
+        productName: j['productName'] as String? ?? '',
+        barcode: j['barcode'] as String? ?? '',
+        quantity: _int(j['quantity']),
+        suggestedQuantity: _intOrNull(j['suggestedQuantity']),
+        basis: j['basis'] as String? ?? 'MANUAL',
+        expectedUnitCost: _double(j['expectedUnitCost']),
+        reserved: j['reserved'] as bool? ?? false,
+        calculation: (j['calculation'] as Map<String, dynamic>?) ?? const {},
+      );
 }
 
 /// One line of the message-length report.
@@ -315,7 +321,8 @@ class Communication {
       closedAt: json['closedAt'] as String?,
       canceledAfterContact: json['canceledAfterContact'] as bool? ?? false,
       contactStatusAtCancel: json['contactStatusAtCancel'] as String?,
-      possibleSupplierContact: json['possibleSupplierContact'] as bool? ?? false,
+      possibleSupplierContact:
+          json['possibleSupplierContact'] as bool? ?? false,
       supplierCancellationRecorded:
           json['supplierCancellationRecorded'] as bool? ?? false,
       supplierCancellationRecordable:
@@ -478,14 +485,13 @@ class PurchaseOrderPage {
   final int total;
   final List<PurchaseOrderSummary> orders;
 
-  int get pageCount => size <= 0 ? 1 : ((total + size - 1) ~/ size).clamp(1, 1 << 30);
+  int get pageCount =>
+      size <= 0 ? 1 : ((total + size - 1) ~/ size).clamp(1, 1 << 30);
 
-  factory PurchaseOrderPage.fromJson(Map<String, dynamic> j) => PurchaseOrderPage(
-    _int(j['page']),
-    _int(j['size']),
-    _int(j['total']),
-    [for (final o in _list(j['orders'])) PurchaseOrderSummary.fromJson(o)],
-  );
+  factory PurchaseOrderPage.fromJson(Map<String, dynamic> j) =>
+      PurchaseOrderPage(_int(j['page']), _int(j['size']), _int(j['total']), [
+        for (final o in _list(j['orders'])) PurchaseOrderSummary.fromJson(o),
+      ]);
 }
 
 /// One history entry (append only).
@@ -711,10 +717,12 @@ class PurchaseRecommendations {
         urgentDays: _int(j['urgentDays']),
         coverDays: _int(j['coverDays']),
         suppliers: [
-          for (final s in _list(j['suppliers'])) SupplierRecommendations.fromJson(s),
+          for (final s in _list(j['suppliers']))
+            SupplierRecommendations.fromJson(s),
         ],
         inconsistent: [
-          for (final i in _list(j['inconsistent'])) RecommendationItem.fromJson(i),
+          for (final i in _list(j['inconsistent']))
+            RecommendationItem.fromJson(i),
         ],
       );
 }
@@ -747,19 +755,22 @@ class PurchaseCandidate {
   final OpenOrderRef? openOrder;
   final List<PurchaseCaution> cautions;
 
-  factory PurchaseCandidate.fromJson(Map<String, dynamic> j) => PurchaseCandidate(
-    productId: _int(j['productId']),
-    name: j['name'] as String? ?? '',
-    barcode: j['barcode'] as String? ?? '',
-    quantity: _int(j['quantity']),
-    minStock: _int(j['minStock']),
-    stockStatus: j['stockStatus'] as String? ?? 'OK',
-    expectedUnitCost: _double(j['expectedUnitCost']),
-    available: j['available'] as bool? ?? false,
-    unavailableReason: j['unavailableReason'] as String?,
-    openOrder: OpenOrderRef.fromJson(j['openOrder']),
-    cautions: [for (final c in _list(j['cautions'])) PurchaseCaution.fromJson(c)],
-  );
+  factory PurchaseCandidate.fromJson(Map<String, dynamic> j) =>
+      PurchaseCandidate(
+        productId: _int(j['productId']),
+        name: j['name'] as String? ?? '',
+        barcode: j['barcode'] as String? ?? '',
+        quantity: _int(j['quantity']),
+        minStock: _int(j['minStock']),
+        stockStatus: j['stockStatus'] as String? ?? 'OK',
+        expectedUnitCost: _double(j['expectedUnitCost']),
+        available: j['available'] as bool? ?? false,
+        unavailableReason: j['unavailableReason'] as String?,
+        openOrder: OpenOrderRef.fromJson(j['openOrder']),
+        cautions: [
+          for (final c in _list(j['cautions'])) PurchaseCaution.fromJson(c),
+        ],
+      );
 }
 
 class PurchaseCandidates {
@@ -777,11 +788,12 @@ class PurchaseCandidates {
   final bool hasWhatsapp;
   final List<PurchaseCandidate> products;
 
-  factory PurchaseCandidates.fromJson(Map<String, dynamic> j) => PurchaseCandidates(
-    _int(j['supplierId']),
-    j['supplierName'] as String? ?? '',
-    j['active'] as bool? ?? false,
-    j['hasWhatsapp'] as bool? ?? false,
-    [for (final p in _list(j['products'])) PurchaseCandidate.fromJson(p)],
-  );
+  factory PurchaseCandidates.fromJson(Map<String, dynamic> j) =>
+      PurchaseCandidates(
+        _int(j['supplierId']),
+        j['supplierName'] as String? ?? '',
+        j['active'] as bool? ?? false,
+        j['hasWhatsapp'] as bool? ?? false,
+        [for (final p in _list(j['products'])) PurchaseCandidate.fromJson(p)],
+      );
 }

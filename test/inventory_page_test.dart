@@ -324,6 +324,9 @@ void main() {
   testWidgets('store admin adds a cashier, then deactivates it', (tester) async {
     final backend = _backend();
     await _pumpAsStoreAdmin(tester, backend);
+    // The sidebar is taller than the test window since the Purchasing section: scroll to it.
+    await tester.ensureVisible(find.byKey(const Key('nav-cashiers')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('nav-cashiers')));
     await tester.pumpAndSettle();
     expect(find.text('shini.cashier'), findsOneWidget);
@@ -420,6 +423,9 @@ void main() {
     await _pumpAsStoreAdmin(tester, backend);
     backend.endAllSessions();
 
+    // The sidebar is taller than the test window since the Purchasing section: scroll to it.
+    await tester.ensureVisible(find.byKey(const Key('nav-cashiers')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('nav-cashiers'))); // loads cashiers → 401
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('loginButton')), findsOneWidget);

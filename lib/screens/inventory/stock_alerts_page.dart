@@ -29,9 +29,14 @@ class StockAlertsPage extends StatefulWidget {
     super.key,
     required this.api,
     required this.onUpdateStock,
+    this.onCreatePurchaseOrder,
   });
 
   final ReportApiClient api;
+
+  /// Opens a new purchase order (Purchase Orders, Phase 4). Without it the
+  /// button stays disabled and says why.
+  final VoidCallback? onCreatePurchaseOrder;
 
   /// Opens the product form to change the product's quantity.
   final ValueChanged<String> onUpdateStock;
@@ -383,35 +388,37 @@ class _StockAlertsPageState extends State<StockAlertsPage> {
     children: [
       FilledButton.icon(
         key: const Key('createPurchaseRequest'),
-        onPressed: null,
+        onPressed: widget.onCreatePurchaseOrder,
         style: FilledButton.styleFrom(
           padding: const EdgeInsets.symmetric(vertical: 16),
         ),
         icon: const Icon(Icons.shopping_cart_checkout_rounded),
         label: Text(s.createPurchaseRequest),
       ),
-      const SizedBox(height: AppSpacing.sm),
-      Row(
-        key: const Key('purchaseNotAvailable'),
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(
-            Icons.info_outline_rounded,
-            size: 18,
-            color: AppColors.textSecondary,
-          ),
-          const SizedBox(width: AppSpacing.xs),
-          Expanded(
-            child: Text(
-              s.purchaseNotAvailable,
-              style: const TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 12.5,
+      if (widget.onCreatePurchaseOrder == null) ...[
+        const SizedBox(height: AppSpacing.sm),
+        Row(
+          key: const Key('purchaseNotAvailable'),
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(
+              Icons.info_outline_rounded,
+              size: 18,
+              color: AppColors.textSecondary,
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            Expanded(
+              child: Text(
+                s.purchaseNotAvailable,
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 12.5,
+                ),
               ),
             ),
-          ),
-        ],
-      ),
+          ],
+        ),
+      ],
     ],
   );
 }

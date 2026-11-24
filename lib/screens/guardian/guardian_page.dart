@@ -29,6 +29,7 @@ class GuardianPage extends StatefulWidget {
     required this.salesApi,
     required this.onOpenProduct,
     required this.onOpenStockAlerts,
+    this.onCreatePurchaseOrder,
   });
 
   final GuardianApiClient api;
@@ -37,6 +38,9 @@ class GuardianPage extends StatefulWidget {
   /// Opens Product Details; completes with false when the product no longer exists.
   final Future<bool> Function(int productId) onOpenProduct;
   final VoidCallback onOpenStockAlerts;
+
+  /// Figure 3.1 "Create purchase order": opens the reorder suggestions.
+  final VoidCallback? onCreatePurchaseOrder;
 
   @override
   State<GuardianPage> createState() => _GuardianPageState();
@@ -548,31 +552,19 @@ class _GuardianPageState extends State<GuardianPage> {
                 final id = await showRecommendationProducts(context, r);
                 if (id != null && mounted) _openProduct(id);
               },
-              // Figure 3.1's "Create purchase order": purchase orders are a
-              // later phase, so the button is visibly disabled with the reason.
-              extra: r.code == 'REORDER_SOON' && r.count > 0
+              // Figure 3.1's "Create purchase order" (D21 / P4-D3): opens the
+              // reorder suggestions, where the manager prepares a real order.
+              extra: r.code == 'REORDER_SOON' && r.count > 0 && widget.onCreatePurchaseOrder != null
                   ? Padding(
                       padding: const EdgeInsets.only(top: AppSpacing.xs),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          OutlinedButton.icon(
-                            key: const Key('guardianPurchaseDisabled'),
-                            onPressed: null,
-                            icon: const Icon(
-                              Icons.shopping_cart_checkout_rounded,
-                              size: 18,
-                            ),
-                            label: Text(s.createPurchaseRequest),
-                          ),
-                          Text(
-                            s.purchaseNotAvailable,
-                            style: const TextStyle(
-                              fontSize: 11.5,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ],
+                      child: OutlinedButton.icon(
+                        key: const Key('guardianCreatePurchase'),
+                        onPressed: widget.onCreatePurchaseOrder,
+                        icon: const Icon(
+                          Icons.shopping_cart_checkout_rounded,
+                          size: 18,
+                        ),
+                        label: Text(s.createPurchaseRequest),
                       ),
                     )
                   : null,

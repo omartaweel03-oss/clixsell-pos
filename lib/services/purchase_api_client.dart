@@ -22,7 +22,10 @@ class OrderLine {
   final int productId;
   final int quantity;
 
-  Map<String, dynamic> toJson() => {'productId': productId, 'quantity': quantity};
+  Map<String, dynamic> toJson() => {
+    'productId': productId,
+    'quantity': quantity,
+  };
 }
 
 /// The acknowledgment of one reorder caution: (product, recent order).
@@ -36,7 +39,9 @@ class CautionAck {
 
   @override
   bool operator ==(Object other) =>
-      other is CautionAck && other.productId == productId && other.orderId == orderId;
+      other is CautionAck &&
+      other.productId == productId &&
+      other.orderId == orderId;
 
   @override
   int get hashCode => Object.hash(productId, orderId);
@@ -165,6 +170,8 @@ class PurchaseApiClient implements PurchaseApi {
 
   final ApiHttp _http;
 
+  ApiHttp get http => _http;
+
   static const _base = '/purchase-orders';
 
   Future<PurchaseOrder> _order(Future<dynamic> f) async =>
@@ -178,7 +185,8 @@ class PurchaseApiClient implements PurchaseApi {
     int size = 20,
   }) async {
     final params = <String>[
-      if (statuses.isNotEmpty) 'status=${statuses.map((s) => s.code).join(',')}',
+      if (statuses.isNotEmpty)
+        'status=${statuses.map((s) => s.code).join(',')}',
       if (query != null && query.trim().isNotEmpty)
         'q=${Uri.encodeQueryComponent(query.trim())}',
       'page=$page',
@@ -190,11 +198,13 @@ class PurchaseApiClient implements PurchaseApi {
   }
 
   @override
-  Future<PurchaseOrder> get(int orderId) => _order(_http.get('$_base/$orderId'));
+  Future<PurchaseOrder> get(int orderId) =>
+      _order(_http.get('$_base/$orderId'));
 
   @override
   Future<List<PurchaseOrderEvent>> events(int orderId) async => [
-    for (final e in (await _http.get('$_base/$orderId/events') as List<dynamic>))
+    for (final e
+        in (await _http.get('$_base/$orderId/events') as List<dynamic>))
       PurchaseOrderEvent.fromJson(e as Map<String, dynamic>),
   ];
 
@@ -236,9 +246,13 @@ class PurchaseApiClient implements PurchaseApi {
       _order(_http.post('$_base/$orderId/approve', {'version': version}));
 
   @override
-  Future<PurchaseOrder> reject(int orderId, int version, String reason) => _order(
-    _http.post('$_base/$orderId/reject', {'version': version, 'reason': reason}),
-  );
+  Future<PurchaseOrder> reject(int orderId, int version, String reason) =>
+      _order(
+        _http.post('$_base/$orderId/reject', {
+          'version': version,
+          'reason': reason,
+        }),
+      );
 
   @override
   Future<PurchaseOrder> cancel(
@@ -283,21 +297,25 @@ class PurchaseApiClient implements PurchaseApi {
       ClientActionResult.fromJson(await f as Map<String, dynamic>);
 
   @override
-  Future<ClientActionResult> messageCopied(int orderId, String clientActionId) =>
-      _action(
-        _http.post('$_base/$orderId/message-copied', {
-          'clientActionId': clientActionId,
-        }),
-      );
+  Future<ClientActionResult> messageCopied(
+    int orderId,
+    String clientActionId,
+  ) => _action(
+    _http.post('$_base/$orderId/message-copied', {
+      'clientActionId': clientActionId,
+    }),
+  );
 
   @override
-  Future<ClientActionResult> openRequested(int orderId, String clientActionId) =>
-      _action(
-        _http.post('$_base/$orderId/whatsapp-open-requested', {
-          'clientActionId': clientActionId,
-          'confirmed': true,
-        }),
-      );
+  Future<ClientActionResult> openRequested(
+    int orderId,
+    String clientActionId,
+  ) => _action(
+    _http.post('$_base/$orderId/whatsapp-open-requested', {
+      'clientActionId': clientActionId,
+      'confirmed': true,
+    }),
+  );
 
   @override
   Future<ClientActionResult> openResult(

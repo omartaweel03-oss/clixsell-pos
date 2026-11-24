@@ -464,18 +464,19 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('cost ₪ 15.00 → loss ₪ 5.00'), findsOneWidget);
-    // Recommendations: rule-based, and purchase orders visibly not available.
+    // Recommendations: rule-based; "Create purchase order" (Figure 3.1) now
+    // opens the real purchasing flow (Purchase Orders Phase 4, P4-D3).
     expect(find.text('Smart recommendations'), findsOneWidget);
     expect(find.byKey(const Key('guardianRec-REORDER_SOON')), findsOneWidget);
     expect(find.byKey(const Key('guardianRec-SLOW_MOVING')), findsOneWidget);
     expect(find.text('No products right now.'), findsOneWidget);
     final purchase = tester.widget<ButtonStyleButton>(
-      find.byKey(const Key('guardianPurchaseDisabled')),
+      find.byKey(const Key('guardianCreatePurchase')),
     );
-    expect(purchase.onPressed, isNull);
+    expect(purchase.onPressed, isNotNull);
     expect(
       find.textContaining('Purchase requests are not available yet'),
-      findsOneWidget,
+      findsNothing,
     );
     // Map, at-risk table, profit protection, unusual activity.
     expect(find.byKey(const Key('guardianTile-dairy')), findsOneWidget);

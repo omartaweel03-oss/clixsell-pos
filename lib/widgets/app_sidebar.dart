@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_strings.dart';
+import '../l10n/purchase_order_strings.dart';
 import '../l10n/purchase_strings.dart';
 import '../l10n/guardian_strings.dart';
 import '../models/app_user.dart';
@@ -22,6 +23,11 @@ enum SidebarDestination {
   suspendedInvoices,
   settings,
   guardian,
+  // Purchase Orders (Phase 4)
+  purchaseOrders,
+  purchaseRecommendations,
+  purchaseOrderDetails,
+  purchaseOrderForm,
 }
 
 /// Which pages each role may open (the backend enforces the same rules).
@@ -42,7 +48,11 @@ extension RoleDestinations on UserRole {
       // Product Details (Figure 3.4) is a Store Admin screen (UR-M5).
       SidebarDestination.productDetails,
       SidebarDestination.stockAlerts,
-      // Supplier Management (Purchase Orders, Phase 1): Store Admin only.
+      // Purchasing (UR-M13–UR-M15): Store Admin only; the backend refuses others.
+      SidebarDestination.purchaseOrders,
+      SidebarDestination.purchaseRecommendations,
+      SidebarDestination.purchaseOrderDetails,
+      SidebarDestination.purchaseOrderForm,
       SidebarDestination.suppliers,
       SidebarDestination.pos,
       SidebarDestination.suspendedInvoices,
@@ -86,6 +96,9 @@ class AppSidebar extends StatelessWidget {
     this.editingProductName,
     this.viewingProductName,
     this.alertCount = 0,
+    this.purchaseOverdue = 0,
+    this.purchaseOrderCaption,
+    this.purchaseFormCaption,
   });
 
   final AppUser user;
@@ -105,6 +118,13 @@ class AppSidebar extends StatelessWidget {
 
   /// Low + out-of-stock products, shown as a badge on "Stock Alerts".
   final int alertCount;
+
+  /// Overdue open purchase orders, shown as a badge on "Purchase Orders".
+  final int purchaseOverdue;
+
+  /// Order open in the details / form (shown under the menu item).
+  final String? purchaseOrderCaption;
+  final String? purchaseFormCaption;
 
   @override
   Widget build(BuildContext context) {
@@ -219,7 +239,36 @@ class AppSidebar extends StatelessWidget {
           s.navStockAlerts,
           badge: alertCount,
         ),
-        // Supplier Management (Purchase Orders, Phase 1): suppliers only, no orders yet.
+        // Purchasing (P4-D7): orders, reorder suggestions and suppliers.
+        section(PurchaseOrderStrings.of(context).navSection),
+        item(
+          SidebarDestination.purchaseOrders,
+          Icons.receipt_long_outlined,
+          Icons.receipt_long_rounded,
+          PurchaseOrderStrings.of(context).navOrders,
+          badge: purchaseOverdue,
+        ),
+        if (purchaseOrderCaption != null)
+          item(
+            SidebarDestination.purchaseOrderDetails,
+            Icons.description_outlined,
+            Icons.description_rounded,
+            PurchaseOrderStrings.of(context).navOrders,
+            caption: purchaseOrderCaption,
+          ),
+        if (purchaseFormCaption != null)
+          item(
+            SidebarDestination.purchaseOrderForm,
+            Icons.edit_note_outlined,
+            Icons.edit_note_rounded,
+            purchaseFormCaption!,
+          ),
+        item(
+          SidebarDestination.purchaseRecommendations,
+          Icons.auto_graph_outlined,
+          Icons.auto_graph_rounded,
+          PurchaseOrderStrings.of(context).navRecommendations,
+        ),
         item(
           SidebarDestination.suppliers,
           Icons.local_shipping_outlined,
