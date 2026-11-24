@@ -355,11 +355,16 @@ class _Whatsapp extends StatelessWidget {
         style: const TextStyle(color: AppColors.warning, fontSize: 12.5),
       );
     }
-    return Directionality(
-      textDirection: TextDirection.ltr,
-      child: Text(
-        formatWhatsapp(digits!),
-        style: const TextStyle(fontWeight: FontWeight.w600),
+    // The number reads left-to-right, but sits at the START of the cell in
+    // both languages (right side in Arabic), so it never touches the next column.
+    return Align(
+      alignment: AlignmentDirectional.centerStart,
+      child: Directionality(
+        textDirection: TextDirection.ltr,
+        child: Text(
+          formatWhatsapp(digits!),
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
       ),
     );
   }
@@ -491,15 +496,16 @@ class _SuppliersTable extends StatelessWidget {
                   Expanded(flex: 3, child: _Whatsapp(x.whatsappNumber)),
                   Expanded(
                     flex: 2,
-                    child: Directionality(
-                      textDirection: TextDirection.ltr,
-                      child: Text(
-                        x.phone ?? p.none,
-                        textAlign:
-                            Directionality.of(context) == TextDirection.rtl
-                            ? TextAlign.right
-                            : TextAlign.left,
-                        style: const TextStyle(color: AppColors.textSecondary),
+                    child: Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Directionality(
+                        textDirection: TextDirection.ltr,
+                        child: Text(
+                          x.phone ?? p.none,
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
                       ),
                     ),
                   ),

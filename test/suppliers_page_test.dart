@@ -3,7 +3,10 @@ import 'package:clixsell_pos/models/supplier.dart';
 import 'package:clixsell_pos/screens/purchasing/suppliers_page.dart';
 import 'package:clixsell_pos/services/api_http.dart';
 import 'package:clixsell_pos/services/supplier_api_client.dart';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -194,6 +197,7 @@ Future<void> _pump(
   SupplierApi api, {
   Locale locale = const Locale('en'),
   Size size = const Size(1440, 900),
+  String? fontFamily,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1.0;
@@ -203,6 +207,7 @@ Future<void> _pump(
       locale: locale,
       supportedLocales: const [Locale('en'), Locale('ar')],
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
+      theme: fontFamily == null ? null : ThemeData(fontFamily: fontFamily),
       home: Scaffold(body: SuppliersPage(api: api)),
     ),
   );
@@ -442,9 +447,53 @@ void main() {
       ),
       TextDirection.rtl,
     );
+    // Numbers read left-to-right but sit at the START of their cell (the right
+    // side in Arabic), so the phone and WhatsApp numbers never run together.
+    // (Measured in real fonts by the browser test supplier_ui.js.)
+    for (final number in ['+970 599 123 456', '02-2345678']) {
+      final align = tester.widget<Align>(
+        find.ancestor(of: _row(1, number), matching: find.byType(Align)).first,
+      );
+      expect(align.alignment, AlignmentDirectional.centerStart, reason: number);
+    }
     await tester.tap(find.byKey(const Key('supplier-toggle-1')));
     await tester.pumpAndSettle();
     expect(find.text('إيقاف المورد؟'), findsOneWidget);
+  });
+
+  testWidgets('Arabic with a real font: phone and WhatsApp numbers stay apart', (
+    tester,
+  ) async {
+    // The default test font draws every character as wide as the font size,
+    // so text widths are not realistic. Load Roboto from the Flutter SDK.
+    final fonts =
+        '${Platform.environment['FLUTTER_ROOT']}/bin/cache/artifacts/material_fonts';
+    final loader = FontLoader('RealRoboto')
+      ..addFont(
+        Future.value(
+          ByteData.sublistView(
+            File('$fonts/Roboto-Regular.ttf').readAsBytesSync(),
+          ),
+        ),
+      )
+      ..addFont(
+        Future.value(
+          ByteData.sublistView(
+            File('$fonts/Roboto-Bold.ttf').readAsBytesSync(),
+          ),
+        ),
+      );
+    await loader.load();
+    await _pump(
+      tester,
+      FakeSupplierApi(_seed()),
+      locale: const Locale('ar'),
+      fontFamily: 'RealRoboto',
+    );
+    final whatsapp = tester.getRect(_row(1, '+970 599 123 456'));
+    final phone = tester.getRect(_row(1, '02-2345678'));
+    // Arabic: the WhatsApp column is to the right of the phone column.
+    expect(whatsapp.left - phone.right, greaterThan(16));
   });
 
   for (final size in const [

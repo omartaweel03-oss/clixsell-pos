@@ -97,7 +97,7 @@ chk('F', 'same name in Neshan is a separate supplier', (s, one('select store_id 
 NESHAN_FRESH = b['supplierId']
 
 # ── G) product form rules and POS with an inactive supplier ────────────────────────────────────
-prod = lambda name, bc, sup: {'name': name, 'barcode': bc, 'category': 'produce', 'sellingPrice': 6, 'quantity': 10,
+prod = lambda name, bc, sup: {'name': name, 'barcode': bc, 'category': 'freshProduce', 'sellingPrice': 6, 'quantity': 10,
                               'minStock': 2, 'supplierName': sup, 'costPrice': 4}
 s, b = call('/products', SA, 'POST', prod('E2E Cucumbers 1kg', '7298881000011', 'E2E Fresh Farms'))
 chk('G', 'product with the supplier → 201, linked by id', (s, b['supplierId']), (201, FRESH)); CUC = b['productId']
