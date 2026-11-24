@@ -193,7 +193,8 @@ class NoticeBox extends StatelessWidget {
               Text(text, style: const TextStyle(height: 1.45, fontSize: 13.5)),
               if (child != null) ...[
                 const SizedBox(height: AppSpacing.sm),
-                child!,
+                // its own Material: ink of list tiles inside stays visible on the colored box
+                Material(type: MaterialType.transparency, child: child!),
               ],
             ],
           ),

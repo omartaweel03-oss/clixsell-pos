@@ -136,7 +136,8 @@ class PurchaseOrderFormPageState extends State<PurchaseOrderFormPage> {
       PurchaseOrder? editing;
       if (_editMode) editing = await widget.api.get(widget.editOrderId!);
       if (!mounted) return;
-      _suppliers = suppliers
+      // a sorted copy: the list belongs to the caller
+      _suppliers = [...suppliers]
         ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
       if (editing != null) {
         _editing = editing;
