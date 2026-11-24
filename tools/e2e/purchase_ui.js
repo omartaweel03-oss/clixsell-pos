@@ -282,7 +282,9 @@ const FIN = () => JSON.stringify([
     ok('EN history: every step with accurate wording', ['Order created', 'Order edited', 'Approved', 'Supplier message prepared (not sent)',
       'WhatsApp opening requested', 'Link handed to the browser (reported by the app)', 'Message copied (reported by the app)',
       'Manager recorded that they sent the message', "Manager recorded the supplier's confirmation", 'Closed (no receiving recorded)'].every(x => t.includes(x)));
+    await p.mouse.move(800, 500); await p.mouse.wheel(0, 3000); await p.waitForTimeout(1200);  // the history is below
     await shot(p, 'en_history');
+    await p.mouse.wheel(0, -3000); await p.waitForTimeout(800);
   });
   ok('EN main flow: no page errors, no server errors', st.errors.length === 0 && st.bad.length === 0, st.errors.concat(st.bad).join('; '));
 
@@ -573,7 +575,9 @@ const FIN = () => JSON.stringify([
     await click(p, /^السجل/, 1500);
     t = await txt(p);
     ok('AR history: manual-record wording', t.includes('سجّل المدير أنه أرسل الرسالة') && t.includes('جُهّزت رسالة المورد (لم تُرسل)'));
+    await p.mouse.move(600, 500); await p.mouse.wheel(0, 3000); await p.waitForTimeout(1200);
     await shot(p, 'ar_history');
+    await p.mouse.wheel(0, -3000); await p.waitForTimeout(800);
     await nav(p, 'اقتراحات الطلب');
     await shot(p, 'ar_recommendations');
     // an approved order: Arabic preview and Arabic cancel dialog
