@@ -43,6 +43,11 @@ dependencies:
   # still support Flutter 3.38 (newer ones need Flutter 3.41 / 3.44).
   shared_preferences: 2.5.5
   shared_preferences_android: 2.4.23
+  # Opens the supplier's WhatsApp link (Purchase Orders, decision D20 / P4-D1). Only links
+  # returned by the backend are opened, and only after the manager confirms.
+  url_launcher: 6.3.2
+  # Pinned like shared_preferences_android: newer versions need Flutter 3.44.
+  url_launcher_android: 6.3.30
 
 dev_dependencies:
   flutter_test:

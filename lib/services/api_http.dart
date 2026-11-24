@@ -17,12 +17,14 @@ class ApiException implements Exception {
     this.statusCode,
     this.code,
     this.fieldErrors = const {},
+    this.details,
   });
 
   const ApiException.network(this.message)
     : statusCode = null,
       code = 'NETWORK_ERROR',
-      fieldErrors = const {};
+      fieldErrors = const {},
+      details = null;
 
   final int? statusCode;
   final String? code;
@@ -30,6 +32,15 @@ class ApiException implements Exception {
 
   /// Backend field name → error message (e.g. `barcode` → "...").
   final Map<String, String> fieldErrors;
+
+  /// Structured information some errors carry (purchase orders: e.g. the open
+  /// orders holding a product, the cautions to acknowledge, the message length
+  /// report or a new preview). Null when the backend sent none.
+  final Object? details;
+
+  /// [details] as a JSON object, or an empty map.
+  Map<String, dynamic> get detailsMap =>
+      details is Map<String, dynamic> ? details as Map<String, dynamic> : const {};
 
   bool get isNetworkError => statusCode == null;
   bool get isUnauthorized => statusCode == 401;
@@ -121,6 +132,7 @@ class ApiHttp {
         code: body['code'] as String?,
         message: (body['message'] as String?) ?? 'Request failed',
         fieldErrors: fields.map((k, v) => MapEntry(k, v.toString())),
+        details: body['details'],
       );
     } catch (_) {
       return ApiException(
