@@ -280,6 +280,40 @@ any existing row or value changes.
 
 API: `GET/POST /api/suppliers`, `GET/PUT /api/suppliers/{id}`, `PUT /api/suppliers/{id}/status`.
 
+## Purchase Orders – Phase 2: recommendations, candidates and order workflow (backend only)
+
+Backend API only (the purchase screens are Phase 4). Store Admin only; the store always comes from the
+login; another store's data answers 404. No supplier messages, sending, confirmation, closing or
+receiving yet (Phase 3): APPROVED is the last state reachable before cancel / reject.
+
+| Endpoint | What it does |
+|---|---|
+| `GET /api/purchase-recommendations` | Guardian Mode ON: products to buy, by supplier, with the rule and numbers. OFF: `guardianEnabled: false`, nothing calculated |
+| `GET /api/purchase-candidates?supplierId=` | Manual order: the supplier's products with stock facts, open orders and cautions — never a suggested quantity |
+| `POST /api/purchase-orders` | Create (`PENDING_APPROVAL`). Body: `clientRequestId` (UUID), `supplierId`, `source` (MANUAL / GUARDIAN), `note`, `items[{productId, quantity}]`, `acknowledgedCautions[{productId, orderId}]` |
+| `GET /api/purchase-orders?status=&page=&size=` | List |
+| `GET /api/purchase-orders/{id}` / `…/events` | Details (items, allowed actions, approval blockers) / history |
+| `PUT /api/purchase-orders/{id}` | Edit while PENDING_APPROVAL: `{version, note, items, acknowledgedCautions}` (full replacement) |
+| `POST /api/purchase-orders/{id}/approve` | `{version}` → APPROVED |
+| `POST /api/purchase-orders/{id}/reject` | `{version, reason}` → REJECTED (reservations released) |
+| `POST /api/purchase-orders/{id}/cancel` | `{version, reason}` from PENDING_APPROVAL or APPROVED → CANCELED (released) |
+
+**Rules (D5):** candidates are out of stock, at / below the minimum, or running out within 7 days.
+URGENT = within 3 days (exactly Guardian's alert), SOON = 4–7 days. With enough history (≥ 7 observed
+days, ≥ 3 net units sold − returned in 14 days): target = minimum + ⌈net × 14 ÷ observed⌉ (SALES_RATE);
+otherwise, with a minimum: target = 2 × minimum (MIN_STOCK_ONLY, "not a forecast"); otherwise MANUAL
+(no quantity). Suggested = target − stock, at most 100000. Rule-based: no AI model, no confidence.
+
+**Safety:** strict bodies (storeId, status, prices, costs … → 400 `UNKNOWN_FIELD`); the server takes
+snapshots (name, barcode, calculation, expected unit cost from the product's cost — unknown stays
+unknown). One product can be in one open order only (`PRODUCT_IN_OPEN_ORDER`). Idempotent creation:
+the same `clientRequestId` with the same content returns the same order (`replayed`), with other
+content 409 `IDEMPOTENCY_KEY_REUSED`. Every change checks the version (`ORDER_CHANGED`), runs in one
+transaction with exactly one history event; "database is locked" is retried and otherwise answered
+409 `DATABASE_BUSY` (nothing saved). Products of a CLOSED order (14 days) or an order CANCELED after
+supplier contact (30 days, no recorded supplier acceptance) need an explicit acknowledgment
+(`REORDER_CAUTION_ACK_REQUIRED`). Purchasing never changes stock, prices, costs, sales, returns or reports.
+
 ## Run (Windows / macOS)
 Requires **Java JDK 17+** (backend) and **Flutter 3.38+** (frontend). Maven and SQLite need no installation.
 

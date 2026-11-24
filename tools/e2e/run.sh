@@ -68,9 +68,13 @@ for suite in "${SUITES[@]}"; do
   ready=0
   for _ in $(seq 1 150); do
     kill -0 "$BACKEND_PID" 2>/dev/null || break
+    # Ready = the demo data AND the System Admin exist (two separate start-up tasks whose order
+    # is not fixed; a script that logs in as sysadmin too early would otherwise fail).
     code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' \
       -d '{"username":"neshan.cashier","password":"Cashier-Pass-1"}' http://127.0.0.1:8080/api/auth/login || true)
-    [ "$code" = "200" ] && { ready=1; break; }
+    sys=$(curl -s -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' \
+      -d '{"username":"sysadmin","password":"Admin12345"}' http://127.0.0.1:8080/api/auth/login || true)
+    [ "$code" = "200" ] && [ "$sys" = "200" ] && { ready=1; break; }
     sleep 1
   done
   if [ $ready -ne 1 ]; then echo "[$suite] backend did not start (see $OUT/backend.log)"; RESULT[$suite]=ERROR; stop_backend; remove_work; continue; fi
