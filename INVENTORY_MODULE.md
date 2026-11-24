@@ -283,8 +283,8 @@ API: `GET/POST /api/suppliers`, `GET/PUT /api/suppliers/{id}`, `PUT /api/supplie
 ## Purchase Orders – Phase 2: recommendations, candidates and order workflow (backend only)
 
 Backend API only (the purchase screens are Phase 4). Store Admin only; the store always comes from the
-login; another store's data answers 404. No supplier messages, sending, confirmation, closing or
-receiving yet (Phase 3): APPROVED is the last state reachable before cancel / reject.
+login; another store's data answers 404. The supplier communication that follows APPROVED is Phase 3
+(next section); receiving goods is not part of the purchasing feature yet.
 
 | Endpoint | What it does |
 |---|---|
@@ -296,7 +296,7 @@ receiving yet (Phase 3): APPROVED is the last state reachable before cancel / re
 | `PUT /api/purchase-orders/{id}` | Edit while PENDING_APPROVAL: `{version, note, items, acknowledgedCautions}` (full replacement) |
 | `POST /api/purchase-orders/{id}/approve` | `{version}` → APPROVED |
 | `POST /api/purchase-orders/{id}/reject` | `{version, reason}` → REJECTED (reservations released) |
-| `POST /api/purchase-orders/{id}/cancel` | `{version, reason}` from PENDING_APPROVAL or APPROVED → CANCELED (released) |
+| `POST /api/purchase-orders/{id}/cancel` | `{version, reason}` from PENDING_APPROVAL or APPROVED → CANCELED (released); after the message see Phase 3 |
 
 **Rules (D5):** candidates are out of stock, at / below the minimum, or running out within 7 days.
 URGENT = within 3 days (exactly Guardian's alert), SOON = 4–7 days. With enough history (≥ 7 observed
@@ -313,6 +313,43 @@ transaction with exactly one history event; "database is locked" is retried and 
 409 `DATABASE_BUSY` (nothing saved). Products of a CLOSED order (14 days) or an order CANCELED after
 supplier contact (30 days, no recorded supplier acceptance) need an explicit acknowledgment
 (`REORDER_CAUTION_ACK_REQUIRED`). Purchasing never changes stock, prices, costs, sales, returns or reports.
+
+## Purchase Orders – Phase 3: supplier communication (backend only, UR-M15 / SR28 / SR29)
+
+Backend API only (the screens and the WhatsApp button are Phase 4). **ClixSell never sends a message
+and never contacts WhatsApp or a supplier.** It prepares the message, returns a `wa.me` link after the
+manager confirms, and stores what the app reports (copy, opening) and what the manager records by hand
+(sent, supplier confirmed, closed, supplier accepted a cancellation). Nothing is ever "delivered" or
+"verified". Store Admin only; another store's order answers 404.
+
+| Endpoint | What it does |
+|---|---|
+| `GET …/{id}/message-preview?language=ar\|en` | APPROVED: the message now (Arabic by default), number, length report, `previewToken`. Nothing saved |
+| `POST …/{id}/message` | `{version, language, previewToken}` APPROVED → MESSAGE_GENERATED: text, number, language stored once (V6 T7) |
+| `GET …/{id}/message` | The stored message (never a link; read only when the order is final) |
+| `POST …/{id}/message-copied` | `{clientActionId}` app report, event only, `verified: false` |
+| `POST …/{id}/whatsapp-open-requested` | `{clientActionId, confirmed: true}` event (phase REQUESTED) + `wa.me/<stored number>?text=<stored message>`; MESSAGE_GENERATED / SENT / CONFIRMED only |
+| `POST …/{id}/whatsapp-open-result` | `{clientActionId, result: OPENED\|FAILED}` app report for that request (phase CLIENT_REPORTED) |
+| `POST …/{id}/mark-sent` | `{version, confirmSentInWhatsapp: true}` MESSAGE_GENERATED → SENT (the manager's statement) |
+| `POST …/{id}/supplier-confirmation` | `{version, confirmSupplierConfirmed: true, note?}` SENT → CONFIRMED |
+| `POST …/{id}/close` | `{version, confirmNoReceiving: true}` CONFIRMED → CLOSED: not receiving, stock unchanged, reservations released |
+| `POST …/{id}/cancel` | MESSAGE_GENERATED: `contactStatus` required — `NOT_SENT` (+ `confirmNotSent: true`), `UNKNOWN`, or `SENT` → 409 `RECORD_SENT_FIRST`. SENT / CONFIRMED: `acknowledgeSupplierNotNotified: true` (canceled after contact) |
+| `POST …/{id}/supplier-cancellation-recorded` | `{confirmSupplierAccepted: true, channel, note 3–300}` once, for a canceled order whose supplier may have it |
+
+**Message:** order number, store, date, supplier, and per line the snapshot name, barcode and quantity.
+Never a price, cost, total, internal note or score. Length is counted in Unicode code points exactly as
+SQLite's `length()` (V6 limit 2000; emoji = 1, not 2); names are cleaned (control and bidi characters
+removed) and isolated for Arabic. Nothing is ever cut: an order whose message cannot fit in any language
+is not approved (`MESSAGE_TOO_LONG`, with the longest lines and how many to remove); split it while
+pending. Order details show `messageLength` per language before approval.
+
+**Warnings (30 days, until a supplier acceptance is recorded):** CANCELED_AFTER_CONTACT, CONTACT_UNKNOWN
+(canceled with UNKNOWN), DECLARED_NOT_SENT (NOT_SENT after a copy / opening request); RECENTLY_CLOSED
+14 days. **Overdue (display):** message prepared ≥ 1 day, sent ≥ 3 days, confirmed ≥ 14 days.
+**Concurrency:** every Phase 3 change takes SQLite's write lock first with an UPDATE that matches no
+row (changes nothing), then checks and writes; client reports are de-duplicated by `clientActionId`
+and the supplier acceptance by order. This uniqueness is enforced by the service, not by a database
+constraint.
 
 ## Run (Windows / macOS)
 Requires **Java JDK 17+** (backend) and **Flutter 3.38+** (frontend). Maven and SQLite need no installation.
