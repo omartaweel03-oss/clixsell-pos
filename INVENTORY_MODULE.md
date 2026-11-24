@@ -234,12 +234,16 @@ Recommendations (suggestions only, nothing changes automatically): T1 order befo
 * Not in Phase 1 (later phases, not built): saved alerts / read / dismiss, statistical limits,
   removed invoice lines in the POS, suppliers, purchase recommendations and orders, WhatsApp.
 
-### Known issue (U5) – must be fixed before the production release
-Reports and Sales Analytics (`ReportPeriod`) bound a day with `"<day>T00:00:00"`, but a time
-saved exactly at midnight is stored as `"<day>T00:00"` (Java omits `:00` seconds), which sorts
-before the bound: such a sale is counted in the previous day / month. Guardian Mode already uses
-`"<day>T00:00"` (fixed in its audit). Left unchanged here on purpose (no change outside Guardian
-Mode); it is a separate regression item.
+### Midnight bounds of Reports and Sales Analytics (U5, fixed)
+A time is stored as `LocalDateTime.toString()`, which leaves out `:00` seconds: the first second
+after midnight is `"2026-11-01T00:00"`. Reports and Sales Analytics (`ReportPeriod`) used to bound a
+day with `"<day>T00:00:00"`, which sorts AFTER that text, so such a sale or return was counted on
+the day (month, year) before and was missing from the daily chart. The bounds are now
+`"<day>T00:00"` (the smallest text of any time of a day), the same as Guardian Mode. No stored
+record, schema or migration changed; only the reading. If an old database holds records stored
+exactly as `"…T00:00"`, their past day / month now shows them where they belong. Tests:
+`ReportPeriodTest`, `ReportMidnightApiTest` (midnight sales and returns, month and year boundaries,
+profit, tax, charts, previous period, best sellers, two stores, the Guardian 7-day chart).
 
 ## Run (Windows / macOS)
 Requires **Java JDK 17+** (backend) and **Flutter 3.38+** (frontend). Maven and SQLite need no installation.
