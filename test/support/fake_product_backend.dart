@@ -44,6 +44,9 @@ class FakeProductBackend {
 
   /// "Database rows", in ProductResponse JSON format (with storeId).
   final List<Map<String, dynamic>> rows = [];
+
+  /// Supplier names (lower case) the real backend would refuse for a new link (D16).
+  final Set<String> inactiveSuppliers = {};
   final List<Map<String, dynamic>> stores = [];
   final List<Map<String, dynamic>> users = [];
 
@@ -695,6 +698,14 @@ class FakeProductBackend {
       final b = body();
       if (_barcodeTaken(mine, b['barcode'] as String, null)) {
         return _duplicate(b['barcode'] as String);
+      }
+      final supplier = (b['supplierName'] as String? ?? '')
+          .trim()
+          .toLowerCase();
+      if (inactiveSuppliers.contains(supplier)) {
+        return _error(409, 'SUPPLIER_INACTIVE', 'Supplier is inactive', {
+          'supplierName': 'Supplier is inactive',
+        });
       }
       final row = _productRow(_nextProductId++, storeId, b);
       rows.add(row);

@@ -75,6 +75,15 @@ public class GuardianRepository {
                 discountLines(storeId, start, end));
     }
 
+    /**
+     * The same "units sold minus units returned in the last 14 days (today included)" that
+     * {@link #load} gives Guardian Mode, for Purchase Recommendations (read only; Guardian's
+     * own calculations are not changed).
+     */
+    public Map<Long, Long> netUnitsLast14(long storeId, LocalDate today) {
+        return netUnitsSince(storeId, dayStart(today.minusDays(13)));
+    }
+
     List<ProductFact> products(long storeId) {
         return db.query("""
                 SELECT product_id, name, category, selling_price, cost_price, quantity, min_stock, created_at

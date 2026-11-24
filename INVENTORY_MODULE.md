@@ -245,6 +245,75 @@ exactly as `"…T00:00"`, their past day / month now shows them where they belon
 `ReportPeriodTest`, `ReportMidnightApiTest` (midnight sales and returns, month and year boundaries,
 profit, tax, charts, previous period, best sellers, two stores, the Guardian 7-day chart).
 
+## Purchase Orders – Phase 1: database V6 and Supplier Management (UR-M13–UR-M15 groundwork)
+
+Phase 1 adds the purchase-order **database structure** and **Supplier Management** only. There are no
+purchase recommendations, no purchase-order screens or API, and no WhatsApp messages yet (later
+phases, each approved separately). Nothing in the app creates a purchase order.
+
+**Suppliers screen** (Store Admin only, sidebar → Suppliers): list of the store's suppliers with
+WhatsApp number, phone, number of products and status; search by name or number; filter
+All / Active / Inactive; add, edit, details (products of the supplier), deactivate / activate.
+Suppliers are never deleted. Arabic and English.
+
+Rules:
+- Names: spaces are normalized ("  Al   Quds " → "Al Quds"); duplicates within a store are refused
+  (English letters compared without case, like the database). Legacy names in the database are never
+  rewritten automatically.
+- WhatsApp: international format, stored as digits only (e.g. `970599123456`); a local number
+  (`05…`) is refused.
+- Deactivating a supplier does not touch its products: they stay linked and keep selling in the POS.
+  A new product, or a product moved to another supplier, cannot use an inactive supplier
+  (409 `SUPPLIER_INACTIVE`); nothing except the Suppliers screen reactivates a supplier.
+- Product form: a supplier name that differs from an existing one only by spaces links to it;
+  if several legacy suppliers match that way, 409 `SUPPLIER_NAME_AMBIGUOUS` (type the exact name).
+- New endpoints accept only their own fields: anything else (e.g. `storeId`) → 400 `UNKNOWN_FIELD`.
+
+**Database V6** (`V6__purchase_orders.java`, additions only): `suppliers.active`,
+`stores.next_purchase_order_number`, unique (id, store_id) indexes, and the tables `purchase_orders`,
+`purchase_order_items`, `purchase_order_events` with composite foreign keys (no link between two
+stores, even with direct SQL), NULL-safe CHECK constraints and triggers (state diagram of Figure 3.20,
+one open order per product, append-only history, Store Admin actors, no deletion of orders or
+suppliers). Before changing anything the migration checks integrity and references, writes a new,
+verified backup `clixsell-backup-before-v6-<time>.db` (never overwriting a file) and rolls back if
+any existing row or value changes.
+
+API: `GET/POST /api/suppliers`, `GET/PUT /api/suppliers/{id}`, `PUT /api/suppliers/{id}/status`.
+
+## Purchase Orders – Phase 2: recommendations, candidates and order workflow (backend only)
+
+Backend API only (the purchase screens are Phase 4). Store Admin only; the store always comes from the
+login; another store's data answers 404. No supplier messages, sending, confirmation, closing or
+receiving yet (Phase 3): APPROVED is the last state reachable before cancel / reject.
+
+| Endpoint | What it does |
+|---|---|
+| `GET /api/purchase-recommendations` | Guardian Mode ON: products to buy, by supplier, with the rule and numbers. OFF: `guardianEnabled: false`, nothing calculated |
+| `GET /api/purchase-candidates?supplierId=` | Manual order: the supplier's products with stock facts, open orders and cautions — never a suggested quantity |
+| `POST /api/purchase-orders` | Create (`PENDING_APPROVAL`). Body: `clientRequestId` (UUID), `supplierId`, `source` (MANUAL / GUARDIAN), `note`, `items[{productId, quantity}]`, `acknowledgedCautions[{productId, orderId}]` |
+| `GET /api/purchase-orders?status=&page=&size=` | List |
+| `GET /api/purchase-orders/{id}` / `…/events` | Details (items, allowed actions, approval blockers) / history |
+| `PUT /api/purchase-orders/{id}` | Edit while PENDING_APPROVAL: `{version, note, items, acknowledgedCautions}` (full replacement) |
+| `POST /api/purchase-orders/{id}/approve` | `{version}` → APPROVED |
+| `POST /api/purchase-orders/{id}/reject` | `{version, reason}` → REJECTED (reservations released) |
+| `POST /api/purchase-orders/{id}/cancel` | `{version, reason}` from PENDING_APPROVAL or APPROVED → CANCELED (released) |
+
+**Rules (D5):** candidates are out of stock, at / below the minimum, or running out within 7 days.
+URGENT = within 3 days (exactly Guardian's alert), SOON = 4–7 days. With enough history (≥ 7 observed
+days, ≥ 3 net units sold − returned in 14 days): target = minimum + ⌈net × 14 ÷ observed⌉ (SALES_RATE);
+otherwise, with a minimum: target = 2 × minimum (MIN_STOCK_ONLY, "not a forecast"); otherwise MANUAL
+(no quantity). Suggested = target − stock, at most 100000. Rule-based: no AI model, no confidence.
+
+**Safety:** strict bodies (storeId, status, prices, costs … → 400 `UNKNOWN_FIELD`); the server takes
+snapshots (name, barcode, calculation, expected unit cost from the product's cost — unknown stays
+unknown). One product can be in one open order only (`PRODUCT_IN_OPEN_ORDER`). Idempotent creation:
+the same `clientRequestId` with the same content returns the same order (`replayed`), with other
+content 409 `IDEMPOTENCY_KEY_REUSED`. Every change checks the version (`ORDER_CHANGED`), runs in one
+transaction with exactly one history event; "database is locked" is retried and otherwise answered
+409 `DATABASE_BUSY` (nothing saved). Products of a CLOSED order (14 days) or an order CANCELED after
+supplier contact (30 days, no recorded supplier acceptance) need an explicit acknowledgment
+(`REORDER_CAUTION_ACK_REQUIRED`). Purchasing never changes stock, prices, costs, sales, returns or reports.
+
 ## Run (Windows / macOS)
 Requires **Java JDK 17+** (backend) and **Flutter 3.38+** (frontend). Maven and SQLite need no installation.
 

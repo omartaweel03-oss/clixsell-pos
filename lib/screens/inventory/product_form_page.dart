@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../l10n/app_strings.dart';
+import '../../l10n/purchase_strings.dart';
 import '../../models/product.dart';
 import '../../models/product_category.dart';
 import '../../services/product_api_client.dart';
@@ -322,6 +323,13 @@ class ProductFormPageState extends State<ProductFormPage> {
           } else {
             _serverErrors[entry.key] = entry.value;
           }
+        }
+        // Supplier rules (Purchase Orders Phase 1, D16 / D26) in the UI language.
+        final p = PurchaseStrings.of(context);
+        if (e.code == 'SUPPLIER_INACTIVE') {
+          _serverErrors['supplierName'] = p.productSupplierInactive;
+        } else if (e.code == 'SUPPLIER_NAME_AMBIGUOUS') {
+          _serverErrors['supplierName'] = p.productSupplierAmbiguous;
         }
       }
       _autovalidate = AutovalidateMode.onUserInteraction;

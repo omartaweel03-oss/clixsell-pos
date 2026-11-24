@@ -1,0 +1,152 @@
+package com.clixsell.pos.purchase;
+
+import com.clixsell.pos.auth.CurrentUser;
+import com.clixsell.pos.common.ValidationException;
+import com.clixsell.pos.purchase.PurchaseResponses.Candidates;
+import com.clixsell.pos.purchase.PurchaseResponses.EventView;
+import com.clixsell.pos.purchase.PurchaseResponses.OrderPage;
+import com.clixsell.pos.purchase.PurchaseResponses.OrderView;
+import com.clixsell.pos.purchase.PurchaseResponses.Recommendations;
+import com.clixsell.pos.user.Role;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.net.URI;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Purchasing, Phase 2 — Store Admin of the store only (SecurityConfig, and checked again here).
+ *
+ * <pre>
+ * GET  /api/purchase-recommendations              Guardian recommendations (Guardian ON; OFF → guardianEnabled false)
+ * GET  /api/purchase-candidates?supplierId=…      a supplier's products for a manual order (facts only)
+ * POST /api/purchase-orders                       create (PENDING_APPROVAL); idempotent by clientRequestId
+ * GET  /api/purchase-orders?status=…&amp;page=&amp;size=  list
+ * GET  /api/purchase-orders/{id}                  details
+ * GET  /api/purchase-orders/{id}/events           history
+ * PUT  /api/purchase-orders/{id}                  edit (PENDING_APPROVAL)        {version, note, items, acknowledgedCautions}
+ * POST /api/purchase-orders/{id}/approve          PENDING_APPROVAL → APPROVED     {version}
+ * POST /api/purchase-orders/{id}/reject           PENDING_APPROVAL → REJECTED     {version, reason}
+ * POST /api/purchase-orders/{id}/cancel           PENDING_APPROVAL / APPROVED → CANCELED  {version, reason}
+ * </pre>
+ * Bodies are strict; the store is always the logged-in user's. There is no supplier message,
+ * sending, confirmation, closing or receiving in this version.
+ */
+@RestController
+public class PurchaseController {
+
+    private final PurchaseRecommendationService recommendations;
+    private final PurchaseOrderService orders;
+
+    public PurchaseController(PurchaseRecommendationService recommendations, PurchaseOrderService orders) {
+        this.recommendations = recommendations;
+        this.orders = orders;
+    }
+
+    private static long storeOf(CurrentUser user) {
+        if (user.role() != Role.STORE_ADMIN) throw new AccessDeniedException("Store Admin only");
+        return user.requireStoreId();
+    }
+
+    @GetMapping("/api/purchase-recommendations")
+    public Recommendations recommendations(@AuthenticationPrincipal CurrentUser user) {
+        return recommendations.recommendations(storeOf(user));
+    }
+
+    @GetMapping("/api/purchase-candidates")
+    public Candidates candidates(@AuthenticationPrincipal CurrentUser user,
+                                 @RequestParam(name = "supplierId", required = false) String supplierId) {
+        long store = storeOf(user);
+        long id;
+        try {
+            id = Long.parseLong(supplierId == null ? "" : supplierId.trim());
+        } catch (NumberFormatException e) {
+            id = -1;
+        }
+        if (id <= 0) throw new ValidationException(Map.of("supplierId", "A supplier id is required"));
+        return recommendations.candidates(store, id);
+    }
+
+    @PostMapping("/api/purchase-orders")
+    public ResponseEntity<OrderView> create(@AuthenticationPrincipal CurrentUser user,
+                                            @RequestBody Map<String, Object> body) {
+        storeOf(user);
+        OrderView v = orders.create(user, PurchaseRequests.create(body));
+        // 201 for a new order, 200 when the same request was sent again (replayed)
+        return ResponseEntity.status(v.replayed() ? HttpStatus.OK : HttpStatus.CREATED)
+                .location(URI.create("/api/purchase-orders/" + v.orderId())).body(v);
+    }
+
+    @GetMapping("/api/purchase-orders")
+    public OrderPage list(@AuthenticationPrincipal CurrentUser user,
+                          @RequestParam(name = "status", required = false) List<String> status,
+                          @RequestParam(name = "page", defaultValue = "0") int page,
+                          @RequestParam(name = "size", defaultValue = "20") int size) {
+        storeOf(user);
+        List<PurchaseOrderStatus> wanted = new ArrayList<>();
+        if (status != null) {
+            for (String s : status) {
+                for (String part : s.split(",")) {
+                    if (part.isBlank()) continue;
+                    try {
+                        wanted.add(PurchaseOrderStatus.valueOf(part.trim()));
+                    } catch (IllegalArgumentException e) {
+                        throw new ValidationException(Map.of("status", "Unknown status: " + part.trim()));
+                    }
+                }
+            }
+        }
+        return orders.list(user, wanted, page, size);
+    }
+
+    @GetMapping("/api/purchase-orders/{id}")
+    public OrderView get(@AuthenticationPrincipal CurrentUser user, @PathVariable long id) {
+        storeOf(user);
+        return orders.get(user, id);
+    }
+
+    @GetMapping("/api/purchase-orders/{id}/events")
+    public List<EventView> events(@AuthenticationPrincipal CurrentUser user, @PathVariable long id) {
+        storeOf(user);
+        return orders.history(user, id);
+    }
+
+    @PutMapping("/api/purchase-orders/{id}")
+    public OrderView edit(@AuthenticationPrincipal CurrentUser user, @PathVariable long id,
+                          @RequestBody Map<String, Object> body) {
+        storeOf(user);
+        return orders.edit(user, id, PurchaseRequests.edit(body));
+    }
+
+    @PostMapping("/api/purchase-orders/{id}/approve")
+    public OrderView approve(@AuthenticationPrincipal CurrentUser user, @PathVariable long id,
+                             @RequestBody Map<String, Object> body) {
+        storeOf(user);
+        return orders.approve(user, id, PurchaseRequests.version(body));
+    }
+
+    @PostMapping("/api/purchase-orders/{id}/reject")
+    public OrderView reject(@AuthenticationPrincipal CurrentUser user, @PathVariable long id,
+                            @RequestBody Map<String, Object> body) {
+        storeOf(user);
+        return orders.reject(user, id, PurchaseRequests.reason(body));
+    }
+
+    @PostMapping("/api/purchase-orders/{id}/cancel")
+    public OrderView cancel(@AuthenticationPrincipal CurrentUser user, @PathVariable long id,
+                            @RequestBody Map<String, Object> body) {
+        storeOf(user);
+        return orders.cancel(user, id, PurchaseRequests.reason(body));
+    }
+}

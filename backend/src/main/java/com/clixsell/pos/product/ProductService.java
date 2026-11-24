@@ -5,6 +5,7 @@ import com.clixsell.pos.activity.ActivityLogService;
 import com.clixsell.pos.auth.CurrentUser;
 import com.clixsell.pos.store.Store;
 import com.clixsell.pos.store.StoreRepository;
+import com.clixsell.pos.common.ConflictException;
 import com.clixsell.pos.supplier.Supplier;
 import com.clixsell.pos.supplier.SupplierService;
 import org.springframework.stereotype.Service;
@@ -70,6 +71,7 @@ public class ProductService {
         }
         Store store = stores.findById(storeId).orElseThrow();
         Supplier supplier = suppliers.findOrCreate(store, request.supplierName());
+        rejectInactive(supplier);
         return products.save(Product.create(request, supplier, store));
     }
 
@@ -90,6 +92,9 @@ public class ProductService {
         Double oldCost = product.getCostPrice();
         int oldQuantity = product.getQuantity();
         Supplier supplier = suppliers.findOrCreate(product.getStore(), request.supplierName());
+        // D16: a product already linked to an inactive supplier may still be edited; it may not be
+        // newly linked to one. Nothing here ever reactivates a supplier.
+        if (!supplier.getSupplierId().equals(product.getSupplier().getSupplierId())) rejectInactive(supplier);
         product.updateDetails(request, supplier);
         Product saved = products.save(product);
 
@@ -123,6 +128,14 @@ public class ProductService {
         d.put("quantity", product.getQuantity());
         activity.record(user, ActivityEventType.PRODUCT_DELETED, "PRODUCT", product.getProductId(), product.getName(), d);
         products.delete(product);
+    }
+
+    /** D16: a new link to a deactivated supplier is refused (activate it in Suppliers first). */
+    private static void rejectInactive(Supplier supplier) {
+        if (!supplier.isActive()) {
+            throw new ConflictException("SUPPLIER_INACTIVE", "supplierName", "Supplier '" + supplier.getName()
+                    + "' is inactive. Activate it in Suppliers or choose another supplier.");
+        }
     }
 
     private void logChange(CurrentUser user, Product p, ActivityEventType type, Double oldValue, Double newValue) {
