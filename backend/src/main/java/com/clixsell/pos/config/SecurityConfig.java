@@ -88,6 +88,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/guardian", "/api/guardian/**").hasRole("STORE_ADMIN")
                         // Supplier Management and purchasing (Purchase Orders phases): Store Admin only.
                         .requestMatchers("/api/suppliers", "/api/suppliers/**").hasRole("STORE_ADMIN")
+                        .requestMatchers("/api/purchase-recommendations", "/api/purchase-recommendations/**",
+                                "/api/purchase-candidates", "/api/purchase-candidates/**",
+                                "/api/purchase-orders", "/api/purchase-orders/**").hasRole("STORE_ADMIN")
                         .requestMatchers("/api/sales", "/api/sales/**", "/api/returns", "/api/returns/**")
                         .hasAnyRole("STORE_ADMIN", "CASHIER")
                         .anyRequest().authenticated())

@@ -34,6 +34,18 @@ public class ApiExceptionHandler {
         return error(HttpStatus.BAD_REQUEST, "UNKNOWN_FIELD", e.getMessage(), Map.of(e.getField(), e.getMessage()));
     }
 
+    /** Purchasing errors, with optional structured details (open orders, cautions to acknowledge). */
+    @ExceptionHandler(com.clixsell.pos.purchase.PurchaseException.class)
+    public ResponseEntity<Map<String, Object>> purchase(com.clixsell.pos.purchase.PurchaseException e) {
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("status", e.getStatus().value());
+        body.put("code", e.getCode());
+        body.put("message", e.getMessage());
+        body.put("fieldErrors", e.getFieldErrors());
+        if (e.getDetails() != null) body.put("details", e.getDetails());
+        return ResponseEntity.status(e.getStatus()).body(body);
+    }
+
     @ExceptionHandler(LoginFailedException.class)
     public ResponseEntity<ApiError> loginFailed(LoginFailedException e) {
         HttpStatus status = e.getReason() == LoginFailedException.Reason.ACCOUNT_LOCKED
