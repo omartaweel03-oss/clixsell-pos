@@ -53,11 +53,15 @@ for path in ('/purchase-recommendations', '/purchase-candidates?supplierId=1', '
     chk('B', f'no login {path} → 401', call(path)[0], 401)
 
 # ── C) set up a real sales history in Shini (disposable database) ───────────────────────────
-sup = q("select s.supplier_id, s.name from suppliers s where s.store_id=1 and s.active=1 and "
-        "(select count(*) from products p where p.supplier_id=s.supplier_id) >= 3 order by s.supplier_id limit 1")[0]
-SUP, SUPNAME = sup
-prods = [r[0] for r in q('select product_id from products where supplier_id=? order by product_id', SUP)]
-P1, P2, P3 = prods[:3]
+# own supplier and products through the real API (no demo history on them)
+s_, sp_ = call('/suppliers', SA, 'POST', {'name': 'E2E Dairy Supplier', 'whatsappNumber': '970599777001'})
+SUP, SUPNAME = sp_['supplierId'], sp_['name']
+prods = []
+for i, (nm, cost) in enumerate([('E2E Labneh', 9.5), ('E2E Milk', 3.2), ('E2E Cheese', None), ('E2E Butter', 7.0)]):
+    body = {'name': nm, 'barcode': f'729999000{i:04d}', 'category': 'dairy', 'sellingPrice': 14, 'quantity': 50,
+            'minStock': 5, 'supplierName': 'E2E Dairy Supplier', **({'costPrice': cost} if cost is not None else {})}
+    prods.append(call('/products', SA, 'POST', body)[1]['productId'])
+P1, P2, P3, P4 = prods
 old = (now - dt.timedelta(days=40)).strftime(TF)
 cashier = one("select user_id from users where username='shini.cashier'")
 db.execute('update products set created_at=?, quantity=4, min_stock=5 where product_id=?', (old, P1))   # E1-like
@@ -233,8 +237,7 @@ chk('I', 'Neshan list = only its order', [x['orderId'] for x in call('/purchase-
 chk('I', 'Shini order unchanged by Neshan', one('select status from purchase_orders where order_id=?', ok['orderId']), 'PENDING_APPROVAL')
 
 # ── J) real concurrent HTTP ─────────────────────────────────────────────────────────────────
-P4 = prods[3] if len(prods) > 3 else None
-target = P4 or one('select min(product_id) from products where supplier_id=? and product_id not in (?,?,?)', SUP, P1, P2, P3)
+target = P4
 res = []
 def hit(b): res.append(call('/purchase-orders', SA, 'POST', b))
 bodies = [order(SUP, 'MANUAL', [(target, 1 + i)]) for i in range(8)]
@@ -242,7 +245,17 @@ th = [threading.Thread(target=hit, args=(b,)) for b in bodies]
 [t.start() for t in th]; [t.join() for t in th]
 chk('J', '8 orders for one product at once → exactly one created, the rest 409',
     (sorted(s for s, _ in res).count(201), all(s in (201, 409) for s, _ in res)), (1, True))
+print('   answers:', sorted((s, (b or {}).get('code')) for s, b in res))
 chk('J', 'exactly one reservation', one('select count(*) from purchase_order_items where open_product_id=?', target), 1)
+# the same with a product from the demo data (its own demo supplier)
+dsup, dprod = q("select s.supplier_id, p.product_id from products p join suppliers s on s.supplier_id=p.supplier_id "
+                "where p.store_id=1 and s.active=1 and s.supplier_id<>? order by p.product_id limit 1", SUP)[0]
+res.clear()
+th = [threading.Thread(target=hit, args=(order(dsup, 'MANUAL', [(dprod, 1 + i)]),)) for i in range(8)]
+[t.start() for t in th]; [t.join() for t in th]
+print('   demo answers:', sorted((s, (b or {}).get('code'), (b or {}).get('message')) for s, b in res))
+chk('J', '8 orders for one DEMO product at once → exactly one created',
+    (sorted(s for s, _ in res).count(201), all(s in (201, 409) for s, _ in res)), (1, True))
 res.clear(); same = order(SUP, 'MANUAL', [(P1, 2)])
 th = [threading.Thread(target=hit, args=(same,)) for _ in range(6)]
 [t.start() for t in th]; [t.join() for t in th]
