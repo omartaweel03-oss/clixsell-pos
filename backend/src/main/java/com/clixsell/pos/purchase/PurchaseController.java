@@ -35,7 +35,8 @@ import java.util.Map;
  * GET  /api/purchase-recommendations              Guardian recommendations (Guardian ON; OFF → guardianEnabled false)
  * GET  /api/purchase-candidates?supplierId=…      a supplier's products for a manual order (facts only)
  * POST /api/purchase-orders                       create (PENDING_APPROVAL); idempotent by clientRequestId
- * GET  /api/purchase-orders?status=…&amp;page=&amp;size=  list
+ * GET  /api/purchase-orders?status=…&amp;q=…&amp;page=&amp;size=  list; q searches all the store's orders
+ *                                                  (order number or saved supplier name, ≤ 80 characters)
  * GET  /api/purchase-orders/{id}                  details
  * GET  /api/purchase-orders/{id}/events           history
  * PUT  /api/purchase-orders/{id}                  edit (PENDING_APPROVAL)        {version, note, items, acknowledgedCautions}
@@ -61,6 +62,8 @@ import java.util.Map;
  */
 @RestController
 public class PurchaseController {
+
+    private static final int MAX_QUERY = 80;
 
     private final PurchaseRecommendationService recommendations;
     private final PurchaseOrderService orders;
@@ -110,9 +113,18 @@ public class PurchaseController {
     @GetMapping("/api/purchase-orders")
     public OrderPage list(@AuthenticationPrincipal CurrentUser user,
                           @RequestParam(name = "status", required = false) List<String> status,
+                          @RequestParam(name = "q", required = false) String q,
                           @RequestParam(name = "page", defaultValue = "0") int page,
                           @RequestParam(name = "size", defaultValue = "20") int size) {
         storeOf(user);
+        String query = q == null ? null : q.strip();
+        if (query != null && query.isEmpty()) query = null;
+        if (query != null && query.codePointCount(0, query.length()) > MAX_QUERY) {
+            throw new ValidationException(Map.of("q", "Search text must be " + MAX_QUERY + " characters or fewer"));
+        }
+        if (query != null && query.chars().anyMatch(Character::isISOControl)) {
+            throw new ValidationException(Map.of("q", "Search text must not contain control characters"));
+        }
         List<PurchaseOrderStatus> wanted = new ArrayList<>();
         if (status != null) {
             for (String s : status) {
@@ -126,7 +138,7 @@ public class PurchaseController {
                 }
             }
         }
-        return orders.list(user, wanted, page, size);
+        return orders.list(user, wanted, query, page, size);
     }
 
     @GetMapping("/api/purchase-orders/{id}")

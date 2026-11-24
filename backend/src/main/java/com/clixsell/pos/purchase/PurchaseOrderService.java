@@ -377,14 +377,27 @@ public class PurchaseOrderService {
 
     // ── reads ───────────────────────────────────────────────────────────────────────
 
-    public OrderPage list(CurrentUser user, Collection<PurchaseOrderStatus> status, int page, int size) {
+    /**
+     * The store's orders, newest first. {@code query} (optional, already validated) searches ALL
+     * the store's orders by order number or saved supplier name, before paging.
+     */
+    public OrderPage list(CurrentUser user, Collection<PurchaseOrderStatus> status, String query, int page, int size) {
         long storeId = user.requireStoreId();
         int p = Math.max(page, 0);
         int s = Math.min(Math.max(size, 1), PAGE_MAX);
         return readOnly(() -> {
-            Page<PurchaseOrder> result = status == null || status.isEmpty()
-                    ? orders.findByStoreIdOrderByOrderIdDesc(storeId, PageRequest.of(p, s))
-                    : orders.findByStoreIdAndStatusInOrderByOrderIdDesc(storeId, status, PageRequest.of(p, s));
+            Page<PurchaseOrder> result;
+            if (query != null) {
+                Collection<PurchaseOrderStatus> states = status == null || status.isEmpty()
+                        ? List.of(PurchaseOrderStatus.values()) : status;
+                String pattern = "%" + query.toLowerCase(java.util.Locale.ROOT).replace("\\", "\\\\")
+                        .replace("%", "\\%").replace("_", "\\_") + "%";
+                result = orders.search(storeId, states, pattern, PageRequest.of(p, s));
+            } else {
+                result = status == null || status.isEmpty()
+                        ? orders.findByStoreIdOrderByOrderIdDesc(storeId, PageRequest.of(p, s))
+                        : orders.findByStoreIdAndStatusInOrderByOrderIdDesc(storeId, status, PageRequest.of(p, s));
+            }
             List<Long> ids = result.getContent().stream().map(PurchaseOrder::getOrderId).toList();
             Map<Long, Long> counts = new HashMap<>();
             if (!ids.isEmpty()) for (Object[] r : items.countByOrder(storeId, ids)) counts.put((Long) r[0], (Long) r[1]);
