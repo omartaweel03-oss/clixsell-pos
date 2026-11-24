@@ -375,7 +375,7 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
       color: AppColors.textSecondary,
     );
     return MinWidthScroll(
-      minWidth: 980,
+      minWidth: 820,
       child: Column(
         children: [
           Container(

@@ -292,6 +292,7 @@ class _PurchaseRecommendationsPageState
             width: 44,
             child: Checkbox(
               key: Key('rec-select-${r.productId}'),
+              semanticLabel: t.selectProduct(r.name),
               value: _selected.contains(r.productId),
               onChanged: r.available ? (v) => _toggle(s, r, v ?? false) : null,
             ),

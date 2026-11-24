@@ -162,9 +162,10 @@ class PurchaseOrderStrings {
     'القواعد: عاجل = ينفد خلال 3 أيام، قريب = خلال 4–7 أيام. الكميات المقترحة يحسبها الخادم؛ ويمكنك تغييرها قبل الحفظ.',
   );
   String createFromSelected(int n) => _t(
-    'Create order from ${iso('$n')} selected',
+    'Create order from $n selected',
     'إنشاء أمر من ${iso('$n')} محدد',
   );
+  String selectProduct(String name) => _t('Select $name', 'تحديد ${iso(name)}');
   String get selectOneSupplier => _t(
     'Select products of one supplier to create an order.',
     'حدّد منتجات مورد واحد لإنشاء أمر.',
@@ -865,7 +866,7 @@ class PurchaseOrderStrings {
     'تم التحقق: التغيير كان قد حُفظ.',
   );
   String get notSavedAfterCheck => _t(
-    'Checked: the change was not saved. You can try again.',
-    'تم التحقق: التغيير لم يُحفظ. يمكنك إعادة المحاولة.',
+    'Checked: the change is not saved at this moment. If the server was busy it may still finish — press Refresh before trying again.',
+    'تم التحقق: التغيير غير محفوظ في هذه اللحظة. إذا كان الخادم مشغولاً فقد يكتمل لاحقاً — اضغط تحديث قبل إعادة المحاولة.',
   );
 }

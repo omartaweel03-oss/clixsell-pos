@@ -114,16 +114,24 @@ class WhatsappNumber extends StatelessWidget {
   final String digits;
   final bool large;
 
+  // Plain Text in a SelectionArea: readable by screen readers and selectable
+  // with the mouse (SelectableText is an empty box for screen readers on the
+  // web, and shrank to its content so it was misaligned at some widths).
   @override
-  Widget build(BuildContext context) => Directionality(
-    textDirection: TextDirection.ltr,
-    child: SelectableText(
-      formatWhatsapp(digits),
-      style: TextStyle(
-        fontSize: large ? 22 : 14,
-        fontWeight: FontWeight.w800,
-        letterSpacing: large ? 0.6 : 0,
-        color: AppColors.textPrimary,
+  Widget build(BuildContext context) => Align(
+    // at the START of the line in both languages (right side in Arabic)
+    alignment: AlignmentDirectional.centerStart,
+    widthFactor: 1, // in a Wrap / Row it takes only its own width
+    child: SelectionArea(
+      child: Text(
+        formatWhatsapp(digits),
+        textDirection: TextDirection.ltr,
+        style: TextStyle(
+          fontSize: large ? 22 : 14,
+          fontWeight: FontWeight.w800,
+          letterSpacing: large ? 0.6 : 0,
+          color: AppColors.textPrimary,
+        ),
       ),
     ),
   );
@@ -481,12 +489,20 @@ class MessageTextBox extends StatelessWidget {
       borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
       border: Border.all(color: AppColors.border),
     ),
+    // Plain Text in a SelectionArea over the full width, in the direction of the
+    // MESSAGE's language (see WhatsappNumber for why not SelectableText).
     child: SingleChildScrollView(
-      child: Directionality(
-        textDirection: language == 'ar' ? TextDirection.rtl : TextDirection.ltr,
-        child: SelectableText(
-          text,
-          style: const TextStyle(fontSize: 13.5, height: 1.6),
+      child: SizedBox(
+        width: double.infinity,
+        child: SelectionArea(
+          child: Text(
+            text,
+            textDirection: language == 'ar'
+                ? TextDirection.rtl
+                : TextDirection.ltr,
+            textAlign: TextAlign.start,
+            style: const TextStyle(fontSize: 13.5, height: 1.6),
+          ),
         ),
       ),
     ),
