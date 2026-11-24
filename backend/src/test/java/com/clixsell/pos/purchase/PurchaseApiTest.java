@@ -526,7 +526,8 @@ class PurchaseApiTest extends PurchaseApiTestBase {
         assertThat(status(ok)).isEqualTo(200);
         assertThat((String) read(ok, "$.status")).isEqualTo("APPROVED");
         assertThat((String) read(ok, "$.approvedBy.fullName")).isEqualTo("Test User");
-        assertThat((List<Object>) read(ok, "$.allowedActions")).containsExactly("CANCEL");
+        // Phase 3: an approved order can get its supplier message prepared (or be canceled)
+        assertThat((List<Object>) read(ok, "$.allowedActions")).containsExactly("PREVIEW_MESSAGE", "GENERATE_MESSAGE", "CANCEL");
         assertThat(db.queryForObject("SELECT approved_by FROM purchase_orders WHERE order_id=?", Long.class, id))
                 .isEqualTo(adminId("shini.admin2"));
         assertThat(version(id)).isEqualTo(2);

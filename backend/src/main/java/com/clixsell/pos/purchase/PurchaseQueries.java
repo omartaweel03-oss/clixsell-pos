@@ -85,9 +85,16 @@ public class PurchaseQueries {
     }
 
     /**
-     * product id → recent orders that may already bring it:
-     * CLOSED in the last 14 days (receiving not recorded), or CANCELED after supplier contact in
-     * the last 30 days without a recorded supplier acceptance of the cancellation.
+     * product id → recent orders that may already bring it (D22 / D24, P3-D10). All types end
+     * for an order once the manager records that the supplier accepted its cancellation.
+     * <ul>
+     *   <li>RECENTLY_CLOSED: CLOSED in the last 14 days (receiving is not recorded in ClixSell).</li>
+     *   <li>CANCELED_AFTER_CONTACT: CANCELED after the manager had recorded sending (last 30 days).</li>
+     *   <li>CONTACT_UNKNOWN: CANCELED from MESSAGE_GENERATED with the answer UNKNOWN — the
+     *       supplier may have received the message (last 30 days).</li>
+     *   <li>DECLARED_NOT_SENT: CANCELED from MESSAGE_GENERATED with the answer NOT_SENT although
+     *       the message had been copied or WhatsApp opening requested (last 30 days).</li>
+     * </ul>
      */
     public Map<Long, List<Caution>> cautions(long storeId, LocalDateTime now) {
         Map<Long, List<Caution>> out = new HashMap<>();
@@ -102,13 +109,76 @@ public class PurchaseQueries {
                   AND i.product_id IS NOT NULL
                   AND NOT EXISTS (SELECT 1 FROM purchase_order_events e WHERE e.order_id = o.order_id
                                   AND e.event_type = 'SUPPLIER_CANCELLATION_RECORDED')
+                UNION ALL
+                SELECT i.product_id, o.order_id, o.order_number,
+                       CASE json_extract(c.details, '$.contactStatus') WHEN 'UNKNOWN' THEN 'CONTACT_UNKNOWN'
+                            ELSE 'DECLARED_NOT_SENT' END, o.canceled_at, i.quantity
+                FROM purchase_order_items i JOIN purchase_orders o ON o.order_id = i.order_id AND o.store_id = i.store_id
+                JOIN purchase_order_events c ON c.order_id = o.order_id AND c.store_id = o.store_id AND c.event_type = 'CANCELED'
+                WHERE o.store_id = ? AND o.status = 'CANCELED' AND o.canceled_after_contact = 0 AND o.canceled_at >= ?
+                  AND i.product_id IS NOT NULL AND json_valid(c.details)
+                  AND (json_extract(c.details, '$.contactStatus') = 'UNKNOWN'
+                       OR (json_extract(c.details, '$.contactStatus') = 'NOT_SENT'
+                           AND coalesce(json_extract(c.details, '$.priorCopyReports'), 0)
+                             + coalesce(json_extract(c.details, '$.priorOpenRequests'), 0) > 0))
+                  AND NOT EXISTS (SELECT 1 FROM purchase_order_events e WHERE e.order_id = o.order_id
+                                  AND e.event_type = 'SUPPLIER_CANCELLATION_RECORDED')
                 ORDER BY 2""",
                 rs -> {
                     out.computeIfAbsent(rs.getLong(1), k -> new ArrayList<>()).add(new Caution(rs.getLong(1),
                             rs.getLong(2), rs.getString(3), rs.getString(4), rs.getString(5), rs.getInt(6)));
                 },
-                storeId, PurchaseTime.text(now.minusDays(14)), storeId, PurchaseTime.text(now.minusDays(30)));
+                storeId, PurchaseTime.text(now.minusDays(14)), storeId, PurchaseTime.text(now.minusDays(30)),
+                storeId, PurchaseTime.text(now.minusDays(30)));
         return out;
+    }
+
+    /**
+     * Takes SQLite's write lock for the current transaction WITHOUT changing anything: an UPDATE
+     * that matches no row (no row changes, no trigger runs, no timestamp moves). Must be the
+     * FIRST statement of the transaction: another writer then waits (busy_timeout) or gets
+     * SQLITE_BUSY (the service retries), so "check, then add an event" cannot interleave.
+     */
+    public void takeWriteLock() {
+        db.update("UPDATE stores SET store_id = store_id WHERE 0");
+    }
+
+    /** One event of a client action (copy / WhatsApp opening) found by its clientActionId. */
+    public record ClientAction(long eventId, long orderId, String eventType, String phase, String result) {
+    }
+
+    public List<ClientAction> clientActions(long storeId, String clientActionId) {
+        return db.query("""
+                SELECT event_id, order_id, event_type, json_extract(details, '$.phase'), json_extract(details, '$.result')
+                FROM purchase_order_events
+                WHERE store_id = ? AND event_type IN ('MESSAGE_COPIED', 'WHATSAPP_OPEN_REQUESTED') AND json_valid(details)
+                  AND json_extract(details, '$.clientActionId') = ?
+                ORDER BY event_id""",
+                (rs, i) -> new ClientAction(rs.getLong(1), rs.getLong(2), rs.getString(3), rs.getString(4),
+                        rs.getString(5)), storeId, clientActionId);
+    }
+
+    /** Number of events of a type (and phase, when given) of one order. */
+    public int countEvents(long storeId, long orderId, String type, String phase) {
+        Integer n = phase == null
+                ? db.queryForObject("SELECT COUNT(*) FROM purchase_order_events WHERE store_id = ? AND order_id = ? "
+                        + "AND event_type = ?", Integer.class, storeId, orderId, type)
+                : db.queryForObject("SELECT COUNT(*) FROM purchase_order_events WHERE store_id = ? AND order_id = ? "
+                        + "AND event_type = ? AND json_valid(details) AND json_extract(details, '$.phase') = ?",
+                        Integer.class, storeId, orderId, type, phase);
+        return n == null ? 0 : n;
+    }
+
+    /** The details (JSON) of the order's CANCELED event, or null. */
+    public String cancelDetails(long storeId, long orderId) {
+        List<String> l = db.queryForList("SELECT details FROM purchase_order_events WHERE store_id = ? AND order_id = ? "
+                + "AND event_type = 'CANCELED' ORDER BY event_id DESC LIMIT 1", String.class, storeId, orderId);
+        return l.isEmpty() ? null : l.get(0);
+    }
+
+    /** The store's current name (the only live part of a supplier message). */
+    public String storeName(long storeId) {
+        return db.queryForObject("SELECT name FROM stores WHERE store_id = ?", String.class, storeId);
     }
 
     /**

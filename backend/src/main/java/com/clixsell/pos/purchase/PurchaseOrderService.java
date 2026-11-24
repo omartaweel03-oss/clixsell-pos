@@ -1,6 +1,7 @@
 package com.clixsell.pos.purchase;
 
 import com.clixsell.pos.auth.CurrentUser;
+import com.clixsell.pos.common.ValidationException;
 import com.clixsell.pos.purchase.PurchaseQueries.ProductRow;
 import com.clixsell.pos.purchase.PurchaseRecommendationService.Recommended;
 import com.clixsell.pos.purchase.PurchaseRequests.Ack;
@@ -39,13 +40,14 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * Purchase orders, Phase 2 (UR-M13 / UR-M14, SR26 / SR27): create, list, details, history,
- * edit while PENDING_APPROVAL, approve, reject, and cancel before any supplier contact.
+ * Purchase orders (UR-M13 / UR-M14, SR26 / SR27): create, list, details, history, edit while
+ * PENDING_APPROVAL, approve, reject, and cancel — before or after the supplier message (the
+ * supplier communication itself is in {@link PurchaseCommunicationService}).
  *
  * <p>Every change runs in ONE transaction together with its single history event; a failure
  * leaves nothing behind (no order, no event, no order number taken). The store always comes
  * from the logged-in user. Nothing here changes stock, prices, costs, sales or reports, and
- * nothing contacts a supplier (Phase 3).
+ * nothing contacts a supplier.
  */
 @Service
 public class PurchaseOrderService {
@@ -84,7 +86,7 @@ public class PurchaseOrderService {
      * so it is safely run again (a few times, with a short wait). Still locked → 409
      * DATABASE_BUSY: nothing was saved and the client may retry (creation is idempotent).
      */
-    private <T> T inTx(java.util.function.Supplier<T> work) {
+    <T> T inTx(java.util.function.Supplier<T> work) {
         for (int attempt = 1; ; attempt++) {
             try {
                 return tx.execute(status -> work.get());
@@ -120,7 +122,7 @@ public class PurchaseOrderService {
         return false;
     }
 
-    private <T> T readOnly(java.util.function.Supplier<T> work) {
+    <T> T readOnly(java.util.function.Supplier<T> work) {
         TransactionTemplate ro = new TransactionTemplate(Objects.requireNonNull(tx.getTransactionManager()));
         ro.setReadOnly(true);
         return ro.execute(status -> work.get());
@@ -261,10 +263,12 @@ public class PurchaseOrderService {
         return inTx(() -> {
             LocalDateTime now = PurchaseTime.now();
             PurchaseOrder order = forChange(storeId, orderId, version, "APPROVE", PurchaseOrderStatus.PENDING_APPROVAL);
-            List<String> blockers = approvalBlockers(order, items.findByOrderIdAndStoreIdOrderByItemId(orderId, storeId));
+            List<PurchaseOrderItem> lines = items.findByOrderIdAndStoreIdOrderByItemId(orderId, storeId);
+            List<String> blockers = approvalBlockers(order, lines);
             if (!blockers.isEmpty()) {
                 throw new PurchaseException(HttpStatus.CONFLICT, blockers.get(0), "The order cannot be approved now: "
-                        + String.join(", ", blockers), Map.of(), map("approvalBlockers", blockers));
+                        + String.join(", ", blockers), Map.of(), map("approvalBlockers", blockers,
+                        "messageLength", messageLength(order, lines)));
             }
             order.approve(user.userId(), now);
             flush(order);
@@ -286,20 +290,89 @@ public class PurchaseOrderService {
         });
     }
 
-    /** Phase 2: only before any supplier contact (PENDING_APPROVAL or APPROVED). */
-    public OrderView cancel(CurrentUser user, long orderId, PurchaseRequests.Reason req) {
+    /**
+     * Cancel (D8 / D8b, Phase 3 final plan section 1). Before the message: as in Phase 2. After
+     * the message was generated the supplier may have it (it can be read and copied by hand), so
+     * the manager must always say what happened: NOT_SENT (with confirmNotSent: true), UNKNOWN,
+     * or SENT (→ 409 RECORD_SENT_FIRST: record the sending, then cancel after contact). UNKNOWN is
+     * never written as sent; it is kept in the CANCELED event and warns for 30 days. After the
+     * manager recorded sending (SENT / CONFIRMED): acknowledgeSupplierNotNotified: true is
+     * required — ClixSell does not tell the supplier. Cancelling never means the supplier knows.
+     */
+    public OrderView cancel(CurrentUser user, long orderId, PurchaseRequests.Cancel req) {
         long storeId = user.requireStoreId();
         return inTx(() -> {
+            queries.takeWriteLock();
             LocalDateTime now = PurchaseTime.now();
-            PurchaseOrder order = forChange(storeId, orderId, req.version(), "CANCEL",
-                    PurchaseOrderStatus.PENDING_APPROVAL, PurchaseOrderStatus.APPROVED);
+            PurchaseOrder order = forChange(storeId, orderId, req.version(), "CANCEL", PurchaseOrderStatus.PENDING_APPROVAL,
+                    PurchaseOrderStatus.APPROVED, PurchaseOrderStatus.MESSAGE_GENERATED, PurchaseOrderStatus.SENT,
+                    PurchaseOrderStatus.CONFIRMED);
             PurchaseOrderStatus from = order.getStatus();
-            order.cancel(user.userId(), now, req.reason());
-            flush(order);
-            event(order, user, "CANCELED", from, PurchaseOrderStatus.CANCELED,
-                    map("reason", req.reason(), "afterSupplierContact", false), now);
+            int copies = queries.countEvents(storeId, orderId, "MESSAGE_COPIED", null);
+            int opens = queries.countEvents(storeId, orderId, "WHATSAPP_OPEN_REQUESTED", PurchaseCommunicationService.REQUESTED);
+            int opened = queries.countEvents(storeId, orderId, "WHATSAPP_OPEN_REQUESTED", PurchaseCommunicationService.CLIENT_REPORTED);
+            boolean afterContact = from == PurchaseOrderStatus.SENT || from == PurchaseOrderStatus.CONFIRMED;
+            Map<String, Object> details = map("reason", req.reason(), "afterSupplierContact", afterContact,
+                    "fromStatus", from.name());
+            switch (from) {
+                case PENDING_APPROVAL, APPROVED -> {
+                    notApplicable(req.contactStatus(), "contactStatus", "Only for an order whose message was generated");
+                    notApplicable(req.confirmNotSent(), "confirmNotSent", "Only for an order whose message was generated");
+                    notApplicable(req.acknowledgeSupplierNotNotified(), "acknowledgeSupplierNotNotified",
+                            "Only for an order the manager recorded as sent");
+                }
+                case MESSAGE_GENERATED -> {
+                    notApplicable(req.acknowledgeSupplierNotNotified(), "acknowledgeSupplierNotNotified",
+                            "Only for an order the manager recorded as sent");
+                    Map<String, Object> facts = map("priorCopyReports", copies, "priorOpenRequests", opens,
+                            "options", List.of("NOT_SENT", "UNKNOWN", "SENT"));
+                    if (req.contactStatus() == null) {
+                        throw new PurchaseException(HttpStatus.CONFLICT, "CONTACT_STATUS_REQUIRED",
+                                "The supplier message was prepared and may have been sent. Say whether it was sent: "
+                                        + "NOT_SENT (you are sure it was not), UNKNOWN, or SENT.", Map.of(), facts);
+                    }
+                    if (req.contactStatus().equals("SENT")) {
+                        throw new PurchaseException(HttpStatus.CONFLICT, "RECORD_SENT_FIRST",
+                                "Record that you sent the message first (mark-sent), then cancel after contact.",
+                                Map.of(), facts);
+                    }
+                    if (req.contactStatus().equals("NOT_SENT") && !Boolean.TRUE.equals(req.confirmNotSent())) {
+                        throw new ValidationException(Map.of("confirmNotSent",
+                                "Confirm that you are sure the message was not sent to the supplier (confirmNotSent: true)"));
+                    }
+                    if (req.contactStatus().equals("UNKNOWN")) {
+                        notApplicable(req.confirmNotSent(), "confirmNotSent", "Not with contactStatus UNKNOWN");
+                    }
+                    details.put("contactStatus", req.contactStatus());
+                    details.put("managerDeclaredNotSent", req.contactStatus().equals("NOT_SENT"));
+                    details.put("priorCopyReports", copies);
+                    details.put("priorOpenRequests", opens);
+                    details.put("priorClientOpenReports", opened);
+                    details.put("recordedManually", true);
+                }
+                default -> { // SENT, CONFIRMED
+                    notApplicable(req.contactStatus(), "contactStatus", "The manager already recorded sending");
+                    notApplicable(req.confirmNotSent(), "confirmNotSent", "The manager already recorded sending");
+                    if (!Boolean.TRUE.equals(req.acknowledgeSupplierNotNotified())) {
+                        throw new PurchaseException(HttpStatus.CONFLICT, "ACK_SUPPLIER_NOT_NOTIFIED",
+                                "The supplier was contacted. Cancelling here does NOT tell the supplier: inform them "
+                                        + "yourself. Confirm with acknowledgeSupplierNotNotified: true.", Map.of(), null);
+                    }
+                    details.put("contactStatus", "MANAGER_RECORDED_SENT");
+                    details.put("acknowledgedSupplierNotNotified", true);
+                }
+            }
+            details.put("supplierNotifiedByClixSell", false);
+            details.put("notice", "Cancelling in ClixSell does not mean the supplier was told or agreed.");
+            order.cancel(user.userId(), now, req.reason(), afterContact);
+            flush(order); // the database releases the reservations in the same statement
+            event(order, user, "CANCELED", from, PurchaseOrderStatus.CANCELED, details, now);
             return view(reload(order), false);
         });
+    }
+
+    private static void notApplicable(Object value, String field, String message) {
+        if (value != null) throw new ValidationException(Map.of(field, message));
     }
 
     // ── reads ───────────────────────────────────────────────────────────────────────
@@ -492,7 +565,8 @@ public class PurchaseOrderService {
     }
 
     private static List<String> approvalBlockers(PurchaseOrder order, List<PurchaseOrderItem> lines, Supplier supplier,
-                                                 Map<Long, ProductRow> products) {
+                                                 Map<Long, ProductRow> products,
+                                                 Map<String, WhatsappMessageBuilder.Report> lengths) {
         List<String> out = new ArrayList<>();
         if (supplier == null || !supplier.isActive()) out.add("SUPPLIER_INACTIVE");
         if (lines.isEmpty()) out.add("ORDER_EMPTY");
@@ -503,6 +577,10 @@ public class PurchaseOrderService {
                 && products.get(i.getProductId()).supplierId() != order.getSupplierId())) {
             out.add("PRODUCT_SUPPLIER_CHANGED");
         }
+        // P3-D1: no supported language can carry the whole order in one WhatsApp message (V6: 2000)
+        if (!lines.isEmpty() && lengths.values().stream().noneMatch(WhatsappMessageBuilder.Report::alwaysFits)) {
+            out.add("MESSAGE_TOO_LONG");
+        }
         return out;
     }
 
@@ -512,11 +590,25 @@ public class PurchaseOrderService {
         for (PurchaseOrderItem i : lines) {
             if (i.getProductId() != null) queries.product(order.getStoreId(), i.getProductId()).ifPresent(p -> products.put(p.id(), p));
         }
-        return approvalBlockers(order, lines, supplier, products);
+        return approvalBlockers(order, lines, supplier, products, messageLength(order, lines));
+    }
+
+    /** The supplier message an order's snapshots give (date = today). */
+    WhatsappMessageBuilder.Input messageInput(PurchaseOrder o, List<PurchaseOrderItem> lines, String language) {
+        return new WhatsappMessageBuilder.Input(language, queries.storeName(o.getStoreId()), o.getOrderNumber(),
+                PurchaseTime.now().toLocalDate(), o.getSupplierName(), lines.stream().map(i -> new WhatsappMessageBuilder.Line(
+                i.getProductId(), i.getProductName(), i.getBarcode(), i.getQuantity())).toList());
+    }
+
+    /** Message length per supported language (P3-D1), shown before approval and before generating. */
+    Map<String, WhatsappMessageBuilder.Report> messageLength(PurchaseOrder o, List<PurchaseOrderItem> lines) {
+        Map<String, WhatsappMessageBuilder.Report> out = new LinkedHashMap<>();
+        for (String l : WhatsappMessageBuilder.LANGUAGES) out.put(l, WhatsappMessageBuilder.report(messageInput(o, lines, l)));
+        return out;
     }
 
     /** The order of this store, at the version the user saw, in one of the allowed states. */
-    private PurchaseOrder forChange(long storeId, long orderId, int version, String action, PurchaseOrderStatus... allowed) {
+    PurchaseOrder forChange(long storeId, long orderId, int version, String action, PurchaseOrderStatus... allowed) {
         PurchaseOrder order = find(storeId, orderId);
         if (!Set.of(allowed).contains(order.getStatus())) {
             throw new PurchaseException(HttpStatus.CONFLICT, "INVALID_TRANSITION",
@@ -531,12 +623,12 @@ public class PurchaseOrderService {
         return order;
     }
 
-    private PurchaseOrder find(long storeId, long orderId) {
+    PurchaseOrder find(long storeId, long orderId) {
         return orders.findByOrderIdAndStoreId(orderId, storeId).orElseThrow(() ->
                 PurchaseException.notFound("PURCHASE_ORDER_NOT_FOUND", "Purchase order " + orderId + " was not found"));
     }
 
-    private void flush(PurchaseOrder order) {
+    void flush(PurchaseOrder order) {
         try {
             orders.saveAndFlush(order);
         } catch (OptimisticLockingFailureException e) {
@@ -558,35 +650,50 @@ public class PurchaseOrderService {
         em.refresh(order);
     }
 
-    private PurchaseOrder reload(PurchaseOrder order) {
+    PurchaseOrder reload(PurchaseOrder order) {
         em.flush();
         em.detach(order);
         em.clear();
         return find(order.getStoreId(), order.getOrderId());
     }
 
-    private void event(PurchaseOrder o, CurrentUser user, String type, PurchaseOrderStatus from, PurchaseOrderStatus to,
-                       Map<String, Object> details, LocalDateTime at) {
-        events.saveAndFlush(new PurchaseOrderEvent(o.getOrderId(), o.getStoreId(), user.userId(), type, from, to,
+    PurchaseOrderEvent event(PurchaseOrder o, CurrentUser user, String type, PurchaseOrderStatus from,
+                             PurchaseOrderStatus to, Map<String, Object> details, LocalDateTime at) {
+        return events.saveAndFlush(new PurchaseOrderEvent(o.getOrderId(), o.getStoreId(), user.userId(), type, from, to,
                 details == null ? null : JSON.writeValueAsString(details), at));
     }
 
     // ── views ───────────────────────────────────────────────────────────────────────
 
-    private OrderView view(PurchaseOrder o, boolean replayed) {
+    OrderView view(PurchaseOrder o, boolean replayed) {
         List<PurchaseOrderItem> lines = items.findByOrderIdAndStoreIdOrderByItemId(o.getOrderId(), o.getStoreId());
         Supplier supplier = suppliers.findBySupplierIdAndStore_StoreId(o.getSupplierId(), o.getStoreId()).orElse(null);
         Map<Long, ProductRow> products = new HashMap<>();
         for (PurchaseOrderItem i : lines) {
             if (i.getProductId() != null) queries.product(o.getStoreId(), i.getProductId()).ifPresent(p -> products.put(p.id(), p));
         }
+        boolean beforeMessage = o.getStatus() == PurchaseOrderStatus.PENDING_APPROVAL
+                || o.getStatus() == PurchaseOrderStatus.APPROVED;
+        Map<String, WhatsappMessageBuilder.Report> lengths = beforeMessage && !lines.isEmpty() ? messageLength(o, lines) : null;
+        PurchaseResponses.Communication comm = communication(o);
         List<String> actions = switch (o.getStatus()) {
             case PENDING_APPROVAL -> List.of("EDIT", "APPROVE", "REJECT", "CANCEL");
-            case APPROVED -> List.of("CANCEL"); // the supplier message is Phase 3
+            case APPROVED -> List.of("PREVIEW_MESSAGE", "GENERATE_MESSAGE", "CANCEL");
+            case MESSAGE_GENERATED -> List.of("VIEW_MESSAGE", "COPY_MESSAGE", "REQUEST_WHATSAPP_OPEN", "MARK_SENT", "CANCEL");
+            case SENT -> List.of("VIEW_MESSAGE", "COPY_MESSAGE", "REQUEST_WHATSAPP_OPEN", "RECORD_SUPPLIER_CONFIRMATION",
+                    "CANCEL_AFTER_CONTACT");
+            case CONFIRMED -> List.of("VIEW_MESSAGE", "COPY_MESSAGE", "REQUEST_WHATSAPP_OPEN", "CLOSE", "CANCEL_AFTER_CONTACT");
+            case CANCELED -> {
+                List<String> a = new ArrayList<>();
+                if (o.getMessageText() != null) a.add("VIEW_MESSAGE");
+                if (comm.supplierCancellationRecordable()) a.add("RECORD_SUPPLIER_CANCELLATION");
+                yield List.copyOf(a);
+            }
+            case CLOSED -> List.of("VIEW_MESSAGE");
             default -> List.of();
         };
         List<String> blockers = o.getStatus() == PurchaseOrderStatus.PENDING_APPROVAL
-                ? approvalBlockers(o, lines, supplier, products) : List.of();
+                ? approvalBlockers(o, lines, supplier, products, lengths == null ? Map.of() : lengths) : List.of();
         Double total = 0.0;
         for (PurchaseOrderItem i : lines) {
             if (i.getExpectedUnitCost() == null) {
@@ -597,7 +704,8 @@ public class PurchaseOrderService {
         }
         if (lines.isEmpty()) total = null;
         Map<Long, String> names = names(List.of(o.getCreatedBy(), nz(o.getApprovedBy()), nz(o.getRejectedBy()),
-                nz(o.getCanceledBy())));
+                nz(o.getCanceledBy()), nz(o.getMessageGeneratedBy()), nz(o.getSentMarkedBy()),
+                nz(o.getConfirmationRecordedBy()), nz(o.getClosedBy())));
         List<ItemView> itemViews = lines.stream().map(i -> new ItemView(i.getItemId(), i.getProductId(),
                 i.getProductId() == null, i.getProductName(), i.getBarcode(), i.getQuantity(), i.getSuggestedQuantity(),
                 i.getBasis(), i.getExpectedUnitCost(), i.getOpenProductId() != null, parse(i.getCalcJson()))).toList();
@@ -608,19 +716,92 @@ public class PurchaseOrderService {
                 person(o.getRejectedBy(), names), PurchaseTime.text(o.getRejectedAt()), o.getRejectionReason(),
                 person(o.getCanceledBy(), names), PurchaseTime.text(o.getCanceledAt()), o.getCancelReason(),
                 overdue(o, PurchaseTime.now()), total == null ? null : Math.round(total * 100) / 100.0, actions, blockers,
-                itemViews, replayed);
+                itemViews, replayed, messageInfo(o, supplier, names), comm.withPeople(o, names), lengths);
     }
 
-    /** D19 display only: pending more than 3 days, approved (message not prepared) more than 1 day. */
-    private static boolean overdue(PurchaseOrder o, LocalDateTime now) {
+    /** The stored supplier message (never a link: a link is only given after a confirmed opening request). */
+    PurchaseResponses.MessageInfo messageInfo(PurchaseOrder o, Supplier supplier, Map<Long, String> names) {
+        if (o.getMessageText() == null) return null;
+        String current = supplier == null ? null : supplier.getWhatsappNumber();
+        boolean actionable = PurchaseCommunicationService.ACTIONABLE.contains(o.getStatus());
+        return new PurchaseResponses.MessageInfo(o.getMessageText(), o.getMessageLanguage(), o.getMessageWhatsapp(),
+                WhatsappMessageBuilder.display(o.getMessageWhatsapp()), WhatsappMessageBuilder.length(o.getMessageText()),
+                WhatsappMessageBuilder.MAX_LENGTH, person(o.getMessageGeneratedBy(), names),
+                PurchaseTime.text(o.getMessageGeneratedAt()), actionable,
+                !Objects.equals(current, o.getMessageWhatsapp()), current,
+                actionable ? "Prepared in ClixSell. ClixSell does not send it and cannot see whether it was sent or delivered."
+                        : "Read only: this order is " + o.getStatus() + "; the message must not be sent.");
+    }
+
+    PurchaseResponses.MessageInfo messageInfo(PurchaseOrder o) {
+        Supplier supplier = suppliers.findBySupplierIdAndStore_StoreId(o.getSupplierId(), o.getStoreId()).orElse(null);
+        return messageInfo(o, supplier, names(List.of(nz(o.getMessageGeneratedBy()))));
+    }
+
+    /** What the history says about the communication (client reports are never verified). */
+    PurchaseResponses.Communication communication(PurchaseOrder o) {
+        long store = o.getStoreId();
+        long id = o.getOrderId();
+        int copies = queries.countEvents(store, id, "MESSAGE_COPIED", null);
+        int opens = queries.countEvents(store, id, "WHATSAPP_OPEN_REQUESTED", PurchaseCommunicationService.REQUESTED);
+        int reports = queries.countEvents(store, id, "WHATSAPP_OPEN_REQUESTED", PurchaseCommunicationService.CLIENT_REPORTED);
+        boolean recorded = queries.countEvents(store, id, "SUPPLIER_CANCELLATION_RECORDED", null) > 0;
+        String contact = null;
+        boolean possibleContact = false;
+        if (o.getStatus() == PurchaseOrderStatus.CANCELED) {
+            Map<String, Object> d = cancelDetails(o);
+            contact = d.get("contactStatus") instanceof String c ? c : null;
+            possibleContact = possibleContact(o, d);
+        }
+        return new PurchaseResponses.Communication(copies, opens, reports, o.getSentMarkedAt() != null, null,
+                PurchaseTime.text(o.getSentMarkedAt()), null, PurchaseTime.text(o.getConfirmationRecordedAt()),
+                o.getConfirmationNote(), null, PurchaseTime.text(o.getClosedAt()), o.isCanceledAfterContact(), contact,
+                possibleContact, recorded, possibleContact && !recorded);
+    }
+
+    @SuppressWarnings("unchecked")
+    Map<String, Object> cancelDetails(PurchaseOrder o) {
+        String json = queries.cancelDetails(o.getStoreId(), o.getOrderId());
+        Object v = json == null ? null : parse(json);
+        return v instanceof Map<?, ?> m ? (Map<String, Object>) m : Map.of();
+    }
+
+    /**
+     * A CANCELED order whose supplier may have been reached: canceled after the manager recorded
+     * sending, canceled with the answer UNKNOWN, or with NOT_SENT after a copy / opening request.
+     * Same rule as the reorder warnings in PurchaseQueries.cautions.
+     */
+    static boolean possibleContact(PurchaseOrder o, Map<String, Object> cancel) {
+        if (o.getStatus() != PurchaseOrderStatus.CANCELED) return false;
+        if (o.isCanceledAfterContact()) return true;
+        Object c = cancel.get("contactStatus");
+        if ("UNKNOWN".equals(c)) return true;
+        return "NOT_SENT".equals(c) && number(cancel.get("priorCopyReports")) + number(cancel.get("priorOpenRequests")) > 0;
+    }
+
+    private static long number(Object v) {
+        return v instanceof Number n ? n.longValue() : 0;
+    }
+
+    /**
+     * D19 / P3-D7 display only: pending ≥ 3 days, approved (message not prepared) ≥ 1 day, message
+     * prepared but sending not recorded ≥ 1 day, sent without a recorded supplier confirmation
+     * ≥ 3 days, confirmed but not closed ≥ 14 days.
+     */
+    static boolean overdue(PurchaseOrder o, LocalDateTime now) {
         return switch (o.getStatus()) {
             case PENDING_APPROVAL -> Duration.between(o.getCreatedAt(), now).toDays() >= 3;
             case APPROVED -> o.getApprovedAt() != null && Duration.between(o.getApprovedAt(), now).toDays() >= 1;
+            case MESSAGE_GENERATED -> o.getMessageGeneratedAt() != null
+                    && Duration.between(o.getMessageGeneratedAt(), now).toDays() >= 1;
+            case SENT -> o.getSentMarkedAt() != null && Duration.between(o.getSentMarkedAt(), now).toDays() >= 3;
+            case CONFIRMED -> o.getConfirmationRecordedAt() != null
+                    && Duration.between(o.getConfirmationRecordedAt(), now).toDays() >= 14;
             default -> false;
         };
     }
 
-    private Map<Long, String> names(List<Long> ids) {
+    Map<Long, String> names(List<Long> ids) {
         Map<Long, String> out = new HashMap<>();
         for (User u : users.findAllById(ids.stream().filter(Objects::nonNull).filter(i -> i > 0).distinct().toList())) {
             out.put(u.getUserId(), u.getFullName());
@@ -628,15 +809,15 @@ public class PurchaseOrderService {
         return out;
     }
 
-    private static Person person(Long id, Map<Long, String> names) {
+    static Person person(Long id, Map<Long, String> names) {
         return id == null ? null : new Person(id, names.get(id));
     }
 
-    private static Long nz(Long v) {
+    static Long nz(Long v) {
         return v == null ? -1L : v;
     }
 
-    private static Object parse(String json) {
+    static Object parse(String json) {
         return json == null ? null : JSON.readValue(json, Object.class);
     }
 

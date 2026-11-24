@@ -3,9 +3,8 @@ package com.clixsell.pos.purchase;
 import java.util.Set;
 
 /**
- * Purchase-order states (report Figure 3.20, decisions D8 / D18). In Phase 2 an order can
- * only reach PENDING_APPROVAL, APPROVED, REJECTED and CANCELED; the later states exist in
- * the database for Phase 3 and are never set by this version.
+ * Purchase-order states (report Figure 3.20, decisions D8 / D18). The allowed transitions are
+ * enforced by the service and again by the database (V6 trigger T5).
  */
 public enum PurchaseOrderStatus {
     PENDING_APPROVAL, APPROVED, REJECTED, CANCELED, MESSAGE_GENERATED, SENT, CONFIRMED, CLOSED;

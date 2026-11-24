@@ -16,8 +16,9 @@ import java.time.LocalDateTime;
 /**
  * A purchase order (table purchase_orders, V6). Identity columns are never updated
  * (the database also refuses it); the version rises by exactly one on every update
- * (optimistic locking, also enforced by a trigger). Phase 3 columns (message, sent,
- * confirmation, close) are read only here: this version never writes them.
+ * (optimistic locking, also enforced by a trigger). The supplier message (text, number,
+ * language) and the manager's manual records of sending, supplier confirmation and closing are
+ * written once by their own transition and never changed (the database refuses it, T7).
  */
 @Entity
 @Table(name = "purchase_orders")
@@ -89,18 +90,46 @@ public class PurchaseOrder {
     @Column(name = "canceled_after_contact", nullable = false)
     private boolean canceledAfterContact;
 
-    // ── Phase 3 columns: read only in this version ──
-    @Column(name = "message_generated_at", insertable = false, updatable = false)
-    private String messageGeneratedAt;
+    // ── Phase 3: the supplier message and the manager's manual records (each set once; T7) ──
+    @Column(name = "message_text")
+    private String messageText;
 
-    @Column(name = "sent_marked_at", insertable = false, updatable = false)
-    private String sentMarkedAt;
+    @Column(name = "message_language")
+    private String messageLanguage;
 
-    @Column(name = "confirmation_recorded_at", insertable = false, updatable = false)
-    private String confirmationRecordedAt;
+    @Column(name = "message_whatsapp")
+    private String messageWhatsapp;
 
-    @Column(name = "closed_at", insertable = false, updatable = false)
-    private String closedAt;
+    @Column(name = "message_generated_by")
+    private Long messageGeneratedBy;
+
+    @Convert(converter = PurchaseTime.class)
+    @Column(name = "message_generated_at")
+    private LocalDateTime messageGeneratedAt;
+
+    @Column(name = "sent_marked_by")
+    private Long sentMarkedBy;
+
+    @Convert(converter = PurchaseTime.class)
+    @Column(name = "sent_marked_at")
+    private LocalDateTime sentMarkedAt;
+
+    @Column(name = "confirmation_recorded_by")
+    private Long confirmationRecordedBy;
+
+    @Convert(converter = PurchaseTime.class)
+    @Column(name = "confirmation_recorded_at")
+    private LocalDateTime confirmationRecordedAt;
+
+    @Column(name = "confirmation_note")
+    private String confirmationNote;
+
+    @Column(name = "closed_by")
+    private Long closedBy;
+
+    @Convert(converter = PurchaseTime.class)
+    @Column(name = "closed_at")
+    private LocalDateTime closedAt;
 
     @Column(name = "client_request_id", nullable = false, updatable = false)
     private String clientRequestId;
@@ -147,12 +176,48 @@ public class PurchaseOrder {
         rejectionReason = reason;
     }
 
-    /** Phase 2 cancels only before any supplier contact (canceled_after_contact stays false). */
-    void cancel(long userId, LocalDateTime at, String reason) {
+    /**
+     * CANCELED. afterContact must be true exactly when the order was SENT or CONFIRMED (the
+     * manager had recorded sending); the database checks the same rule (T6).
+     */
+    void cancel(long userId, LocalDateTime at, String reason, boolean afterContact) {
         status = PurchaseOrderStatus.CANCELED;
         canceledBy = userId;
         canceledAt = at;
         cancelReason = reason;
+        canceledAfterContact = afterContact;
+    }
+
+    /** APPROVED → MESSAGE_GENERATED: the message is prepared and stored (not sent). */
+    void generateMessage(long userId, LocalDateTime at, String text, String language, String whatsapp) {
+        status = PurchaseOrderStatus.MESSAGE_GENERATED;
+        messageText = text;
+        messageLanguage = language;
+        messageWhatsapp = whatsapp;
+        messageGeneratedBy = userId;
+        messageGeneratedAt = at;
+    }
+
+    /** MESSAGE_GENERATED → SENT: the manager records that they sent it (ClixSell cannot know). */
+    void markSent(long userId, LocalDateTime at) {
+        status = PurchaseOrderStatus.SENT;
+        sentMarkedBy = userId;
+        sentMarkedAt = at;
+    }
+
+    /** SENT → CONFIRMED: the manager records that the supplier confirmed. */
+    void recordSupplierConfirmation(long userId, LocalDateTime at, String note) {
+        status = PurchaseOrderStatus.CONFIRMED;
+        confirmationRecordedBy = userId;
+        confirmationRecordedAt = at;
+        confirmationNote = note;
+    }
+
+    /** CONFIRMED → CLOSED: the communication ends. Not receiving: stock does not change. */
+    void close(long userId, LocalDateTime at) {
+        status = PurchaseOrderStatus.CLOSED;
+        closedBy = userId;
+        closedAt = at;
     }
 
     public Long getOrderId() { return orderId; }
@@ -174,6 +239,18 @@ public class PurchaseOrder {
     public LocalDateTime getCanceledAt() { return canceledAt; }
     public String getCancelReason() { return cancelReason; }
     public boolean isCanceledAfterContact() { return canceledAfterContact; }
+    public String getMessageText() { return messageText; }
+    public String getMessageLanguage() { return messageLanguage; }
+    public String getMessageWhatsapp() { return messageWhatsapp; }
+    public Long getMessageGeneratedBy() { return messageGeneratedBy; }
+    public LocalDateTime getMessageGeneratedAt() { return messageGeneratedAt; }
+    public Long getSentMarkedBy() { return sentMarkedBy; }
+    public LocalDateTime getSentMarkedAt() { return sentMarkedAt; }
+    public Long getConfirmationRecordedBy() { return confirmationRecordedBy; }
+    public LocalDateTime getConfirmationRecordedAt() { return confirmationRecordedAt; }
+    public String getConfirmationNote() { return confirmationNote; }
+    public Long getClosedBy() { return closedBy; }
+    public LocalDateTime getClosedAt() { return closedAt; }
     public String getClientRequestId() { return clientRequestId; }
     public String getRequestHash() { return requestHash; }
     public int getVersion() { return version; }
