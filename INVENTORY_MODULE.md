@@ -351,7 +351,45 @@ row (changes nothing), then checks and writes; client reports are de-duplicated 
 and the supplier acceptance by order. This uniqueness is enforced by the service, not by a database
 constraint.
 
-## Run (Windows / macOS)
+## Purchase Orders – Phase 4: the Flutter screens (Store Admin)
+
+Sidebar section **Purchasing** (Store Admin only): Purchase Orders, Reorder Suggestions, Suppliers.
+
+* **Purchase Orders** — the store's orders: summary cards (waiting for approval, to contact the
+  supplier, waiting for the supplier, overdue), status filter, search by order number or supplier
+  (`GET /api/purchase-orders?q=`, searched by the server over all orders), paging.
+* **Reorder Suggestions** — Guardian's rule-based suggestions by supplier (not an AI model):
+  stock / minimum, urgency, the server's suggested quantity and how it was calculated, open orders,
+  inactive suppliers, recent-order warnings. Select products of one supplier → order form. With
+  Guardian Mode off nothing is suggested; a manual order is always possible.
+* **New / Edit order** — supplier, products (the supplier's own), quantities, internal note (never in
+  the supplier message), recent-order warnings to acknowledge. One `clientRequestId` per form: if
+  the answer to "Save" is lost, the form locks and "Check and retry" resends exactly the same request
+  (the server returns the existing order), so a second order is never created by accident.
+* **Order details** — progress (Figure 3.20), the actions the backend allows (`allowedActions`),
+  approval blockers, message length, the supplier message, the communication record and the history.
+
+**WhatsApp (never sent by ClixSell):** "Prepare Message" (Arabic by default, English on request) →
+"Open WhatsApp": step 1 shows the saved number and the full message and needs the manager's
+confirmation (records the request, the server returns the `wa.me` link); step 2 "Open WhatsApp Now"
+opens it with `url_launcher` (a separate click, so browsers do not block the window). Opening or
+copying never records sending: the manager presses **"I Have Sent This Message"** and confirms. After
+the order was sent, opening again is only under **More**, with a duplicate warning and an extra
+confirmation. If the supplier's number changed after the message was prepared, the saved number is
+shown, a warning explains it, and opening needs one more confirmation; the link is never redirected.
+
+**Cancel after the message:** the manager must answer "Did you send this message?" — *No, I am sure*
+(with a confirmation), *I do not know* (canceled without recording any sending; 30-day warning), or
+*Yes* (leads to recording the sending first). After sending: acknowledgment that ClixSell does not
+notify the supplier. **Errors:** a changed order is reloaded and the manager decides again (never
+replayed automatically); when the outcome is unknown (timeout, busy database) the stored state is
+checked before anything is said.
+
+Dependency: `url_launcher` 6.3.2 (with `url_launcher_android` pinned to 6.3.30, which still supports
+Flutter 3.38). On the web it hands the link to the browser and always reports success (a popup
+blocker cannot be detected), so the app's "opened" record means only "handed to the browser".
+
+
 Requires **Java JDK 17+** (backend) and **Flutter 3.38+** (frontend). Maven and SQLite need no installation.
 
 1. First login: **`sysadmin` / `Admin12345`** (created on the first start, when the
