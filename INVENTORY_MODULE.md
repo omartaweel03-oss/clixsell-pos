@@ -245,6 +245,41 @@ exactly as `"…T00:00"`, their past day / month now shows them where they belon
 `ReportPeriodTest`, `ReportMidnightApiTest` (midnight sales and returns, month and year boundaries,
 profit, tax, charts, previous period, best sellers, two stores, the Guardian 7-day chart).
 
+## Purchase Orders – Phase 1: database V6 and Supplier Management (UR-M13–UR-M15 groundwork)
+
+Phase 1 adds the purchase-order **database structure** and **Supplier Management** only. There are no
+purchase recommendations, no purchase-order screens or API, and no WhatsApp messages yet (later
+phases, each approved separately). Nothing in the app creates a purchase order.
+
+**Suppliers screen** (Store Admin only, sidebar → Suppliers): list of the store's suppliers with
+WhatsApp number, phone, number of products and status; search by name or number; filter
+All / Active / Inactive; add, edit, details (products of the supplier), deactivate / activate.
+Suppliers are never deleted. Arabic and English.
+
+Rules:
+- Names: spaces are normalized ("  Al   Quds " → "Al Quds"); duplicates within a store are refused
+  (English letters compared without case, like the database). Legacy names in the database are never
+  rewritten automatically.
+- WhatsApp: international format, stored as digits only (e.g. `970599123456`); a local number
+  (`05…`) is refused.
+- Deactivating a supplier does not touch its products: they stay linked and keep selling in the POS.
+  A new product, or a product moved to another supplier, cannot use an inactive supplier
+  (409 `SUPPLIER_INACTIVE`); nothing except the Suppliers screen reactivates a supplier.
+- Product form: a supplier name that differs from an existing one only by spaces links to it;
+  if several legacy suppliers match that way, 409 `SUPPLIER_NAME_AMBIGUOUS` (type the exact name).
+- New endpoints accept only their own fields: anything else (e.g. `storeId`) → 400 `UNKNOWN_FIELD`.
+
+**Database V6** (`V6__purchase_orders.java`, additions only): `suppliers.active`,
+`stores.next_purchase_order_number`, unique (id, store_id) indexes, and the tables `purchase_orders`,
+`purchase_order_items`, `purchase_order_events` with composite foreign keys (no link between two
+stores, even with direct SQL), NULL-safe CHECK constraints and triggers (state diagram of Figure 3.20,
+one open order per product, append-only history, Store Admin actors, no deletion of orders or
+suppliers). Before changing anything the migration checks integrity and references, writes a new,
+verified backup `clixsell-backup-before-v6-<time>.db` (never overwriting a file) and rolls back if
+any existing row or value changes.
+
+API: `GET/POST /api/suppliers`, `GET/PUT /api/suppliers/{id}`, `PUT /api/suppliers/{id}/status`.
+
 ## Run (Windows / macOS)
 Requires **Java JDK 17+** (backend) and **Flutter 3.38+** (frontend). Maven and SQLite need no installation.
 
