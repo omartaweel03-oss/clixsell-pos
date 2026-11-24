@@ -1,6 +1,8 @@
 package com.clixsell.pos.product;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
@@ -23,4 +25,12 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     boolean existsByStore_StoreIdAndBarcode(Long storeId, String barcode);
 
     boolean existsByStore_StoreIdAndBarcodeAndProductIdNot(Long storeId, String barcode, Long productId);
+
+    /** Products of one supplier of the store (Supplier Management details). */
+    List<Product> findAllByStore_StoreIdAndSupplier_SupplierIdOrderByNameAsc(Long storeId, Long supplierId);
+
+    /** [supplierId, number of products] for every supplier of the store that has products. */
+    @Query("SELECT p.supplier.supplierId, COUNT(p) FROM Product p WHERE p.store.storeId = :storeId "
+            + "GROUP BY p.supplier.supplierId")
+    List<Object[]> countProductsBySupplier(@Param("storeId") Long storeId);
 }

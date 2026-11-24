@@ -28,6 +28,12 @@ public class ApiExceptionHandler {
                 "Some fields are not valid", e.getFieldErrors());
     }
 
+    /** A strict endpoint (D25) received a field it does not accept. */
+    @ExceptionHandler(UnknownFieldException.class)
+    public ResponseEntity<ApiError> unknownField(UnknownFieldException e) {
+        return error(HttpStatus.BAD_REQUEST, "UNKNOWN_FIELD", e.getMessage(), Map.of(e.getField(), e.getMessage()));
+    }
+
     @ExceptionHandler(LoginFailedException.class)
     public ResponseEntity<ApiError> loginFailed(LoginFailedException e) {
         HttpStatus status = e.getReason() == LoginFailedException.Reason.ACCOUNT_LOCKED

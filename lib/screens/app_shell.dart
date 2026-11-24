@@ -27,6 +27,8 @@ import 'inventory/inventory_page.dart';
 import 'inventory/product_details_page.dart';
 import 'inventory/product_form_page.dart';
 import 'inventory/stock_alerts_page.dart';
+import 'purchasing/suppliers_page.dart';
+import '../services/supplier_api_client.dart';
 
 /// Main layout after login: navy sidebar + content area.
 ///
@@ -277,6 +279,11 @@ class _AppShellState extends State<AppShell> {
               _navigate(SidebarDestination.editProduct, product: product);
             }
           },
+        );
+      case SidebarDestination.suppliers:
+        return SuppliersPage(
+          key: const ValueKey('suppliers'),
+          api: SupplierApiClient(widget.http),
         );
       case SidebarDestination.salesAnalytics:
         return SalesAnalyticsPage(

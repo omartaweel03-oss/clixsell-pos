@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_strings.dart';
+import '../l10n/purchase_strings.dart';
 import '../l10n/guardian_strings.dart';
 import '../models/app_user.dart';
 import '../theme/app_theme.dart';
@@ -17,6 +18,7 @@ enum SidebarDestination {
   reports,
   salesAnalytics,
   stockAlerts,
+  suppliers,
   suspendedInvoices,
   settings,
   guardian,
@@ -40,6 +42,8 @@ extension RoleDestinations on UserRole {
       // Product Details (Figure 3.4) is a Store Admin screen (UR-M5).
       SidebarDestination.productDetails,
       SidebarDestination.stockAlerts,
+      // Supplier Management (Purchase Orders, Phase 1): Store Admin only.
+      SidebarDestination.suppliers,
       SidebarDestination.pos,
       SidebarDestination.suspendedInvoices,
       SidebarDestination.reports,
@@ -215,6 +219,13 @@ class AppSidebar extends StatelessWidget {
           s.navStockAlerts,
           badge: alertCount,
         ),
+        // Supplier Management (Purchase Orders, Phase 1): suppliers only, no orders yet.
+        item(
+          SidebarDestination.suppliers,
+          Icons.local_shipping_outlined,
+          Icons.local_shipping_rounded,
+          PurchaseStrings.of(context).navSuppliers,
+        ),
         // Reports and Sales Analytics are Manager features (report Figures 3.7 / 3.8).
         section(s.navSectionReports),
         item(
@@ -258,8 +269,15 @@ class AppSidebar extends StatelessWidget {
           children: [
             _Brand(compact: compact),
             const SizedBox(height: AppSpacing.md),
+            // All items are built (a short list), so every page stays reachable
+            // and findable even when the window is too short to show them all.
             Expanded(
-              child: ListView(padding: EdgeInsets.zero, children: items),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: items,
+                ),
+              ),
             ),
             _UserCard(user: user, compact: compact),
             Padding(
