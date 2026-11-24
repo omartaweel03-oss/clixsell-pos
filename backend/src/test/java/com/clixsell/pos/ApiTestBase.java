@@ -13,6 +13,8 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -50,9 +52,29 @@ public abstract class ApiTestBase {
     @Autowired
     protected JdbcTemplate db;
 
-    /** Everything except the System Admin is removed before each test. */
+    /**
+     * Everything except the System Admin is removed before each test.
+     *
+     * <p>Since V6 the database refuses to delete suppliers and purchase orders (triggers).
+     * Only this TEST database is emptied with those triggers dropped; they are re-created
+     * right after from their own saved definitions (sqlite_master), so every test runs
+     * with exactly the production triggers.
+     */
     @BeforeEach
     void cleanDatabase() {
+        List<Map<String, Object>> triggers = db.queryForList("SELECT name, sql FROM sqlite_master WHERE type = 'trigger'");
+        for (Map<String, Object> t : triggers) db.execute("DROP TRIGGER \"" + t.get("name") + "\"");
+        try {
+            deleteAllRows();
+        } finally {
+            for (Map<String, Object> t : triggers) db.execute((String) t.get("sql"));
+        }
+    }
+
+    private void deleteAllRows() {
+        db.update("DELETE FROM purchase_order_events");
+        db.update("DELETE FROM purchase_order_items");
+        db.update("DELETE FROM purchase_orders");
         db.update("DELETE FROM activity_log");
         db.update("DELETE FROM user_sessions");
         db.update("DELETE FROM returns");

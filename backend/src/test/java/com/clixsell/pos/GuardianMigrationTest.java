@@ -127,7 +127,7 @@ class GuardianMigrationTest {
             for (String t : TABLES) before.put(t, rows(c, t));
         }
 
-        migrateTo(null); // → V5
+        migrateTo("5"); // → V5 (this test is about V5; V6 has its own test)
 
         try (Connection c = DriverManager.getConnection(URL); Statement s = c.createStatement()) {
             for (String t : TABLES) {
@@ -196,7 +196,7 @@ class GuardianMigrationTest {
     @Test
     void aNewEmptyDatabaseGetsTheGuardianTablesWithoutABackup() throws Exception {
         Files.deleteIfExists(DB);
-        migrateTo(null);
+        migrateTo("5");
         try (Connection c = DriverManager.getConnection(URL)) {
             assertThat(count(c, "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'activity_log'"))
                     .isEqualTo(1);
@@ -226,7 +226,7 @@ class GuardianMigrationTest {
         try (Connection c = DriverManager.getConnection(URL)) {
             for (String t : TABLES) before.put(t, rows(c, t));
         }
-        assertThatThrownBy(() -> migrateTo(null)).hasMessageContaining("activity_log");
+        assertThatThrownBy(() -> migrateTo("5")).hasMessageContaining("activity_log");
 
         try (Connection c = DriverManager.getConnection(URL)) {
             for (String t : TABLES) assertThat(rows(c, t)).as(t + " unchanged").isEqualTo(before.get(t));
@@ -240,13 +240,13 @@ class GuardianMigrationTest {
             assertThat(count(c, "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '5' AND success = 0"))
                     .isEqualTo(1);
         }
-        assertThatThrownBy(() -> migrateTo(null)).hasMessageContaining("Detected failed migration to version 5");
+        assertThatThrownBy(() -> migrateTo("5")).hasMessageContaining("Detected failed migration to version 5");
         // Remove the cause, then remove the failed row (Flyway repair = delete that one row), then it upgrades.
         try (Connection c = DriverManager.getConnection(URL); Statement s = c.createStatement()) {
             s.execute("DROP TABLE activity_log");
             s.execute("DELETE FROM flyway_schema_history WHERE version = '5' AND success = 0");
         }
-        migrateTo(null);
+        migrateTo("5");
         try (Connection c = DriverManager.getConnection(URL)) {
             assertThat(count(c, "SELECT COUNT(*) FROM stores WHERE guardian_enabled = 0")).isEqualTo(2);
             for (String t : TABLES) {

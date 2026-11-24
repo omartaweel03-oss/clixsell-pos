@@ -1,5 +1,7 @@
 package com.clixsell.pos;
 
+import com.clixsell.pos.purchase.PurchaseMigrationTest;
+
 import com.clixsell.pos.support.RunTestClasses;
 import org.assertj.core.api.SoftAssertions;
 import org.junit.jupiter.api.Test;
@@ -36,7 +38,7 @@ class BackupPreservationTest {
 
     /** Every test class that writes, reads or lists backup files. */
     static final List<Class<?>> BACKUP_TESTS = List.of(MigrationTest.class, GuardianMigrationTest.class,
-            UpgradeToSalesVersionTest.class, BackupApiTest.class);
+            UpgradeToSalesVersionTest.class, BackupApiTest.class, PurchaseMigrationTest.class);
 
     private final Random random = new Random();
 
