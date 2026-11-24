@@ -31,7 +31,7 @@ cd backend && ./mvnw -q package -DskipTests && cd ..
 flutter build web --no-web-resources-cdn
 CLIXSELL_E2E=1 tools/e2e/run.sh backend/target/clixsell-backend-1.0.0.jar build/web
 ```
-One suite only: add its name, e.g. `... build/web reports`. Suites: api settings reports guardian full pos.
+One suite only: add its name, e.g. `... build/web reports`. Suites: api settings reports guardian full pos supplier.
 
 | Suite | Scripts | What it checks |
 |---|---|---|
@@ -41,5 +41,6 @@ One suite only: add its name, e.g. `... build/web reports`. Suites: api settings
 | `guardian` | `guardian_scenario.py`, `guardian_ui.js` | Guardian Mode rules G1–G9 / G2c, health score, recommendations, activity log, on / off, English and Arabic, two stores |
 | `full` | `full_e2e.js` | the whole app in the browser: login, System Admin, products (every page vs. the database), POS, suspended invoices, stock alerts, reports, settings, both stores, English / Arabic |
 | `pos` | `real_pos.js` | real-world use in the browser: a Store Admin adds 12 products (form, search, barcode search, details, edit, duplicate barcode, delete + Undo, stock alerts); a Cashier sells with search, barcode + Enter, +/−, remove, discount, all 4 payment methods, receipt + QR, suspend / resume / cancel, full and partial returns, insufficient stock, Arabic; stock, tax, profit, reports and Guardian checked against independent calculations; a second store and direct API attacks |
+| `supplier` | `supplier_check.py`, `supplier_ui.js` | Supplier Management (Purchase Orders Phase 1): V6 in place, roles, list = database per store, add / validate / duplicate / strict body, edit, isolation between two stores, inactive supplier refused on the product form but still sold in the POS, reactivation only from Suppliers; then the Flutter Suppliers screen in English and Arabic (add with validation, search, edit, details, deactivate / activate), Neshan isolation, cashier menu, 1024×768 |
 
 Helpers: `dbq.py` (read-only queries of the disposable database), `safety.py`, `safety.js`.

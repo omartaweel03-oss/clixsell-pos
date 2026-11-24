@@ -2,7 +2,7 @@
 # ClixSell end-to-end checks on DISPOSABLE demo databases only.
 #
 #   CLIXSELL_E2E=1 tools/e2e/run.sh <backend.jar> <flutter-web-build-dir> [suite ...]
-#   suites: api settings reports guardian full pos   (default: all, in this order)
+#   suites: api settings reports guardian full pos supplier   (default: all, in this order)
 #
 # For every suite: a new folder from mktemp (outside the project) with a marker file and a
 # random token, a new backend started there with the demo profile on <folder>/e2e.db, the
@@ -17,12 +17,12 @@ if [ "${CLIXSELL_E2E:-}" != "1" ]; then
   echo "Refusing to run: set CLIXSELL_E2E=1 to confirm this is a test environment." >&2; exit 2
 fi
 if [ $# -lt 2 ]; then
-  echo "Usage: CLIXSELL_E2E=1 $0 <backend.jar> <flutter-web-build-dir> [api settings reports guardian full pos]" >&2; exit 2
+  echo "Usage: CLIXSELL_E2E=1 $0 <backend.jar> <flutter-web-build-dir> [api settings reports guardian full pos supplier]" >&2; exit 2
 fi
 JAR=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
 WEB=$(cd "$2" && pwd)
 shift 2
-SUITES=("$@"); [ ${#SUITES[@]} -eq 0 ] && SUITES=(api settings reports guardian full pos)
+SUITES=("$@"); [ ${#SUITES[@]} -eq 0 ] && SUITES=(api settings reports guardian full pos supplier)
 [ -f "$JAR" ] || { echo "No such jar: $JAR" >&2; exit 2; }
 [ -f "$WEB/index.html" ] || { echo "Not a Flutter web build: $WEB" >&2; exit 2; }
 
@@ -84,6 +84,7 @@ for suite in "${SUITES[@]}"; do
     guardian) python3 "$HERE/guardian_scenario.py" "$DB" && node "$HERE/guardian_ui.js" ;;
     full)     node "$HERE/full_e2e.js" ;;
     pos)      node "$HERE/real_pos.js" ;;
+    supplier) python3 "$HERE/supplier_check.py" "$DB" && node "$HERE/supplier_ui.js" ;;
     *)        echo "Unknown suite: $suite"; false ;;
   esac > "$OUT/result.log" 2>&1
   status=$?

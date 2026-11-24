@@ -13,7 +13,8 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = [['python3', 'api_check.py'], ['python3', 'settings_check.py'], ['python3', 'guardian_scenario.py'],
            ['python3', 'reports_boundary_check.py'], ['python3', 'dbq.py', 'select 1'],
-           ['node', 'guardian_ui.js'], ['node', 'full_e2e.js'], ['node', 'reports_ui.js'], ['node', 'real_pos.js']]
+           ['node', 'guardian_ui.js'], ['node', 'full_e2e.js'], ['node', 'reports_ui.js'], ['node', 'real_pos.js'],
+           ['python3', 'supplier_check.py'], ['node', 'supplier_ui.js']]
 passed = failed = 0
 
 
