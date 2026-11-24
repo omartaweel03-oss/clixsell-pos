@@ -738,18 +738,24 @@ class PurchaseOrderStrings {
   String eventDetail(PurchaseOrderEvent e) {
     final d = e.details;
     final parts = <String>[];
-    if (d['reason'] is String)
+    if (d['reason'] is String) {
       parts.add(_t('Reason: ', 'السبب: ') + iso(d['reason'] as String));
-    if (d['note'] is String)
+    }
+    if (d['note'] is String) {
       parts.add(_t('Note: ', 'ملاحظة: ') + iso(d['note'] as String));
-    if (d['channel'] is String)
+    }
+    if (d['channel'] is String) {
       parts.add(_t('Channel: ', 'القناة: ') + channel(d['channel'] as String));
-    if (d['contactStatus'] is String)
+    }
+    if (d['contactStatus'] is String) {
       parts.add(contactAtCancel(d['contactStatus'] as String));
-    if (d['language'] is String)
+    }
+    if (d['language'] is String) {
       parts.add(d['language'] == 'ar' ? arabic : english);
-    if (d['whatsappNumber'] is String)
+    }
+    if (d['whatsappNumber'] is String) {
       parts.add(iso('+${d['whatsappNumber']}'));
+    }
     final items = d['items'];
     if (items is List && items.isNotEmpty) {
       parts.add(
@@ -766,8 +772,9 @@ class PurchaseOrderStrings {
         (e.type == 'MESSAGE_COPIED' || e.type == 'WHATSAPP_OPEN_REQUESTED')) {
       parts.add(_t('not verified', 'غير مُتحقق منه'));
     }
-    if (d['recordedManually'] == true)
+    if (d['recordedManually'] == true) {
       parts.add(_t('manual record', 'تسجيل يدوي'));
+    }
     return parts.join(' · ');
   }
 

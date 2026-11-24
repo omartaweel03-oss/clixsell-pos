@@ -18,8 +18,9 @@ class LauncherUrlOpener implements UrlOpener {
   Future<bool> open(String url) async {
     final uri = Uri.tryParse(url);
     // Defence in depth: the backend only returns https://wa.me/ links.
-    if (uri == null || uri.scheme != 'https' || uri.host != 'wa.me')
+    if (uri == null || uri.scheme != 'https' || uri.host != 'wa.me') {
       return false;
+    }
     try {
       return await launchUrl(uri, mode: LaunchMode.externalApplication);
     } catch (_) {

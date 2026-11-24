@@ -166,8 +166,9 @@ class _CancelDialogState extends State<_CancelDialog> {
   bool get _ready {
     if (_afterMessage) {
       if (_contact == null) return false;
-      if (_contact == ContactStatus.sent)
+      if (_contact == ContactStatus.sent) {
         return true; // goes to "record sending"
+      }
       if (_contact == ContactStatus.notSent && !_confirmNotSent) return false;
     }
     if (_afterContact && !_ackNotNotified) return false;

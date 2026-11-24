@@ -173,8 +173,9 @@ class _AppShellState extends State<AppShell> {
     // A role can only open its own pages.
     if (!widget.user.role.destinations.contains(destination)) return;
     if (destination == SidebarDestination.purchaseOrderDetails &&
-        _purchaseOrderId == null)
+        _purchaseOrderId == null) {
       return;
+    }
     if (destination == SidebarDestination.purchaseOrderForm &&
         _destination != SidebarDestination.purchaseOrderForm) {
       return; // the form opens only through "New" / "Edit"
@@ -297,8 +298,9 @@ class _AppShellState extends State<AppShell> {
           onOpenOrder: _openPurchaseOrder,
           onNewOrder: () => _openPurchaseForm(),
           onOverdueCount: (n) {
-            if (mounted && n != _purchaseOverdue)
+            if (mounted && n != _purchaseOverdue) {
               setState(() => _purchaseOverdue = n);
+            }
           },
         );
       case SidebarDestination.purchaseRecommendations:
@@ -313,8 +315,9 @@ class _AppShellState extends State<AppShell> {
         return PurchaseOrderDetailsPage(
           key: ValueKey('purchaseOrder-$_purchaseOrderId'),
           api: _NumberTrackingPurchaseApi(PurchaseApiClient(widget.http), (n) {
-            if (mounted && _purchaseOrderNumber != n)
+            if (mounted && _purchaseOrderNumber != n) {
               setState(() => _purchaseOrderNumber = n);
+            }
           }),
           orderId: _purchaseOrderId!,
           onBack: () => _navigate(SidebarDestination.purchaseOrders),

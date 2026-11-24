@@ -86,8 +86,9 @@ class _PurchaseRecommendationsPageState
   void _toggle(SupplierRecommendations s, RecommendationItem r, bool on) {
     setState(() {
       if (on) {
-        if (_supplier != s.supplierId)
+        if (_supplier != s.supplierId) {
           _selected.clear(); // one supplier per order
+        }
         _supplier = s.supplierId;
         _selected.add(r.productId);
       } else {

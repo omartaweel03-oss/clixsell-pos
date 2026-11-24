@@ -337,8 +337,9 @@ class _PurchaseOrderDetailsPageState extends State<PurchaseOrderDetailsPage> {
   @override
   Widget build(BuildContext context) {
     final t = PurchaseOrderStrings.of(context);
-    if (_loading && _order == null)
+    if (_loading && _order == null) {
       return const Center(child: CircularProgressIndicator());
+    }
     if (_order == null) {
       return PurchasePageFrame(
         children: [
@@ -717,15 +718,17 @@ class _PurchaseOrderDetailsPageState extends State<PurchaseOrderDetailsPage> {
         ),
       ),
     );
-    if (o.approvedBy != null)
+    if (o.approvedBy != null) {
       line(
         '${t.approvedLabel}: ${t.by(o.approvedBy!.label, shortTime(o.approvedAt))}',
       );
-    if (o.rejectedBy != null)
+    }
+    if (o.rejectedBy != null) {
       line(
         '${t.rejectedLabel}: ${t.by(o.rejectedBy!.label, shortTime(o.rejectedAt))} — ${o.rejectionReason ?? ''}',
         color: AppColors.danger,
       );
+    }
     if (o.message != null || c.copyReports + c.openRequests > 0) {
       line('${t.copies(c.copyReports)} — ${t.notVerified}');
       line(
@@ -751,8 +754,9 @@ class _PurchaseOrderDetailsPageState extends State<PurchaseOrderDetailsPage> {
         color: AppColors.success,
       );
     }
-    if (c.closedAt != null)
+    if (c.closedAt != null) {
       line(t.closedRecorded(c.closedBy?.label ?? '—', shortTime(c.closedAt)));
+    }
     if (o.status == PurchaseOrderStatus.canceled) {
       line(
         '${t.canceledLabel}: ${t.by(o.canceledBy?.label ?? '—', shortTime(o.canceledAt))} — ${o.cancelReason ?? ''}',

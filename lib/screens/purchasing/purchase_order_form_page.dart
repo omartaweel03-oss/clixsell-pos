@@ -426,8 +426,9 @@ class PurchaseOrderFormPageState extends State<PurchaseOrderFormPage> {
           setState(() {
             _saving = false;
             _saveError = e;
-            if (now.version != e0.version)
+            if (now.version != e0.version) {
               _editing = now; // someone else changed it
+            }
           });
         } on ApiException {
           if (mounted) {
