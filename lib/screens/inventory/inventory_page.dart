@@ -1,14 +1,20 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 import '../../l10n/app_strings.dart';
+import '../../l10n/product_file_strings.dart';
 import '../../models/product.dart';
 import '../../models/product_category.dart';
+import '../../models/product_file.dart';
 import '../../state/product_store.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/formatters.dart';
 import '../../widgets/stat_card.dart';
 import '../../widgets/stock_status_badge.dart';
+import '../../services/product_file_client.dart';
 import 'product_delete.dart';
+import 'product_import_dialog.dart';
 import 'widgets/product_table.dart';
 
 /// Inventory Management page: header, live statistics, search/filters,
@@ -23,6 +29,8 @@ class InventoryPage extends StatefulWidget {
     required this.onEditProduct,
     this.onOpenProduct,
     this.readOnly = false,
+    this.productFiles,
+    this.fileIO = const PickerProductFileIO(),
   });
 
   final VoidCallback onAddProduct;
@@ -31,6 +39,11 @@ class InventoryPage extends StatefulWidget {
   /// Opens Product Details (Figure 3.4) – Store Admins only; null for Cashiers.
   final ValueChanged<Product>? onOpenProduct;
   final bool readOnly;
+
+  /// Import / export of product files (UR-M11, Figure 3.3). Store Admins only:
+  /// null (no buttons) for Cashiers. The backend refuses other roles anyway.
+  final ProductFileApi? productFiles;
+  final ProductFileIO fileIO;
 
   @override
   State<InventoryPage> createState() => _InventoryPageState();
@@ -89,6 +102,93 @@ class _InventoryPageState extends State<InventoryPage> {
     });
   }
 
+  bool _exporting = false;
+  bool _importing = false;
+
+  void _snack(String text, {bool error = false}) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(text),
+          backgroundColor: error ? AppColors.danger : null,
+        ),
+      );
+  }
+
+  /// Export: the server's CSV of this store, saved / downloaded as a file.
+  Future<void> _export() async {
+    final api = widget.productFiles;
+    if (api == null || _exporting) return;
+    final t = ProductFileStrings.of(context);
+    setState(() => _exporting = true);
+    try {
+      final f = await api.export();
+      final outcome = await widget.fileIO.save(
+        f.fileName,
+        Uint8List.fromList(f.bytes),
+      );
+      if (!mounted) return;
+      _snack(switch (outcome) {
+        SaveOutcome.saved => t.exported(f.count, f.fileName),
+        SaveOutcome.downloaded => t.downloaded(f.count, f.fileName),
+        SaveOutcome.cancelled => t.exportCancelled,
+      });
+    } on ApiException {
+      if (mounted) _snack(t.exportFailed, error: true);
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
+  /// Import: choose a CSV, the server checks it (nothing saved), then the
+  /// preview dialog creates the products only after a confirmation.
+  Future<void> _import() async {
+    final api = widget.productFiles;
+    if (api == null || _importing) return;
+    final t = ProductFileStrings.of(context);
+    final store = ProductStoreScope.read(context);
+    setState(() => _importing = true);
+    try {
+      final picked = await widget.fileIO.pickCsv();
+      if (picked == null || !mounted) return;
+      final preview = await api.preview(picked.name, picked.bytes);
+      if (!mounted) return;
+      setState(() => _importing = false);
+      final result = await showDialog<ImportResult>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => ProductImportDialog(
+          api: api,
+          fileName: picked.name,
+          bytes: picked.bytes,
+          preview: preview,
+          isImported: (barcodes) async {
+            await store.load();
+            final have = {for (final p in store.products) p.barcode};
+            return barcodes.isNotEmpty && barcodes.every(have.contains);
+          },
+        ),
+      );
+      if (result != null) {
+        await store.load();
+        if (mounted) _snack(t.created(result.created));
+      }
+    } on ApiException catch (e) {
+      if (mounted) {
+        _snack(
+          e.fieldErrors['content'] ??
+              (e.isNetworkError ? t.readFailed : e.message),
+          error: true,
+        );
+      }
+    } catch (_) {
+      if (mounted) _snack(t.readFailed, error: true);
+    } finally {
+      if (mounted) setState(() => _importing = false);
+    }
+  }
+
   /// Same confirmation, DELETE and Undo as Product Details (shared helper).
   Future<void> _deleteProduct(Product product) =>
       deleteProductWithUndo(context, product);
@@ -126,6 +226,14 @@ class _InventoryPageState extends State<InventoryPage> {
                 children: [
                   _Header(
                     onAddProduct: widget.readOnly ? null : widget.onAddProduct,
+                    onImport: widget.readOnly || widget.productFiles == null
+                        ? null
+                        : _import,
+                    onExport: widget.readOnly || widget.productFiles == null
+                        ? null
+                        : _export,
+                    importing: _importing,
+                    exporting: _exporting,
                   ),
                   const SizedBox(height: AppSpacing.xl),
                   if (store.hasLoaded) ...[
@@ -240,10 +348,22 @@ class _InventoryPageState extends State<InventoryPage> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _Header extends StatelessWidget {
-  const _Header({required this.onAddProduct});
+  const _Header({
+    required this.onAddProduct,
+    this.onImport,
+    this.onExport,
+    this.importing = false,
+    this.exporting = false,
+  });
 
   /// Null when the user may not add products (Cashier).
   final VoidCallback? onAddProduct;
+
+  /// Import / export (Figure 3.3); null when not available (Cashier).
+  final VoidCallback? onImport;
+  final VoidCallback? onExport;
+  final bool importing;
+  final bool exporting;
 
   @override
   Widget build(BuildContext context) {
@@ -273,11 +393,50 @@ class _Header extends StatelessWidget {
       ],
     );
 
-    final button = FilledButton.icon(
+    final add = FilledButton.icon(
       key: const Key('headerAddProductButton'),
       onPressed: onAddProduct,
       icon: const Icon(Icons.add_rounded, size: 20),
       label: Text(s.addProduct),
+    );
+    final f = ProductFileStrings.of(context);
+    Widget spinner() => const SizedBox(
+      width: 18,
+      height: 18,
+      child: CircularProgressIndicator(strokeWidth: 2),
+    );
+    // Figure 3.3: Import and Export next to "Add product".
+    final button = Wrap(
+      spacing: AppSpacing.sm,
+      runSpacing: AppSpacing.sm,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        if (onImport != null)
+          Tooltip(
+            message: f.importTooltip,
+            child: OutlinedButton.icon(
+              key: const Key('headerImportButton'),
+              onPressed: importing || exporting ? null : onImport,
+              icon: importing
+                  ? spinner()
+                  : const Icon(Icons.upload_file_rounded, size: 20),
+              label: Text(f.importButton),
+            ),
+          ),
+        if (onExport != null)
+          Tooltip(
+            message: f.exportTooltip,
+            child: OutlinedButton.icon(
+              key: const Key('headerExportButton'),
+              onPressed: importing || exporting ? null : onExport,
+              icon: exporting
+                  ? spinner()
+                  : const Icon(Icons.download_rounded, size: 20),
+              label: Text(f.exportButton),
+            ),
+          ),
+        add,
+      ],
     );
 
     if (onAddProduct == null) return titleBlock;
@@ -417,28 +576,34 @@ class _Toolbar extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
 
-    final search = TextField(
-      key: const Key('searchField'),
-      controller: searchController,
-      onChanged: onSearch,
-      decoration: InputDecoration(
-        hintText: s.searchHint,
-        prefixIcon: const Icon(
-          Icons.search_rounded,
-          color: AppColors.textMuted,
-        ),
-        fillColor: AppColors.background,
-        suffixIcon: ValueListenableBuilder<TextEditingValue>(
-          valueListenable: searchController,
-          builder: (context, value, _) => value.text.isEmpty
-              ? const SizedBox.shrink()
-              : IconButton(
-                  icon: const Icon(Icons.close_rounded, size: 18),
-                  onPressed: () {
-                    searchController.clear();
-                    onSearch('');
-                  },
-                ),
+    // A2: stable accessible name while typing (the hint disappears then).
+    final search = MergeSemantics(
+      child: Semantics(
+        label: s.searchHint,
+        child: TextField(
+          key: const Key('searchField'),
+          controller: searchController,
+          onChanged: onSearch,
+          decoration: InputDecoration(
+            hintText: s.searchHint,
+            prefixIcon: const Icon(
+              Icons.search_rounded,
+              color: AppColors.textMuted,
+            ),
+            fillColor: AppColors.background,
+            suffixIcon: ValueListenableBuilder<TextEditingValue>(
+              valueListenable: searchController,
+              builder: (context, value, _) => value.text.isEmpty
+                  ? const SizedBox.shrink()
+                  : IconButton(
+                      icon: const Icon(Icons.close_rounded, size: 18),
+                      onPressed: () {
+                        searchController.clear();
+                        onSearch('');
+                      },
+                    ),
+            ),
+          ),
         ),
       ),
     );

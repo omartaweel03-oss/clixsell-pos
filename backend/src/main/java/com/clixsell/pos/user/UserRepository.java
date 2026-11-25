@@ -14,6 +14,9 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     boolean existsByRole(Role role);
 
+    /** Every account of one role (used to check the System Admins at start; read only). */
+    List<User> findAllByRole(Role role);
+
     List<User> findAllByStore_StoreIdAndRoleOrderByUserIdAsc(Long storeId, Role role);
 
     Optional<User> findByUserIdAndStore_StoreIdAndRole(Long userId, Long storeId, Role role);

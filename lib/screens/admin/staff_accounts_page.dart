@@ -492,7 +492,10 @@ class _NewAccountDialogState extends State<_NewAccountDialog> {
                   ),
                 ),
                 validator: (v) =>
-                    _serverErrors['password'] ?? _passwordProblem(v, s),
+                    (_serverErrors['password'] == null
+                        ? null
+                        : s.passwordServerError(_serverErrors['password']!)) ??
+                    _passwordProblem(v, s),
               ),
             ],
           ),
@@ -549,9 +552,10 @@ class _ResetPasswordDialogState extends State<_ResetPasswordDialog> {
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _error =
-            e.fieldErrors['password'] ??
-            (e.isNetworkError ? s.networkError : s.requestFailed(e.message));
+        final password = e.fieldErrors['password'];
+        _error = password != null
+            ? s.passwordServerError(password)
+            : (e.isNetworkError ? s.networkError : s.requestFailed(e.message));
       });
     }
   }

@@ -543,6 +543,7 @@ class _ReturnDialogState extends State<ReturnDialog> {
                 const Spacer(),
                 IconButton.outlined(
                   key: const Key('returnQtyDec'),
+                  tooltip: s.returnQtyDecrease,
                   onPressed: _quantity > 1
                       ? () => setState(() => _quantity--)
                       : null,
@@ -562,6 +563,7 @@ class _ReturnDialogState extends State<ReturnDialog> {
                 ),
                 IconButton.outlined(
                   key: const Key('returnQtyInc'),
+                  tooltip: s.returnQtyIncrease,
                   onPressed: _quantity < (_line?.returnableQuantity ?? 1)
                       ? () => setState(() => _quantity++)
                       : null,
@@ -696,13 +698,20 @@ class ReceiptDialog extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: AppSpacing.xs),
-              SelectableText(
-                code,
-                key: const Key('receiptCode'),
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontFamily: 'monospace',
-                  fontWeight: FontWeight.w700,
+              // A3: SelectableText is not read by screen readers on the web;
+              // the code gets a stable spoken label (still selectable to copy).
+              Semantics(
+                key: const Key('receiptCodeSemantics'),
+                label: s.receiptCodeSpoken(code),
+                excludeSemantics: true,
+                child: SelectableText(
+                  code,
+                  key: const Key('receiptCode'),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontFamily: 'monospace',
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
               const SizedBox(height: AppSpacing.xs),

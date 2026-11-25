@@ -38,7 +38,8 @@ class BackupPreservationTest {
 
     /** Every test class that writes, reads or lists backup files. */
     static final List<Class<?>> BACKUP_TESTS = List.of(MigrationTest.class, GuardianMigrationTest.class,
-            UpgradeToSalesVersionTest.class, BackupApiTest.class, PurchaseMigrationTest.class);
+            UpgradeToSalesVersionTest.class, BackupApiTest.class, PurchaseMigrationTest.class,
+            com.clixsell.pos.backup.BackupWalSnapshotTest.class);
 
     private final Random random = new Random();
 

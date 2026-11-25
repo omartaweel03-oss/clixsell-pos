@@ -34,6 +34,7 @@ import 'purchasing/purchase_order_form_page.dart';
 import 'purchasing/purchase_orders_page.dart';
 import 'purchasing/purchase_recommendations_page.dart';
 import '../l10n/purchase_order_strings.dart';
+import '../services/product_file_client.dart';
 import '../services/purchase_api_client.dart';
 import '../services/supplier_api_client.dart';
 
@@ -485,6 +486,10 @@ class _AppShellState extends State<AppShell> {
         return InventoryPage(
           key: const ValueKey('inventory'),
           readOnly: widget.user.role == UserRole.cashier,
+          // Import / export (UR-M11): Store Admins only.
+          productFiles: widget.user.role == UserRole.storeAdmin
+              ? ProductFileApiClient(widget.http)
+              : null,
           onAddProduct: () => _navigate(SidebarDestination.addProduct),
           onEditProduct: (p) =>
               _navigate(SidebarDestination.editProduct, product: p),

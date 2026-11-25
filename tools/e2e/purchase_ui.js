@@ -27,7 +27,7 @@ const token = async (u, p) => (await api('/auth/login', null, 'POST', { username
 // ── browser ───────────────────────────────────────────────────────────────────────────────
 let browser, CUR;
 const external = [];                  // every non-local request the app tried (all aborted)
-const fonts = [];                     // font files allowed (Google font hosts only)
+const fonts = [];                     // font requests (must stay empty: the fonts are bundled)
 async function newPage(w = 1440, h = 900) {
   const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 1 });
   await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: 'http://localhost:8090' });
@@ -35,7 +35,8 @@ async function newPage(w = 1440, h = 900) {
   await ctx.route('**/*', route => {
     const u = route.request().url();
     if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(u) || u.startsWith('data:') || u.startsWith('blob:')) return route.continue();
-    // Flutter web loads the Arabic glyphs (Noto fallback fonts) from Google's font hosts: font files only
+    // The fonts are bundled (assets/fonts); a font request is let through only to be recorded,
+    // and the 'fonts:' check at the end fails if there is any.
     if (/^https:\/\/fonts\.(gstatic|googleapis)\.com\//.test(u)) { fonts.push(u); return route.continue(); }
     external.push(u);
     return route.abort();
@@ -750,6 +751,8 @@ const FIN = () => JSON.stringify([
   const notFonts = external.filter(u => !/^https:\/\/fonts\./.test(u));
   ok('network: every external request was aborted; the only external attempts were wa.me', notFonts.every(u => u.startsWith('https://wa.me/')), JSON.stringify(notFonts));
   console.log('   external requests aborted:', notFonts.length, '| font files allowed:', fonts.length);
+  // Overnight B1: the fonts are bundled with the app (assets/fonts), so it never asks for one.
+  ok('fonts: no external font request at all (Roboto + Noto Sans Arabic are bundled)', fonts.length === 0, JSON.stringify(fonts));
 
   console.log(`\nPURCHASE UI PASS ${pass} FAIL ${fail}`);
   await browser.close();

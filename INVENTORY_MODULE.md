@@ -403,10 +403,28 @@ blocker cannot be detected), so the app's "opened" record means only "handed to 
 
 Requires **Java JDK 17+** (backend) and **Flutter 3.38+** (frontend). Maven and SQLite need no installation.
 
-1. First login: **`sysadmin` / `Admin12345`** (created on the first start, when the
-   database has no System Admin yet). To use another password, change
-   `clixsell.system-admin.password=` in `backend/src/main/resources/application.properties`
-   **before** the first start. Change the default before real use.
+1. Database and first System Admin (security / database safety):
+   * The database file is `CLIXSELL_DB_PATH` (a full path is recommended), else `clixsell.db` in
+     the folder the backend starts in. The full path is printed at start.
+   * A missing database is **not** created automatically (a wrong folder would otherwise look
+     like "all data lost"). For the **first start of a new installation** set
+     `CLIXSELL_DB_CREATE=true` and `CLIXSELL_ADMIN_PASSWORD=<your own password>`; the System Admin
+     `sysadmin` is created with that password. There is no built-in password, and no password is
+     ever printed or logged. Later starts need neither variable.
+   * An existing database with a System Admin starts exactly as before; nothing is reset.
+     If a System Admin still uses a published demo password (an installation from before this
+     version), the start logs a `SECURITY WARNING` (username only, never the password or hash) and
+     Settings shows that System Admin a warning (`GET /api/admin/security-status`, System Admin
+     only). Fix: Settings → Profile → Change password. Outside the demo profile a published demo
+     password is refused as a new administrator password (creating a Store Admin; own change;
+     System Admin resetting a Store Admin). A Store Admin that still uses one is warned about
+     their own account in Settings (`GET /api/auth/me/security-status`, System Admin and Store
+     Admin, own account only; Cashiers 403).
+   * A first start whose admin settings are missing or invalid (empty, too short, a demo password)
+     stops before the database file is created: no file, no tables, no migration.
+   * Folders, empty or non-SQLite files, read-only files or folders are refused with a message.
+   * The `demo` profile (throwaway presentation / test database only) still uses the documented
+     demo logins (`sysadmin` / `Admin12345`, see the demo table) and may create its new database.
 2. Start the backend (terminal 1):
    ```bash
    cd backend
@@ -478,6 +496,7 @@ maximum discount 10%, and every existing store, user and product is kept (tested
 | `GET, POST /api/store/cashiers`, `PUT …/cashiers/{id}/status`, `PUT …/cashiers/{id}/password` | Store Admin | `users` |
 | `GET /api/products`, `GET /api/products/{id}` | Store Admin, Cashier | `SELECT` (own store) |
 | `POST /api/products` · `PUT /api/products/{id}` · `DELETE /api/products/{id}` · `GET /api/products/generate-barcode` | Store Admin | `INSERT` · `UPDATE` · `DELETE` (own store) |
+| `GET /api/product-files/export` · `POST /api/product-files/import/preview` · `POST /api/product-files/import` | Store Admin | CSV export (own store) · check only (nothing saved) · create NEW products, all or none |
 | `POST /api/sales` (complete) | Store Admin, Cashier | `INSERT` sales, sale_items, payments, receipts; `UPDATE` products stock |
 | `POST /api/sales/suspended` · `PUT /api/sales/suspended/{id}` | Store Admin, Cashier | `INSERT` / `UPDATE` sales (SUSPENDED) |
 | `GET /api/sales/suspended` · `GET /api/sales/{id}` | Store Admin, Cashier | `SELECT` (own store) |
@@ -597,3 +616,28 @@ flutter test                     # 195 Flutter tests (use a fake server), incl. 
 * Low stock: 0 < quantity <= minimum stock level
 * Inventory value: sum of price × quantity
 * Barcode unique within a store (two stores may use the same barcode)
+
+
+## Product import / export (UR-M11, SR24, Figure 3.3)
+
+Products screen (Store Admin): **Import** and **Export** next to *Add product*. Cashiers see neither.
+
+* **File**: CSV, UTF-8 (export adds a byte-order mark so Excel shows Arabic correctly), one header
+  row with the columns `name, barcode, category, sellingPrice, costPrice, quantity, minStock,
+  supplier` (any order; `costPrice` may be empty = unknown). These are exactly the product form's
+  fields; images are not part of the file. `category` uses the keys `dairy, bakery, beverages,
+  snacks, groceries, freshProduce, frozen, cleaning, personalCare, other`. Numbers use digits and
+  a dot (`12.5`). Quoted fields may contain commas, quotes (`""`) and line breaks.
+* **Formula guard**: on export, text starting with `= + - @` (or tab / CR) gets a leading `'`
+  (spreadsheet formula injection); the import removes exactly that `'` again, so an exported file
+  re-imports unchanged.
+* **Import = preview, then confirm**: the server checks the whole file with the product form's
+  own rules (`Product.validate`), the barcode unique in the file and in the store, the supplier
+  found or created by name exactly as the form does (an inactive supplier is refused), and returns
+  every row with its errors, the suppliers that would be created and the file's SHA-256. Nothing
+  is saved. **Import** requires the same file, that hash and `confirmImport: true`; everything is
+  checked again and all products are created in ONE transaction, or none.
+* **Only new products**: an existing barcode is an error. Existing products, stock, prices and
+  suppliers are never updated or overwritten by an import (an update / upsert mode would be a
+  separate decision). Re-importing the same file is therefore refused as a whole.
+* **Limits**: 2 MB and 5000 products per file. No new table and no migration.

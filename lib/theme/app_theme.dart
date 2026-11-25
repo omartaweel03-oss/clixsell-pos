@@ -58,6 +58,17 @@ class AppSpacing {
 class AppTheme {
   AppTheme._();
 
+  /// The bundled font families (assets/fonts): Roboto, then Noto Sans Arabic.
+  /// Every TextStyle that REPLACES the theme's style (e.g. a ButtonStyle
+  /// textStyle) must carry them, or Arabic falls back to a downloaded font.
+  static const String fontFamily = 'Roboto';
+  static const List<String> fontFallback = [
+    'Noto Sans Arabic',
+    'Segoe UI',
+    'Geeza Pro',
+    'Arial',
+  ];
+
   static ThemeData light() {
     final base = ThemeData(
       useMaterial3: true,
@@ -68,8 +79,11 @@ class AppTheme {
         error: AppColors.danger,
       ),
       scaffoldBackgroundColor: AppColors.background,
-      // Fallback fonts make sure Arabic glyphs render on every platform.
-      fontFamilyFallback: const ['Segoe UI', 'Geeza Pro', 'Noto Sans Arabic', 'Arial'],
+      // Bundled fonts (assets/fonts, SIL OFL 1.1): Roboto for Latin text and Noto Sans Arabic
+      // for Arabic, so both render the same everywhere and need no external font service
+      // (offline store computers). System fonts stay as a last resort.
+      fontFamily: fontFamily,
+      fontFamilyFallback: fontFallback,
     );
 
     final outline = OutlineInputBorder(
@@ -87,8 +101,16 @@ class AppTheme {
         filled: true,
         fillColor: AppColors.surface,
         isDense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-        hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 14),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 14,
+        ),
+        hintStyle: const TextStyle(
+          color: AppColors.textMuted,
+          fontSize: 14,
+          fontFamily: fontFamily,
+          fontFamilyFallback: fontFallback,
+        ),
         border: outline,
         enabledBorder: outline,
         focusedBorder: outline.copyWith(
@@ -106,7 +128,12 @@ class AppTheme {
           backgroundColor: AppColors.primary,
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+          textStyle: const TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 14,
+            fontFamily: fontFamily,
+            fontFamilyFallback: fontFallback,
+          ),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppSpacing.radiusSm + 2),
           ),
@@ -117,7 +144,12 @@ class AppTheme {
           foregroundColor: AppColors.textPrimary,
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
           side: const BorderSide(color: AppColors.border),
-          textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+          textStyle: const TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 14,
+            fontFamily: fontFamily,
+            fontFamilyFallback: fontFallback,
+          ),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppSpacing.radiusSm + 2),
           ),

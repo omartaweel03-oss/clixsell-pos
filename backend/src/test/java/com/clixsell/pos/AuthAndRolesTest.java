@@ -92,7 +92,7 @@ class AuthAndRolesTest extends ApiTestBase {
 
         // A password reset by the Store Admin unlocks it.
         long id = db.queryForObject("SELECT user_id FROM users WHERE username = 'shini.cashier'", Long.class);
-        String admin = login("shini.admin", "Admin-Pass-1");
+        String admin = login("shini.admin", STORE_ADMIN_PASSWORD);
         mvc.perform(put("/api/store/cashiers/" + id + "/password").header("Authorization", bearer(admin))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"password\":\"New-Pass-123\"}"))
                 .andExpect(status().isOk());
@@ -150,7 +150,7 @@ class AuthAndRolesTest extends ApiTestBase {
                 .andExpect(status().isOk());
         mvc.perform(get("/api/products").header("Authorization", bearer(shini.adminToken())))
                 .andExpect(status().isUnauthorized());
-        loginAttempt("shini.admin", "Admin-Pass-1").andExpect(status().isUnauthorized());
+        loginAttempt("shini.admin", STORE_ADMIN_PASSWORD).andExpect(status().isUnauthorized());
         loginAttempt("shini.admin", "Brand-New-1").andExpect(status().isOk());
     }
 

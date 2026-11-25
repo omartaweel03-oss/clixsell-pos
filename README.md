@@ -39,9 +39,26 @@ flutter pub get
 flutter run -d chrome
 ```
 
-First login: **`sysadmin` / `Admin12345`** (change it before real use: Settings → Profile →
-Change password). Then create a store, its Store Admin,
-products and cashiers.
+**First start of a new installation** (once): set your own System Admin password and allow
+creating the database, e.g. in PowerShell:
+```powershell
+$env:CLIXSELL_DB_PATH = "C:\ClixSell\data\clixsell.db"   # optional, recommended (full path)
+$env:CLIXSELL_DB_CREATE = "true"
+$env:CLIXSELL_ADMIN_PASSWORD = "<your own password>"
+```
+Log in as `sysadmin` with that password, then create a store, its Store Admin, products and
+cashiers. Later starts need no variables (only `CLIXSELL_DB_PATH` if you use it): an existing
+database is used as it is, and a missing one is never created silently. There is no built-in
+password. If the password is missing, too short or a published demo password, the start stops
+**before** any database file is created. See `WINDOWS_DEMO.md` for the full Windows guide.
+
+**Older installations** (created before this version) may still have `sysadmin` / `Admin12345`.
+ClixSell does not change it by itself: it writes a `SECURITY WARNING` line at start and shows a red
+warning to the System Admin in Settings. Sign in and change it: Settings → Profile → Change
+password (take a backup first). Setting `CLIXSELL_ADMIN_PASSWORD` does **not** change an existing
+password. Outside the demo profile, published demo passwords cannot be chosen for an
+administrator (new Store Admin, own password change, Store Admin reset). A Store Admin that still
+uses one sees the same kind of warning in Settings for their own account.
 
 ## Demo data (optional – presentations and testing only)
 Off by default. To start with two ready Palestinian demo stores, use the `demo` profile
@@ -54,6 +71,9 @@ cd backend
 |---|---|---|---|
 | Shini Supermarket – Ramallah | `shini.admin` | `shini.cashier`, `shini.cashier2` | `Admin-Pass-1` / `Cashier-Pass-1` |
 | Neshan Market – Nablus | `neshan.admin` | `neshan.cashier` | `Admin-Pass-1` / `Cashier-Pass-1` |
+
+System Admin on a new demo database: `sysadmin` / `Admin12345` (allowed only by the `demo`
+profile; the normal configuration refuses this public password).
 
 A database that already has stores is never changed by the demo profile.
 

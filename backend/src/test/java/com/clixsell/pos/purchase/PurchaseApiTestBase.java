@@ -38,8 +38,8 @@ public abstract class PurchaseApiTestBase extends ApiTestBase {
     void twoStores() throws Exception {
         shini = setupStore("Shini", "shini");
         neshan = setupStore("Neshan", "neshan");
-        createStoreAdmin(sysadminToken(), shini.storeId(), "shini.admin2", "Admin-Pass-2");
-        shiniAdmin2 = login("shini.admin2", "Admin-Pass-2");
+        createStoreAdmin(sysadminToken(), shini.storeId(), "shini.admin2", "Shop-Owner-Pass-2");
+        shiniAdmin2 = login("shini.admin2", "Shop-Owner-Pass-2");
     }
 
     // ── HTTP ────────────────────────────────────────────────────────────────────────

@@ -319,6 +319,10 @@ class _ProfileDialogState extends State<ProfileDialog> {
       setState(() {
         _saving = false;
         _serverErrors.addAll(e.fieldErrors);
+        final next = _serverErrors['newPassword'];
+        if (next != null) {
+          _serverErrors['newPassword'] = s.passwordServerError(next);
+        }
         if (_serverErrors.isEmpty) _error = _apiError(e, s);
       });
       _formKey.currentState!.validate();

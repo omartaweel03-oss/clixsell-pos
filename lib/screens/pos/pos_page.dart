@@ -457,25 +457,32 @@ class _PosHeader extends StatelessWidget {
         ),
       ],
     );
+    // A2: the hint disappears while typing; MergeSemantics + Semantics give the
+    // field a stable accessible name (same look, same hint).
     final searchField = Tooltip(
       message: s.posSearchTooltip,
-      child: TextField(
-        key: const Key('posSearchField'),
-        controller: search,
-        focusNode: focus,
-        autofocus: true,
-        onChanged: (_) => onChanged(),
-        onSubmitted: onSubmitted,
-        decoration: InputDecoration(
-          hintText: s.posSearchHint,
-          fillColor: AppColors.surface,
-          prefixIcon: const Icon(
-            Icons.search_rounded,
-            color: AppColors.textMuted,
-          ),
-          suffixIcon: const Icon(
-            Icons.qr_code_scanner_rounded,
-            color: AppColors.primary,
+      child: MergeSemantics(
+        child: Semantics(
+          label: s.posSearchHint,
+          child: TextField(
+            key: const Key('posSearchField'),
+            controller: search,
+            focusNode: focus,
+            autofocus: true,
+            onChanged: (_) => onChanged(),
+            onSubmitted: onSubmitted,
+            decoration: InputDecoration(
+              hintText: s.posSearchHint,
+              fillColor: AppColors.surface,
+              prefixIcon: const Icon(
+                Icons.search_rounded,
+                color: AppColors.textMuted,
+              ),
+              suffixIcon: const Icon(
+                Icons.qr_code_scanner_rounded,
+                color: AppColors.primary,
+              ),
+            ),
           ),
         ),
       ),

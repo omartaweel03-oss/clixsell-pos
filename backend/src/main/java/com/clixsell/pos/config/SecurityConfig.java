@@ -34,6 +34,7 @@ import java.util.List;
  * /api/store/cashiers/**                   STORE_ADMIN
  * GET  /api/store                          STORE_ADMIN, CASHIER
  * PUT  /api/store/settings                 STORE_ADMIN (own store)
+ * /api/product-files/** (import / export)   STORE_ADMIN
  * GET  /api/products/generate-barcode      STORE_ADMIN
  * GET  /api/products/**                    STORE_ADMIN, CASHIER
  * POST/PUT/DELETE /api/products/**         STORE_ADMIN
@@ -72,12 +73,14 @@ public class SecurityConfig {
                         // Own password (Settings → Profile): admins only. Cashier passwords
                         // are set by their Store Admin (/api/store/cashiers/{id}/password).
                         .requestMatchers("/api/auth/me/password").hasAnyRole("SYSTEM_ADMIN", "STORE_ADMIN")
+                        .requestMatchers("/api/auth/me/security-status").hasAnyRole("SYSTEM_ADMIN", "STORE_ADMIN")
                         .requestMatchers("/api/auth/**").authenticated()
                         .requestMatchers("/api/admin/**").hasRole("SYSTEM_ADMIN")
                         .requestMatchers("/api/store/cashiers", "/api/store/cashiers/**").hasRole("STORE_ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/store").hasAnyRole("STORE_ADMIN", "CASHIER")
                         // Store settings (tax, discount, address, phone): own store's Store Admin.
                         .requestMatchers("/api/store/settings").hasRole("STORE_ADMIN")
+                        .requestMatchers("/api/product-files", "/api/product-files/**").hasRole("STORE_ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/products/generate-barcode").hasRole("STORE_ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/products", "/api/products/**").hasAnyRole("STORE_ADMIN", "CASHIER")
                         .requestMatchers("/api/products", "/api/products/**").hasRole("STORE_ADMIN")
@@ -106,6 +109,8 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration cors = new CorsConfiguration();
         cors.setAllowedOriginPatterns(List.of("http://localhost:[*]", "http://127.0.0.1:[*]"));
+        // The product export file name and count (the browser hides other response headers).
+        cors.setExposedHeaders(List.of("Content-Disposition", "X-Product-Count"));
         cors.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         cors.setAllowedHeaders(List.of("*"));
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

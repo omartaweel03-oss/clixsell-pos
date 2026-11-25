@@ -71,6 +71,28 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  # Bundled fonts (offline Arabic / English rendering, no external font service).
+  # Licenses: assets/fonts/*/OFL.txt (SIL Open Font License 1.1), see assets/fonts/README.md.
+  fonts:
+    - family: Roboto
+      fonts:
+        - asset: assets/fonts/Roboto/Roboto-400.ttf
+          weight: 400
+        - asset: assets/fonts/Roboto/Roboto-500.ttf
+          weight: 500
+        - asset: assets/fonts/Roboto/Roboto-600.ttf
+          weight: 600
+        - asset: assets/fonts/Roboto/Roboto-700.ttf
+          weight: 700
+        - asset: assets/fonts/Roboto/Roboto-800.ttf
+          weight: 800
+    # Arabic: only the regular weight, exactly what Flutter web used before (it downloaded the
+    # regular weight and synthesizes bold), so Arabic layouts keep their widths.
+    - family: Noto Sans Arabic
+      fonts:
+        - asset: assets/fonts/NotoSansArabic/NotoSansArabic-400.ttf
+          weight: 400
+
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg

@@ -58,6 +58,28 @@ public class SupplierService {
     // ── Product Screen ───────────────────────────────────────────────────────────────
 
     /**
+     * The supplier {@link #findOrCreate} would link to, WITHOUT creating one: empty when it would
+     * create a new supplier; SUPPLIER_NAME_AMBIGUOUS exactly like findOrCreate. Used by the
+     * product import preview, which must not write anything.
+     */
+    @Transactional(readOnly = true)
+    public java.util.Optional<Supplier> findExisting(long storeId, String name) {
+        String trimmed = name.trim();
+        var exact = suppliers.findByStore_StoreIdAndNameIgnoreCase(storeId, trimmed);
+        if (exact.isPresent()) return exact;
+        String key = SupplierNames.key(trimmed);
+        List<Supplier> same = suppliers.findAllByStore_StoreIdOrderByNameAsc(storeId).stream()
+                .filter(s -> SupplierNames.key(s.getName()).equals(key)).toList();
+        if (same.size() == 1) return java.util.Optional.of(same.get(0));
+        if (same.size() > 1) {
+            throw new ConflictException("SUPPLIER_NAME_AMBIGUOUS", "supplierName",
+                    "Several suppliers match this name: " + same.stream().map(s -> "'" + s.getName() + "'")
+                            .collect(Collectors.joining(", ")) + ". Type the exact name.");
+        }
+        return java.util.Optional.empty();
+    }
+
+    /**
      * The store's supplier for a name typed on the Product Screen, creating it if needed.
      * <ol>
      *   <li>Exact match (trim, English letters case-insensitive) — exactly the old behavior.</li>

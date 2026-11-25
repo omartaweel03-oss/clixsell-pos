@@ -39,14 +39,17 @@ public class AuthService {
     private final UserRepository users;
     private final UserSessionRepository sessions;
     private final PasswordEncoder passwordEncoder;
+    private final DemoPasswords demoPasswords;
     private final Duration sessionLength;
     private final SecureRandom random = new SecureRandom();
     /** Checked when the username does not exist, so both cases take the same time. */
     private final String dummyHash;
 
     public AuthService(UserRepository users, UserSessionRepository sessions, PasswordEncoder passwordEncoder,
+                       DemoPasswords demoPasswords,
                        @Value("${clixsell.auth.session-hours:12}") long sessionHours) {
         this.users = users;
+        this.demoPasswords = demoPasswords;
         this.sessions = sessions;
         this.passwordEncoder = passwordEncoder;
         this.sessionLength = Duration.ofHours(sessionHours);
@@ -98,7 +101,8 @@ public class AuthService {
      * (Settings → Profile). Cashiers cannot: their passwords are set by their
      * Store Admin. The current password must be right; a wrong one counts like a
      * failed login (5 in a row lock the account for 5 minutes). The new password
-     * follows the usual rules and is saved hashed. Every other session of the
+     * follows the usual rules, may not be a published demo password (outside the
+     * demo profile), and is saved hashed. Every other session of the
      * user is ended; the session that made the change stays (it proved the
      * current password).
      *
@@ -137,6 +141,8 @@ public class AuthService {
             throw new ValidationException(Map.of("newPassword",
                     "The new password must be different from the current one"));
         }
+        // Outside the demo profile an administrator may not choose a published demo password.
+        demoPasswords.rejectIfDemo("newPassword", newPassword);
         user.changePassword(passwordEncoder.encode(newPassword));
         users.save(user);
         if (currentToken == null) {
