@@ -63,7 +63,7 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.textContaining('Settings → Profile → Change password'),
+        find.textContaining('Settings > Profile > Change password'),
         findsOneWidget,
       );
       // Above the cards, so it is seen first.
@@ -102,7 +102,7 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.textContaining('الإعدادات ← الملف الشخصي ← تغيير كلمة المرور'),
+      find.textContaining('الإعدادات > الملف الشخصي > تغيير كلمة المرور'),
       findsOneWidget,
     );
     expect(find.text('غيّر كلمة المرور الآن'), findsOneWidget);
@@ -187,5 +187,16 @@ void main() {
       ar.passwordServerError('Password is too long'),
       'Password is too long',
     );
+    // No arrow or symbol outside the bundled fonts (they would need the internet).
+    for (final t in [en, ar]) {
+      for (final text in [
+        t.demoPasswordWarningTitle,
+        t.demoPasswordWarningBody,
+        t.demoPasswordWarningAction,
+        t.passwordIsDemo,
+      ]) {
+        expect(text.runes.where((r) => r >= 0x2190 && r <= 0x2BFF), isEmpty);
+      }
+    }
   });
 }

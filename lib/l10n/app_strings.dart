@@ -961,7 +961,9 @@ class AppStrings {
   String passwordServerError(String message) =>
       message == demoPasswordServerMessage ? passwordIsDemo : message;
 
-  // Security warning (System Admin, Settings)
+  // Security warning (System Admin, Settings). Plain '>' between the steps: the
+  // arrow characters are not in the bundled fonts (they would be fetched from
+  // the internet, or shown as boxes offline); '>' is mirrored in Arabic.
   String get demoPasswordWarningTitle => _t(
     'Security warning: you are using the demo password',
     'تحذير أمني: أنت تستخدم كلمة المرور التجريبية',
@@ -969,9 +971,9 @@ class AppStrings {
   String get demoPasswordWarningBody => _t(
     'Your System Admin account still uses a publicly documented demo password, '
         'so anyone who knows it can sign in as System Admin. Change it now: '
-        'Settings → Profile → Change password. ClixSell does not change it for you.',
+        'Settings > Profile > Change password. ClixSell does not change it for you.',
     'حساب مدير النظام ما زال يستخدم كلمة مرور تجريبية منشورة، فيستطيع أي شخص يعرفها '
-        'الدخول كمدير نظام. غيّرها الآن: الإعدادات ← الملف الشخصي ← تغيير كلمة المرور. '
+        'الدخول كمدير نظام. غيّرها الآن: الإعدادات > الملف الشخصي > تغيير كلمة المرور. '
         'لا يغيّرها ClixSell تلقائياً.',
   );
   String get demoPasswordWarningAction =>
