@@ -27,6 +27,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @SpringBootTest(properties = {
         "spring.datasource.url=jdbc:sqlite:test-clixsell.db?foreign_keys=on",
+        "clixsell.db.create-if-missing=true", // the test database is created on purpose
         "clixsell.system-admin.username=sysadmin",
         "clixsell.demo-data=false",
         "clixsell.backup.dir=test-backups",

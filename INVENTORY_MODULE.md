@@ -403,10 +403,18 @@ blocker cannot be detected), so the app's "opened" record means only "handed to 
 
 Requires **Java JDK 17+** (backend) and **Flutter 3.38+** (frontend). Maven and SQLite need no installation.
 
-1. First login: **`sysadmin` / `Admin12345`** (created on the first start, when the
-   database has no System Admin yet). To use another password, change
-   `clixsell.system-admin.password=` in `backend/src/main/resources/application.properties`
-   **before** the first start. Change the default before real use.
+1. Database and first System Admin (security / database safety):
+   * The database file is `CLIXSELL_DB_PATH` (a full path is recommended), else `clixsell.db` in
+     the folder the backend starts in. The full path is printed at start.
+   * A missing database is **not** created automatically (a wrong folder would otherwise look
+     like "all data lost"). For the **first start of a new installation** set
+     `CLIXSELL_DB_CREATE=true` and `CLIXSELL_ADMIN_PASSWORD=<your own password>`; the System Admin
+     `sysadmin` is created with that password. There is no built-in password, and no password is
+     ever printed or logged. Later starts need neither variable.
+   * An existing database with a System Admin starts exactly as before; nothing is reset.
+   * Folders, empty or non-SQLite files, read-only files or folders are refused with a message.
+   * The `demo` profile (throwaway presentation / test database only) still uses the documented
+     demo logins (`sysadmin` / `Admin12345`, see the demo table) and may create its new database.
 2. Start the backend (terminal 1):
    ```bash
    cd backend

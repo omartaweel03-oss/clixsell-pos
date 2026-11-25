@@ -78,7 +78,7 @@ for suite in "${SUITES[@]}"; do
   DB="$WORK/e2e.db"
   OUT="$OUT_ROOT/$suite"; mkdir -p "$OUT"
   (cd "$WORK" && exec java -jar "$JAR" --spring.profiles.active=demo \
-      "--spring.datasource.url=jdbc:sqlite:$DB?foreign_keys=on" "--clixsell.backup.dir=$WORK/backups" \
+      "--spring.datasource.url=jdbc:sqlite:$DB?foreign_keys=on" "--clixsell.db.create-if-missing=true" "--clixsell.backup.dir=$WORK/backups" \
       > "$OUT/backend.log" 2>&1) &
   BACKEND_PID=$!
   ready=0

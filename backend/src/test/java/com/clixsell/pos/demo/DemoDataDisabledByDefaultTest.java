@@ -13,7 +13,8 @@ import java.nio.file.Path;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /** With the normal settings (no "demo" profile) a new database stays empty. */
-@SpringBootTest(properties = "spring.datasource.url=jdbc:sqlite:no-demo-clixsell.db?foreign_keys=on")
+@SpringBootTest(properties = {"spring.datasource.url=jdbc:sqlite:no-demo-clixsell.db?foreign_keys=on",
+        "clixsell.db.create-if-missing=true", "clixsell.system-admin.password=Test-Admin-2026"})
 class DemoDataDisabledByDefaultTest {
 
     static {
