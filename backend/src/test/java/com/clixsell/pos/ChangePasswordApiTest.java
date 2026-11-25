@@ -52,10 +52,10 @@ class ChangePasswordApiTest extends ApiTestBase {
 
     @Test
     void storeAdminChangesOwnPasswordOtherSessionsEnd() throws Exception {
-        String otherSession = login("shini.admin", "Admin-Pass-1");
+        String otherSession = login("shini.admin", STORE_ADMIN_PASSWORD);
         String before = hash("shini.admin");
 
-        change(shini.adminToken(), "Admin-Pass-1", "New-Admin-Pass-2")
+        change(shini.adminToken(), STORE_ADMIN_PASSWORD, "New-Admin-Pass-2")
                 .andExpect(status().isNoContent())
                 .andExpect(content().string(""));   // no password in the answer
 
@@ -63,12 +63,12 @@ class ChangePasswordApiTest extends ApiTestBase {
         assertThat(after).isNotEqualTo(before).startsWith("$2").doesNotContain("New-Admin-Pass-2"); // BCrypt
         assertThat(meStatus(shini.adminToken())).isEqualTo(200);  // this session stays
         assertThat(meStatus(otherSession)).isEqualTo(401);        // the other one ended
-        assertThat(loginStatus("shini.admin", "Admin-Pass-1")).isEqualTo(401);
+        assertThat(loginStatus("shini.admin", STORE_ADMIN_PASSWORD)).isEqualTo(401);
         assertThat(loginStatus("shini.admin", "New-Admin-Pass-2")).isEqualTo(200);
         // Nobody else changed.
         assertThat(meStatus(shini.cashierToken())).isEqualTo(200);
         assertThat(meStatus(neshan.adminToken())).isEqualTo(200);
-        assertThat(loginStatus("neshan.admin", "Admin-Pass-1")).isEqualTo(200);
+        assertThat(loginStatus("neshan.admin", STORE_ADMIN_PASSWORD)).isEqualTo(200);
     }
 
     @Test
@@ -145,24 +145,24 @@ class ChangePasswordApiTest extends ApiTestBase {
             change(shini.adminToken(), "Wrong-" + i, "New-Admin-Pass-2").andExpect(status().isBadRequest());
         }
         // Locked: even the right current password is refused for now, and so is logging in.
-        change(shini.adminToken(), "Admin-Pass-1", "New-Admin-Pass-2")
+        change(shini.adminToken(), STORE_ADMIN_PASSWORD, "New-Admin-Pass-2")
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.fieldErrors.currentPassword").value("Too many wrong attempts. Try again in a few minutes."));
-        assertThat(loginStatus("shini.admin", "Admin-Pass-1")).isEqualTo(429);
+        assertThat(loginStatus("shini.admin", STORE_ADMIN_PASSWORD)).isEqualTo(429);
         assertThat(loginStatus("shini.admin", "New-Admin-Pass-2")).isNotEqualTo(200);
     }
 
     @Test
     void newPasswordFollowsTheRules() throws Exception {
         String before = hash("shini.admin");
-        change(shini.adminToken(), "Admin-Pass-1", "short")
+        change(shini.adminToken(), STORE_ADMIN_PASSWORD, "short")
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.fieldErrors.newPassword").value("Password must be at least 8 characters"));
-        change(shini.adminToken(), "Admin-Pass-1", "Admin-Pass-1")
+        change(shini.adminToken(), STORE_ADMIN_PASSWORD, STORE_ADMIN_PASSWORD)
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.fieldErrors.newPassword").value("The new password must be different from the current one"));
         mvc.perform(put("/api/auth/me/password").header("Authorization", bearer(shini.adminToken()))
-                        .contentType(MediaType.APPLICATION_JSON).content("{\"currentPassword\":\"Admin-Pass-1\"}"))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"currentPassword\":\"" + STORE_ADMIN_PASSWORD + "\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.fieldErrors.newPassword").value("Password is required"));
         assertThat(hash("shini.admin")).isEqualTo(before);
@@ -174,7 +174,7 @@ class ChangePasswordApiTest extends ApiTestBase {
         long cashierId = db.queryForObject("SELECT user_id FROM users WHERE username = 'shini.cashier'", Long.class);
         mvc.perform(put("/api/auth/me/password").header("Authorization", bearer(shini.adminToken()))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"userId\":%d,\"username\":\"shini.cashier\",\"currentPassword\":\"Admin-Pass-1\",\"newPassword\":\"New-Admin-Pass-2\"}"
+                        .content("{\"userId\":%d,\"username\":\"shini.cashier\",\"currentPassword\":\"Shop-Owner-Pass-1\",\"newPassword\":\"New-Admin-Pass-2\"}"
                                 .formatted(cashierId)))
                 .andExpect(status().isNoContent());
         assertThat(hash("shini.cashier")).isEqualTo(cashierBefore);

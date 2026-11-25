@@ -121,15 +121,15 @@ class AdminPasswordSecurityApiTest extends ApiTestBase {
             changeOwn(sysadminToken(), SYSADMIN_PASSWORD, demo).andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.fieldErrors.newPassword").value(DemoPasswords.REJECTED_MESSAGE));
         }
-        changeOwn(shini.adminToken(), "Admin-Pass-1", "admin-pass-2").andExpect(status().isBadRequest())
+        changeOwn(shini.adminToken(), STORE_ADMIN_PASSWORD, "admin-pass-2").andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.fieldErrors.newPassword").value(DemoPasswords.REJECTED_MESSAGE));
         assertThat(hash("sysadmin")).isEqualTo(sysBefore);
         assertThat(hash("shini.admin")).isEqualTo(shiniBefore);
         assertThat(loginStatus("sysadmin", SYSADMIN_PASSWORD)).isEqualTo(200);
         // the normal workflow and rules are unchanged
-        changeOwn(shini.adminToken(), "Admin-Pass-1", "short").andExpect(status().isBadRequest())
+        changeOwn(shini.adminToken(), STORE_ADMIN_PASSWORD, "short").andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.fieldErrors.newPassword").value("Password must be at least 8 characters"));
-        changeOwn(shini.adminToken(), "Admin-Pass-1", "Shini-Owner-Pass-9").andExpect(status().isNoContent());
+        changeOwn(shini.adminToken(), STORE_ADMIN_PASSWORD, "Shini-Owner-Pass-9").andExpect(status().isNoContent());
         assertThat(loginStatus("shini.admin", "Shini-Owner-Pass-9")).isEqualTo(200);
     }
 

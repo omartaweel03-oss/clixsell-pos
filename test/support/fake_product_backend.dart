@@ -331,6 +331,16 @@ class FakeProductBackend {
       return http.Response('', 204);
     }
 
+    // Own account security status (Settings warning): administrators only.
+    if (path == '/api/auth/me/security-status' && method == 'GET') {
+      if (role == 'CASHIER') return _forbidden();
+      // The real server checks the stored hash; the fake knows the password.
+      return _json(200, {
+        'demoPasswordInUse': _isDemo(
+          _passwords[user['username'] as String] ?? '',
+        ),
+      });
+    }
     // Own password (Settings → Profile): System Admin and Store Admin only.
     if (path == '/api/auth/me/password' && method == 'PUT') {
       if (role == 'CASHIER') return _forbidden();
@@ -668,6 +678,11 @@ class FakeProductBackend {
     if (rest == '' && method == 'POST') {
       final b = body();
       final username = (b['username'] as String? ?? '').trim().toLowerCase();
+      if (role == 'STORE_ADMIN' && _isDemo(b['password'] as String? ?? '')) {
+        return _error(400, 'VALIDATION_FAILED', 'Some fields are not valid', {
+          'password': demoPasswordMessage,
+        });
+      }
       if (userByName(username) != null) {
         return _error(
           409,

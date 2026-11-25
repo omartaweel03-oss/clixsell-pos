@@ -492,7 +492,10 @@ class _NewAccountDialogState extends State<_NewAccountDialog> {
                   ),
                 ),
                 validator: (v) =>
-                    _serverErrors['password'] ?? _passwordProblem(v, s),
+                    (_serverErrors['password'] == null
+                        ? null
+                        : s.passwordServerError(_serverErrors['password']!)) ??
+                    _passwordProblem(v, s),
               ),
             ],
           ),

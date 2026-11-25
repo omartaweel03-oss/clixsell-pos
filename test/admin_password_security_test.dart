@@ -118,25 +118,128 @@ void main() {
     expect(backend.passwordOf('sysadmin'), 'Admin-Pass-1');
   });
 
-  testWidgets('a Store Admin never sees or asks for the warning', (
-    tester,
-  ) async {
+  testWidgets(
+    'a Store Admin with a demo password gets their own warning and can fix it',
+    (tester) async {
+      final backend = _realInstallation(); // shini.admin / Admin-Pass-1
+      await _openSettings(tester, backend, user: 'shini.admin');
+      expect(find.byKey(const Key('demoPasswordWarning')), findsOneWidget);
+      expect(
+        find.textContaining('Your Store Admin account still uses'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('System Admin account'), findsNothing);
+      expect(backend.requests, contains('GET /api/auth/me/security-status'));
+      await tester.tap(find.byKey(const Key('demoPasswordChange')));
+      await tester.pumpAndSettle();
+      await _changePassword(tester, 'Admin-Pass-1', 'cashier-pass-1');
+      expect(backend.passwordOf('shini.admin'), 'Admin-Pass-1');
+      await _changePassword(tester, 'Admin-Pass-1', 'Shini-Owner-Pass-5');
+      expect(backend.passwordOf('shini.admin'), 'Shini-Owner-Pass-5');
+      expect(find.byKey(const Key('demoPasswordWarning')), findsNothing);
+    },
+  );
+
+  testWidgets('Arabic: the Store Admin warning is in Arabic', (tester) async {
     final backend = _realInstallation();
-    await _openSettings(tester, backend, user: 'shini.admin');
-    expect(find.byKey(const Key('settingsPage')), findsOneWidget);
-    expect(find.byKey(const Key('demoPasswordWarning')), findsNothing);
+    await _openSettings(
+      tester,
+      backend,
+      user: 'shini.admin',
+      locale: const Locale('ar'),
+    );
+    expect(
+      find.text('تحذير أمني: أنت تستخدم كلمة المرور التجريبية'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('حساب مدير المتجر ما زال'), findsOneWidget);
+  });
+
+  testWidgets('a Cashier never asks for the security status', (tester) async {
+    final backend = _realInstallation();
+    tester.view.physicalSize = const Size(1440, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(ClixSellApp(http: backend.newHttp()));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('loginUsername')),
+      'shini.cashier',
+    );
+    await tester.enterText(
+      find.byKey(const Key('loginPassword')),
+      backend.passwordOf('shini.cashier')!,
+    );
+    await tester.tap(find.byKey(const Key('loginButton')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('nav-settings')), findsNothing);
     expect(
       backend.requests.where((r) => r.contains('security-status')),
       isEmpty,
     );
   });
 
+  testWidgets(
+    'creating a Store Admin with a demo password is refused, a real one works',
+    (tester) async {
+      final backend = _realInstallation();
+      tester.view.physicalSize = const Size(1440, 1000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(ClixSellApp(http: backend.newHttp()));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('loginUsername')),
+        'sysadmin',
+      );
+      await tester.enterText(
+        find.byKey(const Key('loginPassword')),
+        'Admin-Pass-1',
+      );
+      await tester.tap(find.byKey(const Key('loginButton')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('storeAdmins-1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('addAccountButton')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('accountFullName')),
+        'Second Owner',
+      );
+      await tester.enterText(
+        find.byKey(const Key('accountUsername')),
+        'shini.owner2',
+      );
+      await tester.enterText(
+        find.byKey(const Key('accountPassword')),
+        'Admin-Pass-1',
+      );
+      await tester.tap(find.byKey(const Key('accountSaveButton')));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          'This is a publicly known demo password. Choose your own password.',
+        ),
+        findsOneWidget,
+      );
+      expect(backend.userByName('shini.owner2'), isNull);
+      await tester.enterText(
+        find.byKey(const Key('accountPassword')),
+        'Owner-Two-Pass-9',
+      );
+      await tester.tap(find.byKey(const Key('accountSaveButton')));
+      await tester.pumpAndSettle();
+      expect(backend.userByName('shini.owner2')!['role'], 'STORE_ADMIN');
+      expect(backend.passwordOf('shini.owner2'), 'Owner-Two-Pass-9');
+    },
+  );
+
   testWidgets('demo profile: the intended demo password shows no warning', (
     tester,
   ) async {
     final backend = FakeProductBackend(); // demoProfile = true
     await _openSettings(tester, backend);
-    expect(backend.requests, contains('GET /api/admin/security-status'));
+    expect(backend.requests, contains('GET /api/auth/me/security-status'));
     expect(find.byKey(const Key('demoPasswordWarning')), findsNothing);
   });
 

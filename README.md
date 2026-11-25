@@ -56,8 +56,9 @@ password. If the password is missing, too short or a published demo password, th
 ClixSell does not change it by itself: it writes a `SECURITY WARNING` line at start and shows a red
 warning to the System Admin in Settings. Sign in and change it: Settings → Profile → Change
 password (take a backup first). Setting `CLIXSELL_ADMIN_PASSWORD` does **not** change an existing
-password. Outside the demo profile, published demo passwords cannot be chosen again for an
-administrator.
+password. Outside the demo profile, published demo passwords cannot be chosen for an
+administrator (new Store Admin, own password change, Store Admin reset). A Store Admin that still
+uses one sees the same kind of warning in Settings for their own account.
 
 ## Demo data (optional – presentations and testing only)
 Off by default. To start with two ready Palestinian demo stores, use the `demo` profile

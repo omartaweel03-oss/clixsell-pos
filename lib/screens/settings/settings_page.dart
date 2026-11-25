@@ -178,8 +178,13 @@ class SettingsPage extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _Header(title: s.navSettings, description: s.settingsDescription),
-              if (_isSystemAdmin)
-                _DemoPasswordWarning(api: api, onChangePassword: profile),
+              // Administrators only (Cashiers never open Settings).
+              if (user.role != UserRole.cashier)
+                _DemoPasswordWarning(
+                  api: api,
+                  isSystemAdmin: _isSystemAdmin,
+                  onChangePassword: profile,
+                ),
               const SizedBox(height: AppSpacing.xxl),
               _CardGrid(cards: cards),
             ],
@@ -190,18 +195,21 @@ class SettingsPage extends StatelessWidget {
   }
 }
 
-/// System Admin only: a clear warning while the signed-in System Admin still
-/// uses a publicly documented demo password (GET /api/admin/security-status).
+/// A clear warning while the signed-in administrator (System Admin or Store
+/// Admin) still uses a publicly documented demo password
+/// (GET /api/auth/me/security-status, own account only).
 /// Nothing is shown when the account is safe, in the demo profile, or when the
 /// status cannot be read. The button opens the existing password change; the
 /// warning disappears once the password was changed. Nothing changes by itself.
 class _DemoPasswordWarning extends StatefulWidget {
   const _DemoPasswordWarning({
     required this.api,
+    required this.isSystemAdmin,
     required this.onChangePassword,
   });
 
   final SettingsApiClient api;
+  final bool isSystemAdmin;
 
   /// Opens Settings → Profile; true when the password was changed.
   final Future<bool> Function() onChangePassword;
@@ -268,7 +276,11 @@ class _DemoPasswordWarningState extends State<_DemoPasswordWarning> {
                     ),
                   ),
                   const SizedBox(height: AppSpacing.xs),
-                  Text(s.demoPasswordWarningBody),
+                  Text(
+                    widget.isSystemAdmin
+                        ? s.demoPasswordWarningBody
+                        : s.demoPasswordWarningBodyStoreAdmin,
+                  ),
                   const SizedBox(height: AppSpacing.md),
                   FilledButton.icon(
                     key: const Key('demoPasswordChange'),

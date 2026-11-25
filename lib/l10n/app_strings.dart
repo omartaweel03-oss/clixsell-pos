@@ -976,6 +976,14 @@ class AppStrings {
         'الدخول كمدير نظام. غيّرها الآن: الإعدادات > الملف الشخصي > تغيير كلمة المرور. '
         'لا يغيّرها ClixSell تلقائياً.',
   );
+  String get demoPasswordWarningBodyStoreAdmin => _t(
+    'Your Store Admin account still uses a publicly documented demo password, '
+        'so anyone who knows it can sign in as the administrator of your store. '
+        'Change it now: Settings > Profile > Change password. ClixSell does not change it for you.',
+    'حساب مدير المتجر ما زال يستخدم كلمة مرور تجريبية منشورة، فيستطيع أي شخص يعرفها '
+        'الدخول كمدير لمتجرك. غيّرها الآن: الإعدادات > الملف الشخصي > تغيير كلمة المرور. '
+        'لا يغيّرها ClixSell تلقائياً.',
+  );
   String get demoPasswordWarningAction =>
       _t('Change password now', 'غيّر كلمة المرور الآن');
   String get passwordChanged => _t(

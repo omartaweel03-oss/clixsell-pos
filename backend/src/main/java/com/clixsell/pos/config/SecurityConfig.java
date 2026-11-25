@@ -73,6 +73,7 @@ public class SecurityConfig {
                         // Own password (Settings → Profile): admins only. Cashier passwords
                         // are set by their Store Admin (/api/store/cashiers/{id}/password).
                         .requestMatchers("/api/auth/me/password").hasAnyRole("SYSTEM_ADMIN", "STORE_ADMIN")
+                        .requestMatchers("/api/auth/me/security-status").hasAnyRole("SYSTEM_ADMIN", "STORE_ADMIN")
                         .requestMatchers("/api/auth/**").authenticated()
                         .requestMatchers("/api/admin/**").hasRole("SYSTEM_ADMIN")
                         .requestMatchers("/api/store/cashiers", "/api/store/cashiers/**").hasRole("STORE_ADMIN")

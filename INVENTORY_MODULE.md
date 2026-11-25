@@ -416,8 +416,10 @@ Requires **Java JDK 17+** (backend) and **Flutter 3.38+** (frontend). Maven and 
      version), the start logs a `SECURITY WARNING` (username only, never the password or hash) and
      Settings shows that System Admin a warning (`GET /api/admin/security-status`, System Admin
      only). Fix: Settings → Profile → Change password. Outside the demo profile a published demo
-     password is refused as a new administrator password (own change; System Admin resetting a
-     Store Admin).
+     password is refused as a new administrator password (creating a Store Admin; own change;
+     System Admin resetting a Store Admin). A Store Admin that still uses one is warned about
+     their own account in Settings (`GET /api/auth/me/security-status`, System Admin and Store
+     Admin, own account only; Cashiers 403).
    * A first start whose admin settings are missing or invalid (empty, too short, a demo password)
      stops before the database file is created: no file, no tables, no migration.
    * Folders, empty or non-SQLite files, read-only files or folders are refused with a message.

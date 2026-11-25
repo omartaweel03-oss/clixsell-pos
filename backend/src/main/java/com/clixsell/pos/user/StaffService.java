@@ -56,6 +56,8 @@ public class StaffService {
         String fullName = request == null ? null : request.fullName();
         String password = request == null ? null : request.password();
         User.validateNewAccount(username, fullName, password);
+        // A Store Admin (administrator) may not get a published demo password outside the demo profile.
+        if (role == Role.STORE_ADMIN) demoPasswords.rejectIfDemo("password", password);
         if (users.existsByUsernameIgnoreCase(User.normalizeUsername(username))) {
             throw new ConflictException("DUPLICATE_USERNAME", "username", "This username is already taken");
         }

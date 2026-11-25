@@ -7,6 +7,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.TestPropertySource;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -37,7 +38,7 @@ class AdminPasswordDemoProfileApiTest extends ApiTestBase {
     void demoPasswordsStayUsableAndUnflaggedInTheDemoProfile() throws Exception {
         mvc.perform(put("/api/auth/me/password").header("Authorization", bearer(shini.adminToken()))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"currentPassword\":\"Admin-Pass-1\",\"newPassword\":\"Admin-Pass-2\"}"))
+                        .content("{\"currentPassword\":\"" + STORE_ADMIN_PASSWORD + "\",\"newPassword\":\"Admin-Pass-2\"}"))
                 .andExpect(status().isNoContent());
         String sys = sysadminToken();
         mvc.perform(put("/api/auth/me/password").header("Authorization", bearer(sys))
@@ -45,6 +46,16 @@ class AdminPasswordDemoProfileApiTest extends ApiTestBase {
                         .content("{\"currentPassword\":\"" + SYSADMIN_PASSWORD + "\",\"newPassword\":\"Admin12345\"}"))
                 .andExpect(status().isNoContent());
         mvc.perform(get("/api/admin/security-status").header("Authorization", bearer(sys)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.demoPasswordInUse").value(false));
+    }
+
+    @Test
+    void demoStoreAdminsCanStillBeCreatedInTheDemoProfile() throws Exception {
+        mvc.perform(post("/api/admin/stores/" + shini.storeId() + "/admins").header("Authorization", bearer(sysadminToken()))
+                        .contentType(MediaType.APPLICATION_JSON).content(userJson("shini.demo2", "Admin-Pass-1")))
+                .andExpect(status().isCreated());
+        String token = login("shini.demo2", "Admin-Pass-1");
+        mvc.perform(get("/api/auth/me/security-status").header("Authorization", bearer(token)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.demoPasswordInUse").value(false));
     }
 }

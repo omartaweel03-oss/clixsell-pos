@@ -38,6 +38,12 @@ public abstract class ApiTestBase {
 
     public static final String SYSADMIN_PASSWORD = "Test-Admin-2026";
 
+    /**
+     * Store Admins of the test stores. Not a published demo password: outside the demo profile
+     * those are refused for Store Admins (see AdminPasswordSecurityApiTest).
+     */
+    public static final String STORE_ADMIN_PASSWORD = "Shop-Owner-Pass-1";
+
     static {
         // Start every test run from an empty database file (the tests' own file, never clixsell.db).
         try {
@@ -144,8 +150,8 @@ public abstract class ApiTestBase {
         long storeId = createStore(sys, name);
         String admin = prefix + ".admin";
         String cashier = prefix + ".cashier";
-        createStoreAdmin(sys, storeId, admin, "Admin-Pass-1");
-        String adminToken = login(admin, "Admin-Pass-1");
+        createStoreAdmin(sys, storeId, admin, STORE_ADMIN_PASSWORD);
+        String adminToken = login(admin, STORE_ADMIN_PASSWORD);
         createCashier(adminToken, cashier, "Cashier-Pass-1");
         return new StoreSetup(storeId, admin, adminToken, cashier, login(cashier, "Cashier-Pass-1"));
     }
