@@ -382,7 +382,9 @@ const FIN = () => JSON.stringify([
     await click(p, 'Approve', 1200);
     await btn(p, 'Approve').last().click(); await p.waitForTimeout(3000);
     let t = await txt(p);
-    ok('EN: "Another manager changed this order" shown, nothing approved', t.includes('Another manager changed this order') && order(C)[0] === 'PENDING_APPROVAL');
+    ok('EN (D3): the conflict names the change that won (Second Manager), never "another manager" by guess, nothing approved',
+      t.includes('This order changed meanwhile') && t.includes('Second Manager') && t.includes('Nothing was repeated')
+      && !t.includes('Another manager') && order(C)[0] === 'PENDING_APPROVAL');
     ok('UI: the page reloaded the new quantity (9)', one(`select quantity from purchase_order_items where order_id=${C}`) === 9 && t.includes('9'));
     await shot(p, 'en_stale_version');
     await click(p, 'Approve', 1200);
@@ -405,10 +407,18 @@ const FIN = () => JSON.stringify([
     await p.waitForTimeout(17000);
     let t = await txt(p);
     ok('EN: while locked the app does not claim success; it checked the stored state and says so',
-      order(C)[0] === 'MESSAGE_GENERATED' && t.includes('not saved at this moment') && t.includes('press Refresh'), order(C)[0]);
+      order(C)[0] === 'MESSAGE_GENERATED' && t.includes('not saved at this moment') && t.includes('Check again')
+      && t.includes('Trying again is safe'), order(C)[0]);
     await shot(p, 'en_database_busy');
     await new Promise(r => holder.on('exit', r));
     await p.waitForTimeout(12000);   // the server may still finish its own retries
+    // D3: "Check again" only reloads (never resends); it reports a late save
+    const sentRequests = events(C).filter(e => e === 'MARKED_SENT').length;
+    await click(p, 'Check again', 3000).catch(() => {});
+    t = await txt(p);
+    ok('EN (D3): "Check again" reconciled with the saved state, nothing resent',
+      events(C).filter(e => e === 'MARKED_SENT').length === sentRequests
+      && (order(C)[0] !== 'SENT' || t.includes('Checked: the change had been saved')), order(C)[0]);
     await btn(p, 'Refresh').first().click(); await p.waitForTimeout(2500);
     if (order(C)[0] !== 'SENT') {
       await click(p, 'I Have Sent This Message', 1200);
@@ -501,15 +511,90 @@ const FIN = () => JSON.stringify([
     const cand = (await api(`/purchase-candidates?supplierId=${sup.supplierId}`, SA)).body.products.filter(c => true);
     await btn(p, 'Add').nth(cand.map(c => c.name).indexOf('UI Cream')).click(); await p.waitForTimeout(800);
     t = await txt(p);
-    ok('EN form: the caution is shown and Save is disabled until it is ticked', t.includes('Canceled as "not sent" after the message was copied/opened')
+    ok('EN form: the caution is shown and Save is disabled until it is ticked', t.includes('Canceled as "not sent" after the message was prepared (a declaration, not verified)')
       && await btn(p, 'Save order').isDisabled());
     await shot(p, 'en_form_caution');
-    await check(p, /Canceled as "not sent" after the message was copied/, 500);
+    await check(p, /Canceled as "not sent" after the message was prepared/, 500);
     const before = one('select count(*) from purchase_orders');
     await click(p, 'Save order', 3500);
     const M = lastOrder();
     ok('UI+DB: saved with the acknowledgment recorded', one('select count(*) from purchase_orders') === before + 1
       && /DECLARED_NOT_SENT/.test(one(`select details from purchase_order_events where order_id=${M} and event_type='CREATED'`)));
+  });
+
+  // ── S3: another manager cancels as "not sent" (no copy, no opening) while this one records sending ──
+  await step('S3: competing declarations — warned, nothing recorded as sent, reorder needs the acknowledgment (EN)', async () => {
+    const pid = (await api('/products', SA, 'POST', { name: 'UI FC Ghee', barcode: '7290200000097', category: 'dairy', sellingPrice: 20,
+      quantity: 1, minStock: 6, supplierName: 'UI Dairy WA', costPrice: 11 })).body.productId;
+    const S = (await apiOrder([[pid, 4]])).orderId;
+    await approveApi(S); await prepareApi(S);
+    await openOrder(p, one(`select order_number from purchase_orders where order_id=${S}`));
+    // the second manager cancels first, declaring "not sent" — nothing was copied or opened
+    const r = await api(`/purchase-orders/${S}/cancel`, SA2, 'POST', { version: 2, reason: 'Ordered by phone instead', contactStatus: 'NOT_SENT', confirmNotSent: true });
+    ok('API: Second Manager canceled as NOT_SENT (no copy / opening recorded)', r.status === 200
+      && one(`select json_extract(details,'$.priorCopyReports') + json_extract(details,'$.priorOpenRequests') from purchase_order_events where order_id=${S} and event_type='CANCELED'`) === 0);
+    await click(p, 'I Have Sent This Message', 1200);
+    await p.getByRole('checkbox').first().click(); await p.waitForTimeout(300);
+    await click(p, 'Record sending', 3500);
+    let t = await txt(p);
+    ok('EN (S3): strong warning naming Second Manager: "declaring that the message was NOT sent", tell the supplier yourself',
+      t.includes('Second Manager') && t.includes('declaring that the message was NOT sent') && t.includes('tell the supplier yourself now')
+      && t.includes('ClixSell did not tell the supplier'));
+    ok('DB (S3): CANCELED, never recorded as sent (no MARKED_SENT, flag 0)', order(S)[0] === 'CANCELED' && order(S)[3] === 0 && order(S)[6] === 0
+      && !events(S).includes('MARKED_SENT'));
+    ok('EN (S3): the canceled order says the declaration is not verified and ClixSell canceled nothing with the supplier',
+      t.includes('a declaration; ClixSell cannot verify it') && t.includes('does not cancel anything with the supplier'));
+    await shot(p, 'en_s3_competing_declarations');
+    const c = (await api(`/purchase-candidates?supplierId=${sup.supplierId}`, SA)).body.products.find(x => x.productId === pid);
+    ok('API (S3): the product warns DECLARED_NOT_SENT', JSON.stringify(c.cautions.map(x => x.type)) === '["DECLARED_NOT_SENT"]');
+    const again = await api('/purchase-orders', SA, 'POST', { clientRequestId: require('crypto').randomUUID(), supplierId: sup.supplierId, source: 'MANUAL',
+      items: [{ productId: pid, quantity: 4 }] });
+    ok('API (S3): a reorder without the acknowledgment is refused', again.status === 409 && again.body.code === 'REORDER_CAUTION_ACK_REQUIRED');
+  });
+
+  // ── D1 + D2: exact cards and the overdue badge ─────────────────────────────────────────────
+  await step('D1/D2: badge right after login, exact cards, overdue filter from the server (EN)', async () => {
+    // an order that is overdue (pending for 5 days), written into the DISPOSABLE database like a past order
+    const pid = (await api('/products', SA, 'POST', { name: 'UI FC Old Pending', barcode: '7290200000103', category: 'dairy', sellingPrice: 9,
+      quantity: 1, minStock: 6, supplierName: 'UI Dairy WA', costPrice: 4 })).body.productId;
+    try {
+      execSync(`python3 ${__dirname}/old_pending_order.py ${sup.supplierId} shini.admin ${pid} PO-900001 5`, { stdio: 'pipe' });
+    } catch (e) { throw new Error('old order: ' + (e.stderr || '').toString().trim().split('\n').pop()); }
+    const dbOverdue = one(`select count(*) from purchase_orders where store_id=1 and status='PENDING_APPROVAL' and created_at <= strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime', '-3 days')`);
+    const sm = (await api('/purchase-orders/summary', SA)).body;
+    ok('API (D1): summary overdue = the database (only the 5-day-old pending order is overdue)', sm.overdue === 1 && dbOverdue === 1
+      && sm.overdueByStatus.PENDING_APPROVAL === 1, JSON.stringify(sm));
+    await logout(p);
+    await login(p, 'shini.admin', 'Admin-Pass-1');
+    const navLabel = async () => (await p.getByRole('button', { name: /Purchase Orders/ }).first().innerText().catch(() => '')) + ' '
+      + (await p.getByRole('button', { name: /Purchase Orders/ }).first().getAttribute('aria-label').catch(() => ''));
+    let label = await navLabel();
+    ok('EN (D2): right after login the sidebar badge shows the server overdue count', label.includes(String(sm.overdue)), label);
+    await shot(p, 'en_badge_after_login');
+    await nav(p, 'Purchase Orders', 3000);
+    let t = await txt(p);
+    const byStatus = s2 => one(`select count(*) from purchase_orders where store_id=1 and status='${s2}'`);
+    const want = [byStatus('PENDING_APPROVAL'), byStatus('APPROVED') + byStatus('MESSAGE_GENERATED'), byStatus('SENT'), sm.overdue];
+    // each card is one button whose accessible name is "<title> <value> …"
+    const cards = await Promise.all(['Waiting for approval', 'To contact supplier', 'Waiting for supplier', 'Overdue'].map(async n => {
+      const b = p.getByRole('button', { name: new RegExp('^' + n) }).first();
+      return ((await b.innerText().catch(() => '')) + ' ' + ((await b.getAttribute('aria-label').catch(() => '')) || '')).trim();
+    }));
+    ok('EN (D1): the four cards are the exact database counts', cards.every((c2, i) => new RegExp('(^|\\D)' + want[i] + '(\\D|$)').test(c2)), JSON.stringify([cards, want]));
+    await btn(p, new RegExp('^Overdue')).first().click(); await p.waitForTimeout(2500);
+    t = await txt(p);
+    ok('EN (D1): the overdue filter lists the server\'s overdue orders (PO-900001)', t.includes('PO-900001'));
+    await shot(p, 'en_overdue_filter');
+    // D2: an action changes the count → the badge follows without a reload
+    await click(p, 'Open', 3000);
+    await click(p, 'Reject', 1200);
+    await field(p, 'Reason (required)', 'Too old, not needed');
+    await btn(p, 'Reject').last().click(); await p.waitForTimeout(3500);
+    const after = (await api('/purchase-orders/summary', SA)).body.overdue;
+    label = await navLabel();
+    ok('EN (D2): after the action the badge shows the new server count', after === sm.overdue - 1
+      && (after === 0 ? !label.includes(String(sm.overdue)) : label.includes(String(after))), label + ' / ' + after);
+    await shot(p, 'en_badge_after_action');
   });
 
   // ── supplier without WhatsApp; number change after preparation ────────────────────────────
@@ -658,7 +743,7 @@ const FIN = () => JSON.stringify([
 
   // ══ money and stock ═══════════════════════════════════════════════════════════════════════
   const finNow = JSON.parse(FIN()); const finWas = JSON.parse(finBefore);
-  const newProducts = new Set(dbJson("select product_id from products where name like 'UI Long product%'").map(r => r[0]));
+  const newProducts = new Set(dbJson("select product_id from products where name like 'UI Long product%' or name like 'UI FC %'").map(r => r[0]));
   finNow[0] = finNow[0].filter(r => !newProducts.has(r[0]));
   ok('DB: stock, prices, costs, sales, sale costs, returns unchanged by the whole purchasing workflow', JSON.stringify(finNow) === JSON.stringify(finWas));
   ok('API: report summary (revenue, profit) unchanged', JSON.stringify((await api('/reports/summary?from=2020-01-01&to=2035-12-31', SA)).body) === summaryBefore);

@@ -291,7 +291,8 @@ login; another store's data answers 404. The supplier communication that follows
 | `GET /api/purchase-recommendations` | Guardian Mode ON: products to buy, by supplier, with the rule and numbers. OFF: `guardianEnabled: false`, nothing calculated |
 | `GET /api/purchase-candidates?supplierId=` | Manual order: the supplier's products with stock facts, open orders and cautions — never a suggested quantity |
 | `POST /api/purchase-orders` | Create (`PENDING_APPROVAL`). Body: `clientRequestId` (UUID), `supplierId`, `source` (MANUAL / GUARDIAN), `note`, `items[{productId, quantity}]`, `acknowledgedCautions[{productId, orderId}]` |
-| `GET /api/purchase-orders?status=&page=&size=` | List |
+| `GET /api/purchase-orders?status=&q=&overdue=&page=&size=` | List (`overdue=true`: only overdue orders, the server's rule over all orders, then paged) |
+| `GET /api/purchase-orders/summary` | Exact counts by status, open and overdue — one SQL statement, no paging, no limit |
 | `GET /api/purchase-orders/{id}` / `…/events` | Details (items, allowed actions, approval blockers) / history |
 | `PUT /api/purchase-orders/{id}` | Edit while PENDING_APPROVAL: `{version, note, items, acknowledgedCautions}` (full replacement) |
 | `POST /api/purchase-orders/{id}/approve` | `{version}` → APPROVED |
@@ -344,7 +345,9 @@ is not approved (`MESSAGE_TOO_LONG`, with the longest lines and how many to remo
 pending. Order details show `messageLength` per language before approval.
 
 **Warnings (30 days, until a supplier acceptance is recorded):** CANCELED_AFTER_CONTACT, CONTACT_UNKNOWN
-(canceled with UNKNOWN), DECLARED_NOT_SENT (NOT_SENT after a copy / opening request); RECENTLY_CLOSED
+(canceled with UNKNOWN), DECLARED_NOT_SENT (every NOT_SENT cancellation after the message was prepared —
+final corrections S3: "not sent" is a declaration that cannot be verified, e.g. another manager may have
+sent it at the same moment); RECENTLY_CLOSED
 14 days. **Overdue (display):** message prepared ≥ 1 day, sent ≥ 3 days, confirmed ≥ 14 days.
 **Concurrency:** every Phase 3 change takes SQLite's write lock first with an UPDATE that matches no
 row (changes nothing), then checks and writes; client reports are de-duplicated by `clientActionId`
@@ -356,8 +359,16 @@ constraint.
 Sidebar section **Purchasing** (Store Admin only): Purchase Orders, Reorder Suggestions, Suppliers.
 
 * **Purchase Orders** — the store's orders: summary cards (waiting for approval, to contact the
-  supplier, waiting for the supplier, overdue), status filter, search by order number or supplier
-  (`GET /api/purchase-orders?q=`, searched by the server over all orders), paging.
+  supplier, waiting for the supplier, overdue) with the server's exact counts
+  (`GET /api/purchase-orders/summary`), status filter, the overdue card as a server filter
+  (`overdue=true`), search by order number or supplier (`GET /api/purchase-orders?q=`, searched by the
+  server over all orders), paging. The sidebar badge (overdue orders) is read after login, after an
+  order action and when the manager returns to Purchasing — never on a timer.
+* **Conflicts (final corrections D3)** — a stale request (409 `ORDER_CHANGED` / `INVALID_TRANSITION`)
+  carries `details.lastChange` (type, user, time). The app says whose change won — possibly the
+  manager's own earlier request that finished after a timeout — reloads, and never repeats anything.
+  After an unknown outcome that is not saved yet, "Check again" only reloads; a new attempt is safe
+  because the version check refuses a second change.
 * **Reorder Suggestions** — Guardian's rule-based suggestions by supplier (not an AI model):
   stock / minimum, urgency, the server's suggested quantity and how it was calculated, open orders,
   inactive suppliers, recent-order warnings. Select products of one supplier → order form. With

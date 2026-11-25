@@ -209,7 +209,17 @@ call(f'{PO}{O3}/cancel', SA, 'POST', {'version': 2, 'reason': 'Changed', 'contac
 chk('G', 'NOT_SENT after a copy → DECLARED_NOT_SENT warning', cands()[P[3]], ['DECLARED_NOT_SENT'])
 O4 = generated([(P[4], 5)])
 call(f'{PO}{O4}/cancel', SA, 'POST', {'version': 2, 'reason': 'Changed', 'contactStatus': 'NOT_SENT', 'confirmNotSent': True})
-chk('G', 'NOT_SENT without copy/opening → no warning', cands()[P[4]], [])
+# S3 (final corrections): "not sent" is only a declaration — it ALWAYS warns, even with no copy / opening
+chk('G', 'NOT_SENT without copy/opening → still a DECLARED_NOT_SENT warning (S3)', cands()[P[4]], ['DECLARED_NOT_SENT'])
+s, x = create([(P[4], 2)])
+chk('G', 'S3: reorder of that product needs the acknowledgment', (s, x.get('code'), [c['type'] for c in x['details']['cautions']]),
+    (409, 'REORDER_CAUTION_ACK_REQUIRED', ['DECLARED_NOT_SENT']))
+s, x = create([(P[4], 2)], acks=[{'productId': P[4], 'orderId': O4}])
+chk('G', 'S3: with it → created, acknowledgment kept in the history', (s, 'DECLARED_NOT_SENT' in one(
+    "select details from purchase_order_events where order_id=? and event_type='CREATED'", x['orderId'])), (201, True))
+O4P = x['orderId']
+chk('G', 'S3: that new order canceled before any message (no contactStatus needed)',
+    call(f'{PO}{O4P}/cancel', SA, 'POST', {'version': 0, 'reason': 'E2E not needed'})[0], 200)
 O5 = generated([(P[5], 5)])
 call(f'{PO}{O5}/mark-sent', SA, 'POST', {'version': 2, 'confirmSentInWhatsapp': True})
 chk('G', 'cancel after sending without the acknowledgment → 409', call(f'{PO}{O5}/cancel', SA, 'POST', {'version': 3, 'reason': 'Too slow'})[1]['code'],
@@ -225,7 +235,7 @@ chk('G', 'acceptance recorded: manual, ends only that order warning', (s, json.l
     cands()[P[2]], cands()[P[5]]), (200, False, [], ['CANCELED_AFTER_CONTACT']))
 chk('G', 'second acceptance → 409 ALREADY_RECORDED', call(f'{PO}{O2}/supplier-cancellation-recorded', SA, 'POST',
                                                         {'confirmSupplierAccepted': True, 'channel': 'PHONE', 'note': 'Again'})[1]['code'], 'ALREADY_RECORDED')
-chk('G', 'acceptance on a not-contacted order → 409 NOT_ELIGIBLE', call(f'{PO}{O4}/supplier-cancellation-recorded', SA, 'POST',
+chk('G', 'acceptance on a not-contacted order → 409 NOT_ELIGIBLE', call(f'{PO}{O4P}/supplier-cancellation-recorded', SA, 'POST',
                                                                       {'confirmSupplierAccepted': True, 'channel': 'PHONE', 'note': 'Agreed'})[1]['code'], 'NOT_ELIGIBLE')
 
 # ── H) English ──────────────────────────────────────────────────────────────────────────────
@@ -293,6 +303,17 @@ th = [threading.Thread(target=hit, args=(f'{PO}{O6}/supplier-cancellation-record
 [t.start() for t in th]; [t.join() for t in th]
 chk('K', '5 supplier acceptances at once → one event, 4× ALREADY_RECORDED', (events(O6).count('SUPPLIER_CANCELLATION_RECORDED'),
     sorted((s, (b or {}).get('code')) for s, b in res)), (1, [(200, None)] + [(409, 'ALREADY_RECORDED')] * 4))
+
+# ── M) D1: exact summary counts from the server (final corrections) ─────────────────────────
+s, sm = call(f'{PO}summary', SA)
+exp = {st: one('select count(*) from purchase_orders where store_id=1 and status=?', st) for st in
+       ('PENDING_APPROVAL', 'APPROVED', 'REJECTED', 'MESSAGE_GENERATED', 'SENT', 'CONFIRMED', 'CLOSED', 'CANCELED')}
+chk('M', 'summary = the database counts by status (Shini)', (s, sm['byStatus']), (200, exp))
+chk('M', 'summary open = the five open states', sm['open'], sum(exp[k] for k in ('PENDING_APPROVAL', 'APPROVED', 'MESSAGE_GENERATED', 'SENT', 'CONFIRMED')))
+s, ol = call(f'/purchase-orders?overdue=true&size=100', SA)
+chk('M', 'overdue list total = summary overdue (fresh orders: 0)', (s, ol['total'], sm['overdue']), (200, 0, 0))
+chk('M', 'Neshan summary is its own (one pending order)', call(f'{PO}summary', NA)[1]['byStatus']['PENDING_APPROVAL'], 1)
+chk('M', 'summary: cashier 403, sysadmin 403, nobody 401', [call(f'{PO}summary', t)[0] for t in (SC, SYS, None)], [403, 403, 401])
 
 # ── L) nothing financial or store-related changed; database consistent ─────────────────────
 chk('L', 'products, sales, sale lines, returns unchanged', [q(x) for x in FIN_SQL], fin_before)
