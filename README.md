@@ -21,6 +21,9 @@ independent stores in one system.
   (tax and discount, store details, own password, language, database backups).
 * **Guardian Mode** (Store Admin, off by default): rule-based alerts on discounts, losses,
   stock, cancellations, returns and deletions; store health score; suggestions; activity log.
+* **AI Product Identification, Phase 1** (Android app only): scan a barcode with the phone
+  camera (on-device ML Kit), look it up in the store's inventory, and confirm the product.
+  No cloud AI yet. See `ANDROID_PHASE1.md`.
 
 ## Run (Windows)
 Requires **Java JDK 17+** and **Flutter**. Maven and SQLite need no installation.
@@ -96,3 +99,4 @@ folder that holds your real store database.
 ## More
 * `INVENTORY_MODULE.md` – architecture, API list, database tables, files.
 * `FUTURE_WORK.md` – features postponed for later.
+* `ANDROID_PHASE1.md` – Android build, phone-to-backend setup, camera screen, test status.
