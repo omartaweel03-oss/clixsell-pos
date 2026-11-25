@@ -77,9 +77,14 @@ class StoreAdminPasswordSecurityApiTest extends ApiTestBase {
     }
 
     @Test
-    void cashierAccountsAreUnchanged() throws Exception {
-        // Cashiers are not administrators: the Store Admin may still use any valid password.
-        createCashier(shini.adminToken(), "shini.cashier9", "Cashier-Pass-1");
+    void cashierAccountsFollowTheSameDemoPasswordRule() throws Exception {
+        // Cashier security hardening: a Cashier may not get a demo password either (details and
+        // reset / warning cases: CashierPasswordSecurityApiTest). A real password still works.
+        mvc.perform(post("/api/store/cashiers").header("Authorization", bearer(shini.adminToken()))
+                        .contentType(MediaType.APPLICATION_JSON).content(userJson("shini.cashier9", "Cashier-Pass-1")))
+                .andExpect(status().isBadRequest());
+        assertThat(users("shini.cashier9")).isZero();
+        createCashier(shini.adminToken(), "shini.cashier9", "Till-Cashier-Pass-4");
         assertThat(users("shini.cashier9")).isEqualTo(1);
     }
 

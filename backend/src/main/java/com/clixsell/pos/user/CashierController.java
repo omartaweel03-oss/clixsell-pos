@@ -24,6 +24,8 @@ import java.util.List;
  * POST /api/store/cashiers                 create (201)
  * PUT  /api/store/cashiers/{id}/status     activate / deactivate
  * PUT  /api/store/cashiers/{id}/password   reset password
+ * GET  /api/store/cashiers/security-status  ids of this store's Cashiers that still use a
+ *                                           published demo password (read only)
  * </pre>
  */
 @RestController
@@ -39,6 +41,19 @@ public class CashierController {
     @GetMapping
     public List<UserResponse> list(@AuthenticationPrincipal CurrentUser admin) {
         return staff.list(admin.requireStoreId(), Role.CASHIER);
+    }
+
+    /**
+     * Which Cashiers of the Store Admin's OWN store (from the session, never from the request) still
+     * use a published demo password, so the Store Admin can reset them. Only ids; no password, no
+     * hash, nothing from another store. Empty in the demo profile.
+     */
+    @GetMapping("/security-status")
+    public CashierSecurityStatus securityStatus(@AuthenticationPrincipal CurrentUser admin) {
+        return new CashierSecurityStatus(staff.cashiersWithDemoPassword(admin.requireStoreId()));
+    }
+
+    public record CashierSecurityStatus(List<Long> cashierIdsWithDemoPassword) {
     }
 
     @PostMapping

@@ -134,7 +134,7 @@ class AdminPasswordSecurityApiTest extends ApiTestBase {
     }
 
     @Test
-    void theSystemAdminCannotResetAStoreAdminToADemoPasswordButCashierResetsAreUnchanged() throws Exception {
+    void neitherAStoreAdminNorACashierCanBeResetToADemoPassword() throws Exception {
         long adminId = db.queryForObject("SELECT user_id FROM users WHERE username = 'shini.admin'", Long.class);
         String before = hash("shini.admin");
         mvc.perform(put("/api/admin/stores/" + shini.storeId() + "/admins/" + adminId + "/password")
@@ -149,8 +149,13 @@ class AdminPasswordSecurityApiTest extends ApiTestBase {
                 .andExpect(status().isOk());
         long cashierId = db.queryForObject("SELECT user_id FROM users WHERE username = 'shini.cashier'", Long.class);
         String adminToken = login("shini.admin", "Brand-New-Owner-1");
+        // Cashier passwords follow the same rule (Cashier security hardening): demo refused, own accepted.
         mvc.perform(put("/api/store/cashiers/" + cashierId + "/password").header("Authorization", bearer(adminToken))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"password\":\"Cashier-Pass-1\"}"))
-                .andExpect(status().isOk()); // cashier passwords: unchanged behaviour (not an administrator)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors.password").value(DemoPasswords.REJECTED_MESSAGE));
+        mvc.perform(put("/api/store/cashiers/" + cashierId + "/password").header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"password\":\"Till-Cashier-Pass-4\"}"))
+                .andExpect(status().isOk());
     }
 }

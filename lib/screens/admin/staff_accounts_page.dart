@@ -40,10 +40,24 @@ class _StaffAccountsPageState extends State<StaffAccountsPage> {
   bool _loading = true;
   ApiException? _error;
 
+  /// Accounts that still use a published demo password (Cashiers only).
+  Set<int> _demoIds = const {};
+
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  /// Read only. Loaded after the list, so the list never waits for it; on
+  /// any error nothing is shown (the list itself still works).
+  Future<void> _loadSecurity() async {
+    try {
+      final ids = await widget.api.demoPasswordUserIds();
+      if (mounted) setState(() => _demoIds = ids);
+    } catch (_) {
+      if (mounted) setState(() => _demoIds = const {});
+    }
   }
 
   Future<void> _load() async {
@@ -58,6 +72,7 @@ class _StaffAccountsPageState extends State<StaffAccountsPage> {
         _accounts = list;
         _loading = false;
       });
+      _loadSecurity();
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -134,7 +149,10 @@ class _StaffAccountsPageState extends State<StaffAccountsPage> {
       context: context,
       builder: (_) => _ResetPasswordDialog(api: widget.api, user: user),
     );
-    if (done == true && mounted) _toast(s.passwordWasReset(user.username));
+    if (done == true && mounted) {
+      _toast(s.passwordWasReset(user.username));
+      await _loadSecurity(); // the warning disappears once the password is safe
+    }
   }
 
   @override
@@ -171,6 +189,7 @@ class _StaffAccountsPageState extends State<StaffAccountsPage> {
         } else {
           body = _AccountsList(
             accounts: _accounts,
+            demoIds: _demoIds,
             onToggle: _toggle,
             onResetPassword: _resetPassword,
           );
@@ -205,6 +224,16 @@ class _StaffAccountsPageState extends State<StaffAccountsPage> {
                     ),
                   ),
                   const SizedBox(height: AppSpacing.xl),
+                  if (!_loading &&
+                      _error == null &&
+                      _accounts.any((a) => _demoIds.contains(a.userId))) ...[
+                    _DemoPasswordsWarning(
+                      count: _accounts
+                          .where((a) => _demoIds.contains(a.userId))
+                          .length,
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                  ],
                   Card(
                     child: Padding(
                       padding: const EdgeInsets.all(AppSpacing.lg + 4),
@@ -221,14 +250,69 @@ class _StaffAccountsPageState extends State<StaffAccountsPage> {
   }
 }
 
+/// Store Admin, Cashiers screen: some Cashiers still use a published demo
+/// password. Names no password; the fix is the existing "Reset password".
+class _DemoPasswordsWarning extends StatelessWidget {
+  const _DemoPasswordsWarning({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppStrings.of(context);
+    return Container(
+      key: const Key('cashierDemoWarning'),
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      decoration: BoxDecoration(
+        color: AppColors.dangerSoft,
+        border: Border.all(color: AppColors.danger),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.gpp_maybe_rounded,
+            color: AppColors.danger,
+            size: 28,
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Semantics(
+                  header: true,
+                  child: Text(
+                    s.cashierDemoWarningTitle(count),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.danger,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(s.cashierDemoWarningBody),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _AccountsList extends StatelessWidget {
   const _AccountsList({
     required this.accounts,
+    required this.demoIds,
     required this.onToggle,
     required this.onResetPassword,
   });
 
   final List<AppUser> accounts;
+  final Set<int> demoIds;
   final ValueChanged<AppUser> onToggle;
   final ValueChanged<AppUser> onResetPassword;
 
@@ -249,6 +333,13 @@ class _AccountsList extends StatelessWidget {
           key: Key('reset-${u.userId}'),
           onPressed: () => onResetPassword(u),
           style: OutlinedButton.styleFrom(
+            // highlighted for an account that still has a demo password
+            foregroundColor: demoIds.contains(u.userId)
+                ? AppColors.danger
+                : null,
+            side: demoIds.contains(u.userId)
+                ? const BorderSide(color: AppColors.danger)
+                : null,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           ),
           icon: const Icon(Icons.key_rounded, size: 16),
@@ -316,10 +407,52 @@ class _AccountsList extends StatelessWidget {
                   ),
                   Expanded(
                     flex: 3,
-                    child: Text(
-                      u.username,
-                      style: const TextStyle(color: AppColors.textSecondary),
-                      overflow: TextOverflow.ellipsis,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          u.username,
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (demoIds.contains(u.userId))
+                          Container(
+                            key: Key('demoPassword-${u.userId}'),
+                            margin: const EdgeInsets.only(top: 4),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.dangerSoft,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.warning_amber_rounded,
+                                  size: 14,
+                                  color: AppColors.danger,
+                                ),
+                                const SizedBox(width: 4),
+                                Flexible(
+                                  child: Text(
+                                    s.demoPasswordTag,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.danger,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                   Expanded(

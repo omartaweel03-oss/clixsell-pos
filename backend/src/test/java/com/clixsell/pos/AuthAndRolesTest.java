@@ -24,7 +24,7 @@ class AuthAndRolesTest extends ApiTestBase {
     @Test
     void loginReturnsTokenRoleAndStore() throws Exception {
         setupStore("Shini Supermarket", "shini");
-        loginAttempt("SHINI.Cashier", "Cashier-Pass-1") // usernames ignore case
+        loginAttempt("SHINI.Cashier", CASHIER_PASSWORD) // usernames ignore case
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.token").isString())
                 .andExpect(jsonPath("$.user.role").value("CASHIER"))
@@ -51,7 +51,7 @@ class AuthAndRolesTest extends ApiTestBase {
     void passwordsAreStoredOnlyAsBcryptHashes() throws Exception {
         setupStore("Shini Supermarket", "shini");
         String hash = db.queryForObject("SELECT password_hash FROM users WHERE username = 'shini.cashier'", String.class);
-        assertThat(hash).startsWith("$2").doesNotContain("Cashier-Pass-1");
+        assertThat(hash).startsWith("$2").doesNotContain(CASHIER_PASSWORD);
         String tokenHash = db.queryForObject("SELECT token_hash FROM user_sessions LIMIT 1", String.class);
         assertThat(tokenHash).hasSize(64); // SHA-256 hex, the token itself is not stored
     }
@@ -86,7 +86,7 @@ class AuthAndRolesTest extends ApiTestBase {
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.code").value("ACCOUNT_LOCKED"));
         // Even the right password is refused while locked.
-        loginAttempt("shini.cashier", "Cashier-Pass-1").andExpect(status().isTooManyRequests());
+        loginAttempt("shini.cashier", CASHIER_PASSWORD).andExpect(status().isTooManyRequests());
         assertThat(db.queryForObject("SELECT locked_until FROM users WHERE username = 'shini.cashier'", String.class))
                 .isNotNull();
 
@@ -113,14 +113,14 @@ class AuthAndRolesTest extends ApiTestBase {
 
         mvc.perform(get("/api/products").header("Authorization", bearer(shini.cashierToken())))
                 .andExpect(status().isUnauthorized());
-        loginAttempt("shini.cashier", "Cashier-Pass-1")
+        loginAttempt("shini.cashier", CASHIER_PASSWORD)
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("ACCOUNT_DISABLED"));
 
         mvc.perform(put("/api/store/cashiers/" + id + "/status").header("Authorization", bearer(shini.adminToken()))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"ACTIVE\"}"))
                 .andExpect(status().isOk());
-        loginAttempt("shini.cashier", "Cashier-Pass-1").andExpect(status().isOk());
+        loginAttempt("shini.cashier", CASHIER_PASSWORD).andExpect(status().isOk());
     }
 
     @Test
@@ -135,7 +135,7 @@ class AuthAndRolesTest extends ApiTestBase {
 
         mvc.perform(get("/api/products").header("Authorization", bearer(shini.adminToken())))
                 .andExpect(status().isUnauthorized());
-        loginAttempt("shini.cashier", "Cashier-Pass-1").andExpect(jsonPath("$.code").value("ACCOUNT_DISABLED"));
+        loginAttempt("shini.cashier", CASHIER_PASSWORD).andExpect(jsonPath("$.code").value("ACCOUNT_DISABLED"));
         mvc.perform(get("/api/products").header("Authorization", bearer(neshan.cashierToken())))
                 .andExpect(status().isOk());
     }

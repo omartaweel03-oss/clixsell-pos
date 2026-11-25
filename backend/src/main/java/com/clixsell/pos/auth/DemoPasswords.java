@@ -5,11 +5,12 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * The publicly documented demo passwords (README, demo data, guides) and what ClixSell does with
@@ -37,12 +38,23 @@ public class DemoPasswords {
     public static final String REJECTED_MESSAGE =
             "This is a publicly documented demo password. Choose your own password.";
 
-    private static final int CACHE_LIMIT = 64;
+    /** At most this many stored hashes are remembered (least recently used are dropped first). */
+    static final int CACHE_LIMIT = 4096;
 
     private final PasswordEncoder encoder;
     private final boolean allowed;
-    /** stored hash -> uses a published password; a changed password has a new hash, so no stale answer. */
-    private final Map<String, Boolean> checked = new ConcurrentHashMap<>();
+    /**
+     * stored hash -> uses a published password. Only the hash (already in the database) and a yes /
+     * no are kept, never a password. A changed password has a new hash, so an answer is never stale.
+     * Bounded: least recently used entries are dropped.
+     */
+    private final Map<String, Boolean> checked = Collections.synchronizedMap(
+            new LinkedHashMap<>(256, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, Boolean> eldest) {
+                    return size() > CACHE_LIMIT;
+                }
+            });
 
     public DemoPasswords(PasswordEncoder encoder,
                          @Value("${clixsell.system-admin.allow-demo-password:false}") boolean allowed) {
@@ -68,6 +80,11 @@ public class DemoPasswords {
     }
 
     /** Does this stored password hash belong to a published demo password? (read only, cached per hash) */
+    /** How many hashes are remembered now (tests: the cache stays bounded). */
+    int cachedHashes() {
+        return checked.size();
+    }
+
     public boolean hashUsesDemoPassword(String passwordHash) {
         if (passwordHash == null || passwordHash.isEmpty()) return false;
         Boolean known = checked.get(passwordHash);
@@ -83,8 +100,7 @@ public class DemoPasswords {
                 return false; // not a hash this encoder understands: nothing to report
             }
         }
-        if (checked.size() >= CACHE_LIMIT) checked.clear();
-        checked.put(passwordHash, demo);
+        checked.put(passwordHash, demo); // computed outside the lock: concurrent checks never wait on BCrypt
         return demo;
     }
 }
