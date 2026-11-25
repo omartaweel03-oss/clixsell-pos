@@ -68,7 +68,7 @@ class ProductFileStrings {
     '${iso('$total')} منتجاً في الملف · ${iso('$valid')} صالحة · ${iso('$invalid')} فيها أخطاء',
   );
   String newSuppliers(List<String> names) => _t(
-    'New suppliers that will be created: ${names.map(iso).join('، ')}',
+    'New suppliers that will be created: ${names.map(iso).join(', ')}',
     'موردون جدد سيتم إنشاؤهم: ${names.map(iso).join('، ')}',
   );
   String get onlyNew => _t(
@@ -111,7 +111,7 @@ class ProductFileStrings {
     'تم إنشاء ${iso('$n')} منتجاً جديداً.',
   );
   String suppliersCreated(List<String> names) => _t(
-    'New suppliers: ${names.map(iso).join('، ')}',
+    'New suppliers: ${names.map(iso).join(', ')}',
     'موردون جدد: ${names.map(iso).join('، ')}',
   );
   String get refusedTitle => _t('Nothing was imported', 'لم يُستورد أي شيء');

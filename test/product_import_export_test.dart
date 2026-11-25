@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:clixsell_pos/l10n/product_file_strings.dart';
 import 'package:clixsell_pos/models/product_file.dart';
 import 'package:clixsell_pos/screens/inventory/inventory_page.dart';
 import 'package:clixsell_pos/services/api_http.dart';
@@ -442,6 +443,37 @@ void main() {
       expect(_enabled(tester, 'importConfirmButton'), isFalse);
     },
   );
+
+  testWidgets('supplier lists use the comma of the UI language', (
+    tester,
+  ) async {
+    Future<ProductFileStrings> stringsFor(String lang) async {
+      late ProductFileStrings t;
+      await tester.pumpWidget(
+        MaterialApp(
+          locale: Locale(lang),
+          supportedLocales: const [Locale('en'), Locale('ar')],
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
+          home: Builder(
+            builder: (context) {
+              t = ProductFileStrings.of(context);
+              return const SizedBox();
+            },
+          ),
+        ),
+      );
+      return t;
+    }
+
+    const names = ['Farm A', 'مزارع الخليل'];
+    final en = await stringsFor('en');
+    expect(en.suppliersCreated(names), contains('\u2069, \u2068'));
+    expect(en.newSuppliers(names), contains('\u2069, \u2068'));
+    expect(en.suppliersCreated(names), isNot(contains('،')));
+    final ar = await stringsFor('ar');
+    expect(ar.suppliersCreated(names), contains('\u2069، \u2068'));
+    expect(ar.newSuppliers(names), contains('\u2069، \u2068'));
+  });
 
   group('ProductFileApiClient', () {
     test('sends base64 content, the preview hash and the confirmation; '
