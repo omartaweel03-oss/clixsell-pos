@@ -124,12 +124,16 @@ class _InventoryPageState extends State<InventoryPage> {
     setState(() => _exporting = true);
     try {
       final f = await api.export();
-      final saved = await widget.fileIO.save(
+      final outcome = await widget.fileIO.save(
         f.fileName,
         Uint8List.fromList(f.bytes),
       );
       if (!mounted) return;
-      _snack(saved ? t.exported(f.count, f.fileName) : t.exportCancelled);
+      _snack(switch (outcome) {
+        SaveOutcome.saved => t.exported(f.count, f.fileName),
+        SaveOutcome.downloaded => t.downloaded(f.count, f.fileName),
+        SaveOutcome.cancelled => t.exportCancelled,
+      });
     } on ApiException {
       if (mounted) _snack(t.exportFailed, error: true);
     } finally {

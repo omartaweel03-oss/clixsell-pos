@@ -157,7 +157,13 @@ class _ProductImportDialogState extends State<ProductImportDialog> {
                         ),
                       )
                     : const Icon(Icons.file_download_done_rounded, size: 18),
-                label: Text(_busy ? t.importing : t.importNow(p.validRows)),
+                label: Text(
+                  _busy
+                      ? t.importing
+                      : (p.canImport
+                            ? t.importNow(p.validRows)
+                            : t.importDisabled),
+                ),
               ),
             ],
     );
@@ -341,10 +347,12 @@ class _ProductImportDialogState extends State<ProductImportDialog> {
                 Expanded(
                   flex: _flex[i],
                   child: Text(
+                    // Each value in its own direction (FSI): "-3" stays "-3" in
+                    // Arabic, an Arabic name stays right-to-left in English.
                     _cols[i] == 'supplier' &&
                             t.supplierStatus(r.supplierStatus).isNotEmpty
-                        ? '${r.values['supplier'] ?? ''} (${t.supplierStatus(r.supplierStatus)})'
-                        : (r.values[_cols[i]] ?? ''),
+                        ? '${t.iso(r.values['supplier'] ?? '')} (${t.supplierStatus(r.supplierStatus)})'
+                        : t.iso(r.values[_cols[i]] ?? ''),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(

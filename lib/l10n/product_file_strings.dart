@@ -33,6 +33,15 @@ class ProductFileStrings {
           'Exported ${iso('$count')} products to ${iso(file)}.',
           'تم تصدير ${iso('$count')} منتجاً إلى ${iso(file)}.',
         );
+  String downloaded(int? count, String file) => count == null
+      ? _t(
+          'Exported: the browser is downloading ${iso(file)}.',
+          'تم التصدير: المتصفح ينزّل الملف ${iso(file)}.',
+        )
+      : _t(
+          'Exported ${iso('$count')} products: the browser is downloading ${iso(file)}.',
+          'تم تصدير ${iso('$count')} منتجاً: المتصفح ينزّل الملف ${iso(file)}.',
+        );
   String get exportCancelled => _t(
     'Export cancelled: no file was saved.',
     'أُلغي التصدير: لم يُحفظ أي ملف.',
@@ -78,8 +87,12 @@ class ProductFileStrings {
     'I checked the preview: create these ${iso('$n')} new products.',
     'راجعت المعاينة: أنشئ هذه المنتجات الجديدة وعددها ${iso('$n')}.',
   );
-  String importNow(int n) =>
-      _t('Import ${iso('$n')} products', 'استيراد ${iso('$n')} منتجاً');
+  String importNow(int n) => n == 1
+      ? _t('Import 1 product', 'استيراد منتج واحد')
+      : _t('Import ${iso('$n')} products', 'استيراد ${iso('$n')} منتجاً');
+
+  /// The button while the file cannot be imported (no count: nothing partial).
+  String get importDisabled => _t('Import', 'استيراد');
   String get cancel => _t('Cancel', 'إلغاء');
   String get close => _t('Close', 'إغلاق');
   String get importing => _t('Importing…', 'جارٍ الاستيراد…');

@@ -363,16 +363,11 @@ function checkSaleRow(area, exp, row) {
     await click(p, 'Return', 1300);
     await field(p, 'Invoice number or receipt code', inv); await click(p, 'Find', 1600);
     await p.getByRole('button').filter({ hasText: productName }).last().click().catch(() => {}); await p.waitForTimeout(600);
-    // The quantity "+" of the return dialog is an icon button WITHOUT an accessible label (see the report):
-    // it is the last enabled button with no name.
+    // The quantity "+" of the return dialog has an accessible name since the A1 accessibility fix
+    // (overnight mission B2): it is found by that name, as a screen reader user would.
     for (let i = 1; i < qty; i++) {
-      const btns = p.getByRole('button'); const n = await btns.count(); let done = false;
-      for (let j = n - 1; j >= 0 && !done; j--) {
-        const b = btns.nth(j);
-        const name = ((await b.getAttribute('aria-label')) || (await b.innerText()) || '').trim();
-        if (!name && (await b.getAttribute('aria-disabled')) !== 'true') { await b.click(); done = true; }
-      }
-      if (!done) throw new Error('return quantity "+" not found'); await p.waitForTimeout(400);
+      await p.getByRole('button', { name: 'Increase return quantity' }).last().click({ timeout: 8000 });
+      await p.waitForTimeout(400);
     }
     await field(p, 'Reason', reason);
     await click(p, 'Confirm Return', 2200);

@@ -136,11 +136,13 @@ class _FakeIO implements ProductFileIO {
   @override
   Future<PickedFile?> pickCsv() async => next;
 
+  SaveOutcome outcome = SaveOutcome.saved;
+
   @override
-  Future<bool> save(String fileName, Uint8List bytes) async {
-    if (cancelSave) return false;
+  Future<SaveOutcome> save(String fileName, Uint8List bytes) async {
+    if (cancelSave) return SaveOutcome.cancelled;
     saved.add('$fileName:${bytes.length}');
-    return true;
+    return outcome;
   }
 }
 
@@ -222,6 +224,11 @@ void main() {
     expect(io.saved.single, startsWith('clixsell-products-2026-11-25.csv'));
     expect(find.textContaining('Exported'), findsOneWidget);
     expect(find.textContaining('3'), findsWidgets);
+    // web: handed to the browser as a download — never reported as "cancelled"
+    io.outcome = SaveOutcome.downloaded;
+    await _tap(tester, 'headerExportButton');
+    expect(find.textContaining('the browser is downloading'), findsOneWidget);
+    expect(find.textContaining('no file was saved'), findsNothing);
     io.cancelSave = true;
     await _tap(tester, 'headerExportButton');
     expect(find.textContaining('no file was saved'), findsOneWidget);
@@ -246,7 +253,7 @@ void main() {
         find.textContaining('Only NEW products are created'),
         findsOneWidget,
       );
-      expect(find.text('Imported Milk'), findsOneWidget);
+      expect(find.text('\u2068Imported Milk\u2069'), findsOneWidget);
       expect(
         _enabled(tester, 'importConfirmButton'),
         isFalse,
@@ -319,6 +326,8 @@ void main() {
       expect(errs(5), contains('Not a number'));
       expect(errs(5), contains('cannot be negative'));
       expect(errs(6), contains('inactive'));
+      // values are isolated: "-3" can never be shown as "3-" in a right-to-left cell
+      expect(find.text('\u2068Bad\u2069'), findsOneWidget);
       expect(_k('importRowErrors-2'), findsNothing);
       // rows with errors are listed first
       final first = tester.getTopLeft(_k('importRow-3')).dy;

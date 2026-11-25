@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 import '../models/product_file.dart';
 import 'api_http.dart';
@@ -77,12 +78,25 @@ class ProductFileApiClient implements ProductFileApi {
 /// A picked file.
 typedef PickedFile = ({String name, Uint8List bytes});
 
+/// What happened to an exported file.
+enum SaveOutcome {
+  /// Written to the place the user chose (desktop save dialog).
+  saved,
+
+  /// Handed to the browser as a download (web): the browser saves it; the app
+  /// cannot see where (or whether the user cancelled the browser's prompt).
+  downloaded,
+
+  /// The user closed the save dialog: nothing was written.
+  cancelled,
+}
+
 /// Choosing a CSV file and saving the export (replaceable in tests).
 abstract class ProductFileIO {
   Future<PickedFile?> pickCsv();
 
-  /// Saves (desktop: save dialog; web: browser download). False if cancelled.
-  Future<bool> save(String fileName, Uint8List bytes);
+  /// Saves (desktop: save dialog; web: browser download).
+  Future<SaveOutcome> save(String fileName, Uint8List bytes);
 }
 
 class PickerProductFileIO implements ProductFileIO {
@@ -99,12 +113,15 @@ class PickerProductFileIO implements ProductFileIO {
   }
 
   @override
-  Future<bool> save(String fileName, Uint8List bytes) async {
+  Future<SaveOutcome> save(String fileName, Uint8List bytes) async {
     final uri = await FilePicker.saveFile(
       fileName: fileName,
       bytes: bytes,
       mimeType: 'text/csv',
     );
-    return uri != null;
+    // On the web the file is handed to the browser as a download and
+    // file_picker always returns null there: that is not a cancellation.
+    if (kIsWeb) return SaveOutcome.downloaded;
+    return uri != null ? SaveOutcome.saved : SaveOutcome.cancelled;
   }
 }
