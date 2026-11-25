@@ -417,28 +417,34 @@ class _Toolbar extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
 
-    final search = TextField(
-      key: const Key('searchField'),
-      controller: searchController,
-      onChanged: onSearch,
-      decoration: InputDecoration(
-        hintText: s.searchHint,
-        prefixIcon: const Icon(
-          Icons.search_rounded,
-          color: AppColors.textMuted,
-        ),
-        fillColor: AppColors.background,
-        suffixIcon: ValueListenableBuilder<TextEditingValue>(
-          valueListenable: searchController,
-          builder: (context, value, _) => value.text.isEmpty
-              ? const SizedBox.shrink()
-              : IconButton(
-                  icon: const Icon(Icons.close_rounded, size: 18),
-                  onPressed: () {
-                    searchController.clear();
-                    onSearch('');
-                  },
-                ),
+    // A2: stable accessible name while typing (the hint disappears then).
+    final search = MergeSemantics(
+      child: Semantics(
+        label: s.searchHint,
+        child: TextField(
+          key: const Key('searchField'),
+          controller: searchController,
+          onChanged: onSearch,
+          decoration: InputDecoration(
+            hintText: s.searchHint,
+            prefixIcon: const Icon(
+              Icons.search_rounded,
+              color: AppColors.textMuted,
+            ),
+            fillColor: AppColors.background,
+            suffixIcon: ValueListenableBuilder<TextEditingValue>(
+              valueListenable: searchController,
+              builder: (context, value, _) => value.text.isEmpty
+                  ? const SizedBox.shrink()
+                  : IconButton(
+                      icon: const Icon(Icons.close_rounded, size: 18),
+                      onPressed: () {
+                        searchController.clear();
+                        onSearch('');
+                      },
+                    ),
+            ),
+          ),
         ),
       ),
     );

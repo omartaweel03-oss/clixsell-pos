@@ -540,6 +540,13 @@ class AppStrings {
     'المباع $sold · يمكن إرجاع $returnable',
   );
   String get returnQuantity => _t('Quantity', 'الكمية');
+  // Accessibility (A1, A3): names read by screen readers.
+  String get returnQtyDecrease =>
+      _t('Decrease return quantity', 'إنقاص كمية الإرجاع');
+  String get returnQtyIncrease =>
+      _t('Increase return quantity', 'زيادة كمية الإرجاع');
+  String receiptCodeSpoken(String code) =>
+      _t('Receipt code: $code', 'رمز الإيصال: $code');
   String get returnReason => _t('Reason', 'السبب');
   String get returnReasonHint =>
       _t('e.g. Damaged package', 'مثال: العبوة تالفة');
