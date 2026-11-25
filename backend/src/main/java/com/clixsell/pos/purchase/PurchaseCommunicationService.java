@@ -310,7 +310,7 @@ public class PurchaseCommunicationService {
 
     /**
      * The manager records that the supplier accepted the cancellation of a CANCELED order whose
-     * supplier may have it (canceled after contact, UNKNOWN, or NOT_SENT after copy / opening).
+     * supplier may have it (canceled after contact, or after the message was generated: UNKNOWN / NOT_SENT).
      * Once per order; ends that order's reorder warnings only. Manual, not verified.
      */
     public OrderView supplierCancellation(CurrentUser user, long orderId, PurchaseRequests.SupplierCancellation req) {

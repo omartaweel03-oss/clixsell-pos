@@ -37,6 +37,8 @@ import java.util.Map;
  * POST /api/purchase-orders                       create (PENDING_APPROVAL); idempotent by clientRequestId
  * GET  /api/purchase-orders?status=…&amp;q=…&amp;page=&amp;size=  list; q searches all the store's orders
  *                                                  (order number or saved supplier name, ≤ 80 characters)
+ * GET  /api/purchase-orders?…&amp;overdue=true      only overdue orders (all the store's orders, then paged)
+ * GET  /api/purchase-orders/summary               exact counts by status + overdue (D1; one SELECT, no paging)
  * GET  /api/purchase-orders/{id}                  details
  * GET  /api/purchase-orders/{id}/events           history
  * PUT  /api/purchase-orders/{id}                  edit (PENDING_APPROVAL)        {version, note, items, acknowledgedCautions}
@@ -114,6 +116,7 @@ public class PurchaseController {
     public OrderPage list(@AuthenticationPrincipal CurrentUser user,
                           @RequestParam(name = "status", required = false) List<String> status,
                           @RequestParam(name = "q", required = false) String q,
+                          @RequestParam(name = "overdue", required = false) String overdue,
                           @RequestParam(name = "page", defaultValue = "0") int page,
                           @RequestParam(name = "size", defaultValue = "20") int size) {
         storeOf(user);
@@ -138,7 +141,17 @@ public class PurchaseController {
                 }
             }
         }
-        return orders.list(user, wanted, query, page, size);
+        boolean overdueOnly;
+        if (overdue == null || overdue.isBlank() || overdue.equals("false")) overdueOnly = false;
+        else if (overdue.equals("true")) overdueOnly = true;
+        else throw new ValidationException(Map.of("overdue", "overdue must be true or false"));
+        return orders.list(user, wanted, query, overdueOnly, page, size);
+    }
+
+    @GetMapping("/api/purchase-orders/summary")
+    public PurchaseResponses.OrdersSummary summary(@AuthenticationPrincipal CurrentUser user) {
+        storeOf(user);
+        return orders.summary(user);
     }
 
     @GetMapping("/api/purchase-orders/{id}")

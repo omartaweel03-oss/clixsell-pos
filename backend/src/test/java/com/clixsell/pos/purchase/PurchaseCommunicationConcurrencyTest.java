@@ -255,6 +255,113 @@ class PurchaseCommunicationConcurrencyTest extends PurchaseApiTestBase {
         }
     }
 
+    /**
+     * S3 + D3 (final corrections): manager A records "sent" while manager B cancels declaring
+     * "not sent", at the same moment, with no copy / opening recorded. Exactly one wins; the
+     * loser's 409 names the change that won (type, WHO, when) so the app never guesses; when B
+     * wins, the products still warn (DECLARED_NOT_SENT) and a reorder needs an acknowledgment;
+     * nothing claims the message was sent or that the supplier was told.
+     */
+    @Test
+    void competingSentAndNotSentDeclarationsAreExplainedAndAlwaysWarn() throws Exception {
+        long a = adminId("shini.admin");
+        long b = adminId("shini.admin2");
+        int canceledWins = 0;
+        int sentWins = 0;
+        // rounds 0–1: B's cancellation lands first (the S3 case, forced); 2–3: A's first; 4–9: a real race
+        for (int round = 0; round < 10; round++) {
+            long product = newProduct("Item " + round, String.format("6%07d", round));
+            long id = generated(product);
+            String sentBody = "{\"version\":2,\"confirmSentInWhatsapp\":true}";
+            String cancelBody = "{\"version\":2,\"reason\":\"Changed\",\"contactStatus\":\"NOT_SENT\",\"confirmNotSent\":true}";
+            MvcResult ra;
+            MvcResult rb;
+            if (round < 2) {
+                rb = post(id + "/cancel", shiniAdmin2, cancelBody);
+                ra = post(id + "/mark-sent", shini.adminToken(), sentBody);
+            } else if (round < 4) {
+                ra = post(id + "/mark-sent", shini.adminToken(), sentBody);
+                rb = post(id + "/cancel", shiniAdmin2, cancelBody);
+            } else {
+                ExecutorService pool = Executors.newFixedThreadPool(2);
+                CountDownLatch go = new CountDownLatch(1);
+                Future<MvcResult> fa = pool.submit(() -> {
+                    go.await();
+                    return post(id + "/mark-sent", shini.adminToken(), sentBody);
+                });
+                Future<MvcResult> fb = pool.submit(() -> {
+                    go.await();
+                    return post(id + "/cancel", shiniAdmin2, cancelBody);
+                });
+                go.countDown();
+                ra = fa.get(90, TimeUnit.SECONDS);
+                rb = fb.get(90, TimeUnit.SECONDS);
+                pool.shutdown();
+            }
+            assertThat(status(ra) == 200 ^ status(rb) == 200).as("exactly one wins").isTrue();
+            assertThat(count(id, "MARKED_SENT") + count(id, "CANCELED")).isEqualTo(1);
+            if (status(rb) == 200) {
+                canceledWins++;
+                assertThat(status(ra)).isEqualTo(409);
+                assertThat((String) read(ra, "$.code")).isIn("INVALID_TRANSITION", "ORDER_CHANGED");
+                assertThat((String) read(ra, "$.details.currentStatus")).isEqualTo("CANCELED");
+                assertThat((String) read(ra, "$.details.lastChange.type")).isEqualTo("CANCELED");
+                assertThat(((Number) read(ra, "$.details.lastChange.user.userId")).longValue()).isEqualTo(b);
+                assertThat((String) read(ra, "$.details.lastChange.contactStatus")).isEqualTo("NOT_SENT");
+                assertThat(db.queryForMap("SELECT canceled_after_contact, sent_marked_at FROM purchase_orders WHERE order_id = ?",
+                        id)).containsEntry("canceled_after_contact", 0).containsEntry("sent_marked_at", null);
+                String details = db.queryForObject("SELECT details FROM purchase_order_events WHERE order_id = ? "
+                        + "AND event_type = 'CANCELED'", String.class, id);
+                assertThat(details).contains("\"contactStatus\":\"NOT_SENT\"", "\"priorCopyReports\":0",
+                        "\"priorOpenRequests\":0", "\"supplierNotifiedByClixSell\":false");
+                // the possible duplicate is never silent: the product warns and a reorder needs an acknowledgment
+                MvcResult cand = call("GET", "/api/purchase-candidates?supplierId=" + dairy, shini.adminToken(), null);
+                assertThat((List<String>) read(cand, "$.products[?(@.productId==" + product + ")].cautions[*].type"))
+                        .containsExactly("DECLARED_NOT_SENT");
+                MvcResult again = call("POST", "/api/purchase-orders", shini.adminToken(), orderJson(
+                        UUID.randomUUID().toString(), dairy, "MANUAL", null, items(product, 4), null));
+                assertThat((String) read(again, "$.code")).isEqualTo("REORDER_CAUTION_ACK_REQUIRED");
+                MvcResult acked = call("POST", "/api/purchase-orders", shini.adminToken(), orderJson(
+                        UUID.randomUUID().toString(), dairy, "MANUAL", null, items(product, 4), List.of(new long[]{product, id})));
+                assertThat(status(acked)).isEqualTo(201);
+                long reorder = ((Number) read(acked, "$.orderId")).longValue();
+                assertThat(db.queryForObject("SELECT details FROM purchase_order_events WHERE order_id = ? "
+                        + "AND event_type = 'CREATED'", String.class, reorder)).contains("DECLARED_NOT_SENT");
+            } else {
+                sentWins++;
+                assertThat(status(rb)).isEqualTo(409);
+                assertThat((String) read(rb, "$.code")).isEqualTo("ORDER_CHANGED");
+                assertThat((String) read(rb, "$.details.currentStatus")).isEqualTo("SENT");
+                assertThat((String) read(rb, "$.details.lastChange.type")).isEqualTo("MARKED_SENT");
+                assertThat(((Number) read(rb, "$.details.lastChange.user.userId")).longValue()).isEqualTo(a);
+                assertThat(state(id)).isEqualTo("SENT");
+            }
+        }
+        System.out.println("S3 RACES: canceled first " + canceledWins + ", sent first " + sentWins);
+        assertThat(canceledWins + sentWins).isEqualTo(10);
+        assertThat(canceledWins).as("the S3 order (cancel first) was really checked").isGreaterThanOrEqualTo(2);
+        assertThat(sentWins).isGreaterThanOrEqualTo(2);
+    }
+
+    /**
+     * D3: the caller's OWN earlier request finished (e.g. after the app stopped waiting); the
+     * same request again is refused and the answer says the last change was this same user's.
+     */
+    @Test
+    void aRepeatedRequestAfterItsOwnSuccessIsExplainedAsTheSameUsersChange() throws Exception {
+        long id = generated(newProduct("Labneh", "11111111"));
+        assertThat(status(post(id + "/mark-sent", shini.adminToken(), "{\"version\":2,\"confirmSentInWhatsapp\":true}")))
+                .isEqualTo(200);
+        MvcResult again = post(id + "/mark-sent", shini.adminToken(), "{\"version\":2,\"confirmSentInWhatsapp\":true}");
+        assertThat(status(again)).isEqualTo(409);
+        assertThat((String) read(again, "$.code")).isEqualTo("INVALID_TRANSITION");
+        assertThat((String) read(again, "$.details.lastChange.type")).isEqualTo("MARKED_SENT");
+        assertThat(((Number) read(again, "$.details.lastChange.user.userId")).longValue()).isEqualTo(adminId("shini.admin"));
+        assertThat((String) read(again, "$.details.lastChange.at")).isNotBlank();
+        assertThat(count(id, "MARKED_SENT")).isEqualTo(1);
+        assertThat(version(id)).isEqualTo(3);
+    }
+
     @Test
     void supplierConfirmationAndCancellationAtOnceEndInExactlyOneOutcome() throws Exception {
         long id = generated(newProduct("Labneh", "11111111"));

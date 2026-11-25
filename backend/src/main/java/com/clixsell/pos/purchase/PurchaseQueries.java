@@ -92,8 +92,10 @@ public class PurchaseQueries {
      *   <li>CANCELED_AFTER_CONTACT: CANCELED after the manager had recorded sending (last 30 days).</li>
      *   <li>CONTACT_UNKNOWN: CANCELED from MESSAGE_GENERATED with the answer UNKNOWN — the
      *       supplier may have received the message (last 30 days).</li>
-     *   <li>DECLARED_NOT_SENT: CANCELED from MESSAGE_GENERATED with the answer NOT_SENT although
-     *       the message had been copied or WhatsApp opening requested (last 30 days).</li>
+     *   <li>DECLARED_NOT_SENT: CANCELED from MESSAGE_GENERATED with the answer NOT_SENT (last 30
+     *       days). S3 correction: ALWAYS, not only after a recorded copy / opening request — the
+     *       message could be read and sent by hand, or by another manager at the same moment, and
+     *       "not sent" is only the manager's declaration (never verified).</li>
      * </ul>
      */
     public Map<Long, List<Caution>> cautions(long storeId, LocalDateTime now) {
@@ -117,10 +119,7 @@ public class PurchaseQueries {
                 JOIN purchase_order_events c ON c.order_id = o.order_id AND c.store_id = o.store_id AND c.event_type = 'CANCELED'
                 WHERE o.store_id = ? AND o.status = 'CANCELED' AND o.canceled_after_contact = 0 AND o.canceled_at >= ?
                   AND i.product_id IS NOT NULL AND json_valid(c.details)
-                  AND (json_extract(c.details, '$.contactStatus') = 'UNKNOWN'
-                       OR (json_extract(c.details, '$.contactStatus') = 'NOT_SENT'
-                           AND coalesce(json_extract(c.details, '$.priorCopyReports'), 0)
-                             + coalesce(json_extract(c.details, '$.priorOpenRequests'), 0) > 0))
+                  AND json_extract(c.details, '$.contactStatus') IN ('UNKNOWN', 'NOT_SENT')
                   AND NOT EXISTS (SELECT 1 FROM purchase_order_events e WHERE e.order_id = o.order_id
                                   AND e.event_type = 'SUPPLIER_CANCELLATION_RECORDED')
                 ORDER BY 2""",
@@ -131,6 +130,79 @@ public class PurchaseQueries {
                 storeId, PurchaseTime.text(now.minusDays(14)), storeId, PurchaseTime.text(now.minusDays(30)),
                 storeId, PurchaseTime.text(now.minusDays(30)));
         return out;
+    }
+
+    // ── summary / overdue (D1): exact, computed by the database in ONE statement ─────────
+
+    /**
+     * The overdue rule of {@link PurchaseOrderService#overdue} as SQL. Times are stored in one
+     * fixed sortable text form (PurchaseTime), and LocalDateTime has no time zone, so
+     * "Duration.between(t, now).toDays() >= n" is exactly "t <= now minus n days".
+     * The five parameters come from {@link #overdueParams}.
+     */
+    static final String OVERDUE_SQL = """
+            ((status = 'PENDING_APPROVAL' AND created_at <= ?)
+             OR (status = 'APPROVED' AND approved_at IS NOT NULL AND approved_at <= ?)
+             OR (status = 'MESSAGE_GENERATED' AND message_generated_at IS NOT NULL AND message_generated_at <= ?)
+             OR (status = 'SENT' AND sent_marked_at IS NOT NULL AND sent_marked_at <= ?)
+             OR (status = 'CONFIRMED' AND confirmation_recorded_at IS NOT NULL AND confirmation_recorded_at <= ?))""";
+
+    static List<Object> overdueParams(LocalDateTime now) {
+        return List.of(PurchaseTime.text(now.minusDays(3)), PurchaseTime.text(now.minusDays(1)),
+                PurchaseTime.text(now.minusDays(1)), PurchaseTime.text(now.minusDays(3)),
+                PurchaseTime.text(now.minusDays(14)));
+    }
+
+    /** Number of orders and of overdue orders in one status. */
+    public record StatusCount(String status, long count, long overdue) {
+    }
+
+    /**
+     * The store's orders counted by status, with the overdue ones, in ONE SELECT (one consistent
+     * snapshot: no paging, no limit, nothing counted twice).
+     */
+    public List<StatusCount> statusCounts(long storeId, LocalDateTime now) {
+        List<Object> args = new ArrayList<>(overdueParams(now));
+        args.add(storeId);
+        return db.query("SELECT status, COUNT(*), SUM(CASE WHEN " + OVERDUE_SQL + " THEN 1 ELSE 0 END) "
+                        + "FROM purchase_orders WHERE store_id = ? GROUP BY status ORDER BY status",
+                (rs, i) -> new StatusCount(rs.getString(1), rs.getLong(2), rs.getLong(3)), args.toArray());
+    }
+
+    private static String overdueWhere(List<Object> args, long storeId, java.util.Collection<String> states,
+                                       String pattern, LocalDateTime now) {
+        StringBuilder w = new StringBuilder(" WHERE store_id = ? AND ").append(OVERDUE_SQL);
+        args.add(storeId);
+        args.addAll(overdueParams(now));
+        if (states != null && !states.isEmpty()) {
+            w.append(" AND status IN (").append(String.join(",", java.util.Collections.nCopies(states.size(), "?")))
+                    .append(')');
+            args.addAll(states);
+        }
+        if (pattern != null) {
+            w.append(" AND (lower(order_number) LIKE ? ESCAPE '\\' OR lower(supplier_name) LIKE ? ESCAPE '\\')");
+            args.add(pattern);
+            args.add(pattern);
+        }
+        return w.toString();
+    }
+
+    /** Overdue orders of the store (optionally limited to states / a search pattern), newest first. */
+    public List<Long> overdueIds(long storeId, java.util.Collection<String> states, String pattern,
+                                 LocalDateTime now, int offset, int limit) {
+        List<Object> args = new ArrayList<>();
+        String where = overdueWhere(args, storeId, states, pattern, now);
+        args.add(limit);
+        args.add(offset);
+        return db.queryForList("SELECT order_id FROM purchase_orders" + where + " ORDER BY order_id DESC LIMIT ? OFFSET ?",
+                Long.class, args.toArray());
+    }
+
+    public long countOverdue(long storeId, java.util.Collection<String> states, String pattern, LocalDateTime now) {
+        List<Object> args = new ArrayList<>();
+        String where = overdueWhere(args, storeId, states, pattern, now);
+        Long n = db.queryForObject("SELECT COUNT(*) FROM purchase_orders" + where, Long.class, args.toArray());
+        return n == null ? 0 : n;
     }
 
     /**
@@ -167,6 +239,21 @@ public class PurchaseQueries {
                         + "AND event_type = ? AND json_valid(details) AND json_extract(details, '$.phase') = ?",
                         Integer.class, storeId, orderId, type, phase);
         return n == null ? 0 : n;
+    }
+
+    /** The order's latest history event (who changed it last, and when). */
+    public record LastEvent(String type, long userId, String userName, String at, String contactStatus) {
+    }
+
+    public Optional<LastEvent> lastEvent(long storeId, long orderId) {
+        return db.query("""
+                SELECT e.event_type, e.user_id, u.full_name, e.created_at,
+                       CASE WHEN json_valid(e.details) THEN json_extract(e.details, '$.contactStatus') END
+                FROM purchase_order_events e LEFT JOIN users u ON u.user_id = e.user_id AND u.store_id = e.store_id
+                WHERE e.store_id = ? AND e.order_id = ? AND (e.from_status IS NOT NULL OR e.event_type = 'CREATED')
+                ORDER BY e.event_id DESC LIMIT 1""",
+                (rs, i) -> new LastEvent(rs.getString(1), rs.getLong(2), rs.getString(3), rs.getString(4), rs.getString(5)),
+                storeId, orderId).stream().findFirst();
     }
 
     /** The details (JSON) of the order's CANCELED event, or null. */

@@ -522,18 +522,29 @@ class PurchaseCommunicationApiTest extends PurchaseApiTestBase {
     }
 
     @Test
-    void notSentIsADeclarationAndAfterACopyStillWarns() throws Exception {
+    void notSentIsADeclarationAndAlwaysWarns() throws Exception {
         shiniData();
+        // S3 correction: "not sent" without any recorded copy / opening STILL warns — the message
+        // could have been sent by hand or by another manager; the declaration is not verified.
         long quiet = generated(labneh, 5);
         expectOk(post(quiet + "/cancel", shini.adminToken(),
                 "{\"version\":2,\"reason\":\"Plan changed\",\"contactStatus\":\"NOT_SENT\",\"confirmNotSent\":true}"));
         assertThat(lastDetails(quiet, "CANCELED")).contains("\"contactStatus\":\"NOT_SENT\"", "\"managerDeclaredNotSent\":true",
-                "\"priorCopyReports\":0");
-        assertThat(candidateCautions(labneh)).as("declared not sent, never copied or opened").isEmpty();
+                "\"priorCopyReports\":0", "\"supplierNotifiedByClixSell\":false");
+        assertThat(candidateCautions(labneh)).as("declared not sent, never copied or opened").containsExactly("DECLARED_NOT_SENT");
         MvcResult v = expectOk(call("GET", P + quiet, shini.adminToken(), null));
-        assertThat((Boolean) read(v, "$.communication.possibleSupplierContact")).isFalse();
-        assertThat(code(post(quiet + "/supplier-cancellation-recorded", shini.adminToken(),
-                "{\"confirmSupplierAccepted\":true,\"channel\":\"PHONE\",\"note\":\"Called him\"}"))).isEqualTo("NOT_ELIGIBLE");
+        assertThat((Boolean) read(v, "$.communication.possibleSupplierContact")).isTrue();
+        assertThat((String) read(v, "$.communication.contactStatusAtCancel")).isEqualTo("NOT_SENT");
+        assertThat(db.queryForMap("SELECT canceled_after_contact, sent_marked_at FROM purchase_orders WHERE order_id = ?", quiet))
+                .containsEntry("canceled_after_contact", 0).containsEntry("sent_marked_at", null);
+        assertThat(eventTypes(quiet)).doesNotContain("MARKED_SENT");
+        MvcResult again = create(shini.adminToken(), dairy, "MANUAL", labneh, 4);
+        assertThat(code(again)).isEqualTo("REORDER_CAUTION_ACK_REQUIRED");
+        assertThat((List<Object>) read(again, "$.details.cautions[*].type")).containsExactly("DECLARED_NOT_SENT");
+        // the manager checked with the supplier: recorded once, then the warning ends
+        expectOk(post(quiet + "/supplier-cancellation-recorded", shini.adminToken(),
+                "{\"confirmSupplierAccepted\":true,\"channel\":\"PHONE\",\"note\":\"Called him\"}"));
+        assertThat(candidateCautions(labneh)).isEmpty();
 
         long copied = generated(milk, 5);
         expectOk(post(copied + "/whatsapp-open-requested", shini.adminToken(),

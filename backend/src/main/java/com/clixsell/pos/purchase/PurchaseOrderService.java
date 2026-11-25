@@ -382,16 +382,34 @@ public class PurchaseOrderService {
      * the store's orders by order number or saved supplier name, before paging.
      */
     public OrderPage list(CurrentUser user, Collection<PurchaseOrderStatus> status, String query, int page, int size) {
+        return list(user, status, query, false, page, size);
+    }
+
+    /**
+     * As above; {@code overdueOnly} keeps only the overdue orders (the same rule as
+     * {@link #overdue}, evaluated by the database for ALL the store's orders, then paged).
+     */
+    public OrderPage list(CurrentUser user, Collection<PurchaseOrderStatus> status, String query, boolean overdueOnly,
+                          int page, int size) {
         long storeId = user.requireStoreId();
         int p = Math.max(page, 0);
         int s = Math.min(Math.max(size, 1), PAGE_MAX);
+        String pattern = query == null ? null : "%" + query.toLowerCase(java.util.Locale.ROOT).replace("\\", "\\\\")
+                .replace("%", "\\%").replace("_", "\\_") + "%";
         return readOnly(() -> {
             Page<PurchaseOrder> result;
-            if (query != null) {
+            if (overdueOnly) {
+                LocalDateTime now = PurchaseTime.now();
+                List<String> states = status == null ? List.of() : status.stream().map(Enum::name).toList();
+                long total = queries.countOverdue(storeId, states, pattern, now);
+                List<Long> ids = queries.overdueIds(storeId, states, pattern, now, p * s, s);
+                Map<Long, PurchaseOrder> byId = new HashMap<>();
+                for (PurchaseOrder o : orders.findByStoreIdAndOrderIdIn(storeId, ids)) byId.put(o.getOrderId(), o);
+                List<PurchaseOrder> content = ids.stream().map(byId::get).filter(Objects::nonNull).toList();
+                result = new org.springframework.data.domain.PageImpl<>(content, PageRequest.of(p, s), total);
+            } else if (query != null) {
                 Collection<PurchaseOrderStatus> states = status == null || status.isEmpty()
                         ? List.of(PurchaseOrderStatus.values()) : status;
-                String pattern = "%" + query.toLowerCase(java.util.Locale.ROOT).replace("\\", "\\\\")
-                        .replace("%", "\\%").replace("_", "\\_") + "%";
                 result = orders.search(storeId, states, pattern, PageRequest.of(p, s));
             } else {
                 result = status == null || status.isEmpty()
@@ -410,6 +428,29 @@ public class PurchaseOrderService {
             return new OrderPage(p, s, result.getTotalElements(), out);
         });
     }
+
+    /** D1: exact counts by status and overdue for the logged-in user's store (one SELECT). */
+    public PurchaseResponses.OrdersSummary summary(CurrentUser user) {
+        long storeId = user.requireStoreId();
+        LocalDateTime now = PurchaseTime.now();
+        return readOnly(() -> {
+            Map<String, Long> by = new LinkedHashMap<>();
+            Map<String, Long> late = new LinkedHashMap<>();
+            for (PurchaseOrderStatus st : PurchaseOrderStatus.values()) by.put(st.name(), 0L);
+            for (PurchaseOrderStatus st : OPEN) late.put(st.name(), 0L);
+            for (PurchaseQueries.StatusCount c : queries.statusCounts(storeId, now)) {
+                by.put(c.status(), c.count());
+                if (late.containsKey(c.status())) late.put(c.status(), c.overdue());
+            }
+            long open = OPEN.stream().mapToLong(st -> by.get(st.name())).sum();
+            long overdue = late.values().stream().mapToLong(Long::longValue).sum();
+            return new PurchaseResponses.OrdersSummary(by, open, overdue, late, PurchaseTime.text(now));
+        });
+    }
+
+    static final List<PurchaseOrderStatus> OPEN = List.of(PurchaseOrderStatus.PENDING_APPROVAL,
+            PurchaseOrderStatus.APPROVED, PurchaseOrderStatus.MESSAGE_GENERATED, PurchaseOrderStatus.SENT,
+            PurchaseOrderStatus.CONFIRMED);
 
     public OrderView get(CurrentUser user, long orderId) {
         long storeId = user.requireStoreId();
@@ -626,14 +667,27 @@ public class PurchaseOrderService {
         if (!Set.of(allowed).contains(order.getStatus())) {
             throw new PurchaseException(HttpStatus.CONFLICT, "INVALID_TRANSITION",
                     action + " is not possible for an order that is " + order.getStatus(), Map.of(),
-                    map("currentStatus", order.getStatus().name(), "currentVersion", order.getVersion()));
+                    conflictDetails(order));
         }
         if (order.getVersion() != version) {
             throw new PurchaseException(HttpStatus.CONFLICT, "ORDER_CHANGED",
                     "The order was changed meanwhile (version " + order.getVersion() + "); reload it", Map.of(),
-                    map("currentStatus", order.getStatus().name(), "currentVersion", order.getVersion()));
+                    conflictDetails(order));
         }
         return order;
+    }
+
+    /**
+     * D3: what a stale request needs to explain itself truthfully — the current state and the
+     * latest change (its type, WHO made it and when). The change may be the caller's own earlier
+     * request that finished after the client stopped waiting; the client compares the user.
+     */
+    Map<String, Object> conflictDetails(PurchaseOrder order) {
+        Map<String, Object> d = map("currentStatus", order.getStatus().name(), "currentVersion", order.getVersion());
+        queries.lastEvent(order.getStoreId(), order.getOrderId()).ifPresent(e -> d.put("lastChange", map(
+                "type", e.type(), "user", map("userId", e.userId(), "fullName", e.userName()), "at", e.at(),
+                "contactStatus", e.contactStatus())));
+        return d;
     }
 
     PurchaseOrder find(long storeId, long orderId) {
@@ -781,19 +835,16 @@ public class PurchaseOrderService {
 
     /**
      * A CANCELED order whose supplier may have been reached: canceled after the manager recorded
-     * sending, canceled with the answer UNKNOWN, or with NOT_SENT after a copy / opening request.
+     * sending, or canceled after the message was generated (answer UNKNOWN or NOT_SENT — S3).
      * Same rule as the reorder warnings in PurchaseQueries.cautions.
      */
     static boolean possibleContact(PurchaseOrder o, Map<String, Object> cancel) {
         if (o.getStatus() != PurchaseOrderStatus.CANCELED) return false;
         if (o.isCanceledAfterContact()) return true;
         Object c = cancel.get("contactStatus");
-        if ("UNKNOWN".equals(c)) return true;
-        return "NOT_SENT".equals(c) && number(cancel.get("priorCopyReports")) + number(cancel.get("priorOpenRequests")) > 0;
-    }
-
-    private static long number(Object v) {
-        return v instanceof Number n ? n.longValue() : 0;
+        // S3: a NOT_SENT answer is a declaration that cannot be verified (the message could be sent
+        // by hand or by another manager at the same moment), so it is treated like UNKNOWN here.
+        return "UNKNOWN".equals(c) || "NOT_SENT".equals(c);
     }
 
     /**

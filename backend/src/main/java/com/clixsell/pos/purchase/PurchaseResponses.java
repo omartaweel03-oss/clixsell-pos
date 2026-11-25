@@ -153,6 +153,15 @@ public final class PurchaseResponses {
     public record OrderPage(int page, int size, long total, List<OrderSummary> orders) {
     }
 
+    /**
+     * D1: exact counts of the store's orders, computed by the database in one statement (no
+     * paging, no limit). byStatus has every status (0 when none); open = the five open states;
+     * overdue = open orders past the overdue rule, overdueByStatus per open state.
+     */
+    public record OrdersSummary(Map<String, Long> byStatus, long open, long overdue,
+                                Map<String, Long> overdueByStatus, String asOf) {
+    }
+
     public record EventView(long eventId, String type, String fromStatus, String toStatus, Person user, Object details,
                             String createdAt) {
     }
