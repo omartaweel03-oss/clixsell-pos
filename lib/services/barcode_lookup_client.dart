@@ -57,10 +57,12 @@ class BarcodeLookupClient implements BarcodeLookupApi {
   Future<BarcodeLookupResult> lookup(String code, {String? format}) async {
     if (!isProductBarcode(code)) return BarcodeLookupResult.invalid(code);
     final query = StringBuffer('code=${Uri.encodeQueryComponent(code)}');
-    if (format != null) query.write('&format=${Uri.encodeQueryComponent(format)}');
+    if (format != null)
+      query.write('&format=${Uri.encodeQueryComponent(format)}');
     try {
       final json =
-          await _http.get('/products/by-barcode?$query') as Map<String, dynamic>;
+          await _http.get('/products/by-barcode?$query')
+              as Map<String, dynamic>;
       return BarcodeLookupResult.found(
         scannedCode: code,
         product: Product.fromJson(json['product'] as Map<String, dynamic>),

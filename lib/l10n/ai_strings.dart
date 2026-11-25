@@ -57,7 +57,8 @@ class AiStrings {
   );
   String get confirmProduct => _t('Confirm product', 'تأكيد المنتج');
   String get confirmed => _t('Product confirmed', 'تم تأكيد المنتج');
-  String get addToSale => _t('Add to current sale', 'إضافة إلى الفاتورة الحالية');
+  String get addToSale =>
+      _t('Add to current sale', 'إضافة إلى الفاتورة الحالية');
   String added(String name) => _t(
     '${iso(name)} was added to the current sale.',
     'تمت إضافة ${iso(name)} إلى الفاتورة الحالية.',
@@ -83,8 +84,7 @@ class AiStrings {
     'No product in your store has this barcode. Nothing was created or changed.',
     'لا يوجد منتج في متجرك بهذا الباركود. لم يُنشأ أو يُغيَّر أي شيء.',
   );
-  String get invalidTitle =>
-      _t('Not a product barcode', 'هذا ليس باركود منتج');
+  String get invalidTitle => _t('Not a product barcode', 'هذا ليس باركود منتج');
   String get invalidBody => _t(
     'ClixSell product barcodes have 8 to 14 digits. This code cannot belong to a product.',
     'باركود منتجات ClixSell من 8 إلى 14 رقماً. هذا الرمز لا يمكن أن يخص منتجاً.',

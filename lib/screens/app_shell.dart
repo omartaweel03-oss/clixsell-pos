@@ -13,6 +13,9 @@ import '../theme/app_theme.dart';
 import '../widgets/app_sidebar.dart';
 import '../services/guardian_api_client.dart';
 import 'admin/staff_accounts_page.dart';
+import 'ai/ai_identify_page.dart';
+import 'ai/product_camera.dart';
+import '../services/barcode_lookup_client.dart';
 import 'guardian/guardian_page.dart';
 import 'admin/stores_page.dart';
 import 'pos/pos_page.dart';
@@ -55,7 +58,11 @@ class AppShell extends StatefulWidget {
     required this.onToggleLanguage,
     required this.onSetLanguage,
     required this.onLogout,
+    this.createCamera,
   });
+
+  /// The phone camera for AI Product Identification (tests pass a fake).
+  final ProductCamera Function()? createCamera;
 
   final AppUser user;
   final ApiHttp http;
@@ -74,7 +81,9 @@ class _AppShellState extends State<AppShell> {
 
   /// Store Admin: true until we know whether Guardian Mode is on (then the
   /// first page is Guardian Mode, as in Figure 3.1; otherwise Products).
-  late bool _choosingHome = widget.user.role == UserRole.storeAdmin;
+  late bool _choosingHome =
+      widget.user.role == UserRole.storeAdmin &&
+      widget.user.role.home == SidebarDestination.products;
 
   @override
   void initState() {
@@ -410,6 +419,21 @@ class _AppShellState extends State<AppShell> {
             return true;
           },
         );
+      case SidebarDestination.aiIdentify:
+        final canSell = widget.user.role.destinations.contains(
+          SidebarDestination.pos,
+        );
+        return AiIdentifyPage(
+          key: const ValueKey('aiIdentify'),
+          api: BarcodeLookupClient(widget.http),
+          createCamera: widget.createCamera ?? DeviceProductCamera.new,
+          canSell: canSell,
+          onOpenSale: () => _navigate(SidebarDestination.pos),
+          // The POS search box finds products by name or barcode.
+          onSearchManually: () => _navigate(
+            canSell ? SidebarDestination.pos : SidebarDestination.products,
+          ),
+        );
       case SidebarDestination.stores:
         return StoresPage(key: const ValueKey('stores'), http: widget.http);
       case SidebarDestination.pos:
@@ -589,10 +613,41 @@ class _AppShellState extends State<AppShell> {
           onLogout: _logout,
         );
 
+        // The Android phone (Figure 3.10): the menu opens from a top bar, so
+        // the camera screen has the full width.
+        if (aiCameraAvailable && width < 600) {
+          return Scaffold(
+            key: _scaffoldKey,
+            appBar: AppBar(
+              title: const Text('ClixSell'),
+              backgroundColor: AppColors.sidebar,
+              foregroundColor: Colors.white,
+            ),
+            drawer: Drawer(
+              key: const Key('phoneMenu'),
+              width: 248,
+              child: AppSidebar(
+                user: widget.user,
+                selected: _destination,
+                onSelect: (d) {
+                  _scaffoldKey.currentState?.closeDrawer();
+                  _navigate(d);
+                },
+                onToggleLanguage: widget.onToggleLanguage,
+                onLogout: _logout,
+                alertCount: store == null
+                    ? 0
+                    : store.stats.lowStock + store.stats.outOfStock,
+                purchaseOverdue: _purchaseOverdue,
+              ),
+            ),
+            body: content,
+          );
+        }
+
         // Desktop dashboard (report Figures 3.2–3.9) at every size: the
         // sidebar always stays on screen; it shrinks to icons when space is
-        // tight. No separate mobile layout (only AI Product Identification,
-        // Figure 3.10, will have one).
+        // tight. Only the Android phone has a separate layout (above).
         return Scaffold(
           key: _scaffoldKey,
           body: Row(

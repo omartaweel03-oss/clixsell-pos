@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/ai_strings.dart';
 import '../l10n/app_strings.dart';
 import '../l10n/purchase_order_strings.dart';
 import '../l10n/purchase_strings.dart';
 import '../l10n/guardian_strings.dart';
 import '../models/app_user.dart';
+import '../screens/ai/product_camera.dart';
 import '../theme/app_theme.dart';
 
 /// The pages a user can open.
@@ -28,7 +30,17 @@ enum SidebarDestination {
   purchaseRecommendations,
   purchaseOrderDetails,
   purchaseOrderForm,
+  // AI Product Identification (Figure 3.10), Phase 1: the Android app only.
+  aiIdentify,
 }
+
+/// AI Product Identification needs the phone camera: shown on Android only
+/// (web and desktop are unchanged).
+bool get aiCameraAvailable => debugAiCameraAvailable ?? ProductCamera.supported;
+
+/// Tests set this to show / hide the camera page on any platform.
+@visibleForTesting
+bool? debugAiCameraAvailable;
 
 /// Which pages each role may open (the backend enforces the same rules).
 extension RoleDestinations on UserRole {
@@ -37,7 +49,9 @@ extension RoleDestinations on UserRole {
       SidebarDestination.stores,
       SidebarDestination.settings,
     ],
-    UserRole.storeAdmin => const [
+    UserRole.storeAdmin => [
+      // Android phone: the camera screen is the first page.
+      if (aiCameraAvailable) SidebarDestination.aiIdentify,
       // Home stays Products; when Guardian Mode is ON the shell opens
       // Guardian Mode first instead (Figure 3.1, decision D9).
       SidebarDestination.products,
@@ -63,7 +77,9 @@ extension RoleDestinations on UserRole {
     ],
     // The cashier's home is the POS screen (report Figure 3.2). No Settings:
     // settings are for managers (UR-M12), and the backend refuses cashiers.
-    UserRole.cashier => const [
+    // On the Android phone the cashier starts on the camera screen.
+    UserRole.cashier => [
+      if (aiCameraAvailable) SidebarDestination.aiIdentify,
       SidebarDestination.pos,
       SidebarDestination.suspendedInvoices,
       SidebarDestination.products,
@@ -182,6 +198,15 @@ class AppSidebar extends StatelessWidget {
           Icons.storefront_outlined,
           Icons.storefront_rounded,
           s.navStores,
+        ),
+      ],
+      if (user.role.worksInStore && aiCameraAvailable) ...[
+        const SizedBox(height: AppSpacing.sm),
+        item(
+          SidebarDestination.aiIdentify,
+          Icons.qr_code_scanner_outlined,
+          Icons.qr_code_scanner_rounded,
+          AiStrings.of(context).navTitle,
         ),
       ],
       if (user.role.worksInStore) ...[
