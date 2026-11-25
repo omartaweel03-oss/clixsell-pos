@@ -486,6 +486,7 @@ maximum discount 10%, and every existing store, user and product is kept (tested
 | `GET, POST /api/store/cashiers`, `PUT …/cashiers/{id}/status`, `PUT …/cashiers/{id}/password` | Store Admin | `users` |
 | `GET /api/products`, `GET /api/products/{id}` | Store Admin, Cashier | `SELECT` (own store) |
 | `POST /api/products` · `PUT /api/products/{id}` · `DELETE /api/products/{id}` · `GET /api/products/generate-barcode` | Store Admin | `INSERT` · `UPDATE` · `DELETE` (own store) |
+| `GET /api/product-files/export` · `POST /api/product-files/import/preview` · `POST /api/product-files/import` | Store Admin | CSV export (own store) · check only (nothing saved) · create NEW products, all or none |
 | `POST /api/sales` (complete) | Store Admin, Cashier | `INSERT` sales, sale_items, payments, receipts; `UPDATE` products stock |
 | `POST /api/sales/suspended` · `PUT /api/sales/suspended/{id}` | Store Admin, Cashier | `INSERT` / `UPDATE` sales (SUSPENDED) |
 | `GET /api/sales/suspended` · `GET /api/sales/{id}` | Store Admin, Cashier | `SELECT` (own store) |
@@ -605,3 +606,28 @@ flutter test                     # 195 Flutter tests (use a fake server), incl. 
 * Low stock: 0 < quantity <= minimum stock level
 * Inventory value: sum of price × quantity
 * Barcode unique within a store (two stores may use the same barcode)
+
+
+## Product import / export (UR-M11, SR24, Figure 3.3)
+
+Products screen (Store Admin): **Import** and **Export** next to *Add product*. Cashiers see neither.
+
+* **File**: CSV, UTF-8 (export adds a byte-order mark so Excel shows Arabic correctly), one header
+  row with the columns `name, barcode, category, sellingPrice, costPrice, quantity, minStock,
+  supplier` (any order; `costPrice` may be empty = unknown). These are exactly the product form's
+  fields; images are not part of the file. `category` uses the keys `dairy, bakery, beverages,
+  snacks, groceries, freshProduce, frozen, cleaning, personalCare, other`. Numbers use digits and
+  a dot (`12.5`). Quoted fields may contain commas, quotes (`""`) and line breaks.
+* **Formula guard**: on export, text starting with `= + - @` (or tab / CR) gets a leading `'`
+  (spreadsheet formula injection); the import removes exactly that `'` again, so an exported file
+  re-imports unchanged.
+* **Import = preview, then confirm**: the server checks the whole file with the product form's
+  own rules (`Product.validate`), the barcode unique in the file and in the store, the supplier
+  found or created by name exactly as the form does (an inactive supplier is refused), and returns
+  every row with its errors, the suppliers that would be created and the file's SHA-256. Nothing
+  is saved. **Import** requires the same file, that hash and `confirmImport: true`; everything is
+  checked again and all products are created in ONE transaction, or none.
+* **Only new products**: an existing barcode is an error. Existing products, stock, prices and
+  suppliers are never updated or overwritten by an import (an update / upsert mode would be a
+  separate decision). Re-importing the same file is therefore refused as a whole.
+* **Limits**: 2 MB and 5000 products per file. No new table and no migration.

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -39,8 +40,9 @@ class ApiException implements Exception {
   final Object? details;
 
   /// [details] as a JSON object, or an empty map.
-  Map<String, dynamic> get detailsMap =>
-      details is Map<String, dynamic> ? details as Map<String, dynamic> : const {};
+  Map<String, dynamic> get detailsMap => details is Map<String, dynamic>
+      ? details as Map<String, dynamic>
+      : const {};
 
   bool get isNetworkError => statusCode == null;
   bool get isUnauthorized => statusCode == 401;
@@ -97,9 +99,27 @@ class ApiHttp {
   Future<dynamic> delete(String path) =>
       _send(() => client.delete(_uri(path), headers: _headers));
 
+  /// GET of a file (e.g. a CSV export): the raw bytes and the response
+  /// headers. Errors become [ApiException] exactly like [get].
+  Future<({Uint8List bytes, Map<String, String> headers})> getBytes(
+    String path,
+  ) async {
+    final response = await _raw(
+      () => client.get(_uri(path), headers: _headers),
+    );
+    return (bytes: response.bodyBytes, headers: response.headers);
+  }
+
   /// Runs a request and returns the decoded JSON body (null when empty).
   /// Network failures and error responses become [ApiException].
   Future<dynamic> _send(Future<http.Response> Function() request) async {
+    final response = await _raw(request);
+    if (response.bodyBytes.isEmpty) return null;
+    return jsonDecode(utf8.decode(response.bodyBytes));
+  }
+
+  /// Runs a request; returns the successful response, or throws [ApiException].
+  Future<http.Response> _raw(Future<http.Response> Function() request) async {
     final sentWithToken = token != null;
     final http.Response response;
     try {
@@ -112,8 +132,7 @@ class ApiHttp {
     }
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      if (response.bodyBytes.isEmpty) return null;
-      return jsonDecode(utf8.decode(response.bodyBytes));
+      return response;
     }
     final error = _errorFrom(response);
     if (error.isUnauthorized && sentWithToken) {

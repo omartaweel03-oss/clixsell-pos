@@ -81,6 +81,18 @@ public class ApiExceptionHandler {
         return error(HttpStatus.NOT_FOUND, "PRODUCT_NOT_FOUND", e.getMessage(), Map.of());
     }
 
+    /** A product file that cannot be imported: the body carries the full preview (every row error). */
+    @ExceptionHandler(com.clixsell.pos.product.ProductFileService.ImportRefusedException.class)
+    public ResponseEntity<Map<String, Object>> importRefused(com.clixsell.pos.product.ProductFileService.ImportRefusedException e) {
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("status", e.getStatus().value());
+        body.put("code", e.getCode());
+        body.put("message", e.getMessage());
+        body.put("fieldErrors", Map.of());
+        if (e.getDetails() != null) body.put("details", e.getDetails());
+        return ResponseEntity.status(e.getStatus()).body(body);
+    }
+
     /** A database constraint failed (for example two saves with the same barcode at once). */
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ApiError> constraint(DataIntegrityViolationException e) {
