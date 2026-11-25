@@ -131,7 +131,7 @@ class MultiStoreIsolationTest extends ApiTestBase {
 
         assertThat(db.queryForObject("SELECT status FROM users WHERE user_id = ?", String.class, neshanCashierId))
                 .isEqualTo("ACTIVE");
-        login("neshan.cashier", "Cashier-Pass-1"); // old password still works
+        login("neshan.cashier", CASHIER_PASSWORD); // old password still works
     }
 
     @Test

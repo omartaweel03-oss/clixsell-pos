@@ -44,6 +44,9 @@ public abstract class ApiTestBase {
      */
     public static final String STORE_ADMIN_PASSWORD = "Shop-Owner-Pass-1";
 
+    /** Cashiers of the test stores. Not a published demo password (refused outside the demo profile). */
+    public static final String CASHIER_PASSWORD = "Shop-Cashier-Pass-1";
+
     static {
         // Start every test run from an empty database file (the tests' own file, never clixsell.db).
         try {
@@ -152,8 +155,8 @@ public abstract class ApiTestBase {
         String cashier = prefix + ".cashier";
         createStoreAdmin(sys, storeId, admin, STORE_ADMIN_PASSWORD);
         String adminToken = login(admin, STORE_ADMIN_PASSWORD);
-        createCashier(adminToken, cashier, "Cashier-Pass-1");
-        return new StoreSetup(storeId, admin, adminToken, cashier, login(cashier, "Cashier-Pass-1"));
+        createCashier(adminToken, cashier, CASHIER_PASSWORD);
+        return new StoreSetup(storeId, admin, adminToken, cashier, login(cashier, CASHIER_PASSWORD));
     }
 
     /** Creates a product in the Store Admin's store and returns its id. */

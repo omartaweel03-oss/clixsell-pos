@@ -56,9 +56,10 @@ password. If the password is missing, too short or a published demo password, th
 ClixSell does not change it by itself: it writes a `SECURITY WARNING` line at start and shows a red
 warning to the System Admin in Settings. Sign in and change it: Settings → Profile → Change
 password (take a backup first). Setting `CLIXSELL_ADMIN_PASSWORD` does **not** change an existing
-password. Outside the demo profile, published demo passwords cannot be chosen for an
-administrator (new Store Admin, own password change, Store Admin reset). A Store Admin that still
-uses one sees the same kind of warning in Settings for their own account.
+password. Outside the demo profile, published demo passwords cannot be chosen for any account
+(new Store Admin or Cashier, own password change, Store Admin or Cashier reset). A Store Admin that
+still uses one sees the same kind of warning in Settings for their own account, and the Cashiers
+screen marks this store's Cashiers that still use one, so the Store Admin can reset them.
 
 ## Demo data (optional – presentations and testing only)
 Off by default. To start with two ready Palestinian demo stores, use the `demo` profile
@@ -75,7 +76,9 @@ cd backend
 System Admin on a new demo database: `sysadmin` / `Admin12345` (allowed only by the `demo`
 profile; the normal configuration refuses this public password).
 
-A database that already has stores is never changed by the demo profile.
+A database that already has stores is never changed by the demo profile. Demo data needs the
+`demo` profile: `clixsell.demo-data=true` alone is refused at start, before any database is
+opened or any demo store or user is created.
 
 ## Tests
 ```bash

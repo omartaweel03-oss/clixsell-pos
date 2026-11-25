@@ -90,11 +90,11 @@ class ChangePasswordApiTest extends ApiTestBase {
     @Test
     void cashierCannotChangeOwnPassword() throws Exception {
         String before = hash("shini.cashier");
-        change(shini.cashierToken(), "Cashier-Pass-1", "Cashier-New-Pass-2")
+        change(shini.cashierToken(), CASHIER_PASSWORD, "Cashier-New-Pass-2")
                 .andExpect(status().isForbidden());
         assertThat(hash("shini.cashier")).isEqualTo(before);
         assertThat(meStatus(shini.cashierToken())).isEqualTo(200);  // still logged in
-        assertThat(loginStatus("shini.cashier", "Cashier-Pass-1")).isEqualTo(200);
+        assertThat(loginStatus("shini.cashier", CASHIER_PASSWORD)).isEqualTo(200);
         assertThat(loginStatus("shini.cashier", "Cashier-New-Pass-2")).isEqualTo(401);
         // Not logged in at all → 401.
         mvc.perform(put("/api/auth/me/password").contentType(MediaType.APPLICATION_JSON)
@@ -123,7 +123,7 @@ class ChangePasswordApiTest extends ApiTestBase {
                         .header("Authorization", bearer(neshan.cashierToken()))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"password\":\"Taken-Over-1\"}"))
                 .andExpect(status().isForbidden());
-        assertThat(loginStatus("neshan.cashier", "Cashier-Pass-1")).isEqualTo(200);
+        assertThat(loginStatus("neshan.cashier", CASHIER_PASSWORD)).isEqualTo(200);
     }
 
     @Test
@@ -178,7 +178,7 @@ class ChangePasswordApiTest extends ApiTestBase {
                                 .formatted(cashierId)))
                 .andExpect(status().isNoContent());
         assertThat(hash("shini.cashier")).isEqualTo(cashierBefore);
-        assertThat(loginStatus("shini.cashier", "Cashier-Pass-1")).isEqualTo(200);
+        assertThat(loginStatus("shini.cashier", CASHIER_PASSWORD)).isEqualTo(200);
         assertThat(loginStatus("shini.admin", "New-Admin-Pass-2")).isEqualTo(200);
     }
 }

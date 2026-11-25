@@ -984,6 +984,24 @@ class AppStrings {
         'الدخول كمدير لمتجرك. غيّرها الآن: الإعدادات > الملف الشخصي > تغيير كلمة المرور. '
         'لا يغيّرها ClixSell تلقائياً.',
   );
+  // Cashiers screen (Store Admin): Cashiers that still use a demo password.
+  String cashierDemoWarningTitle(int n) => _t(
+    n == 1
+        ? '1 cashier uses a publicly known demo password'
+        : '$n cashiers use a publicly known demo password',
+    n == 1
+        ? 'كاشير واحد يستخدم كلمة مرور تجريبية معروفة للجميع'
+        : 'عدد الكاشيرات الذين يستخدمون كلمة مرور تجريبية معروفة للجميع: $n',
+  );
+  String get cashierDemoWarningBody => _t(
+    'Anyone who knows the demo password can sign in as these cashiers. '
+        'Use "Reset password" for each marked cashier and give them a new password. '
+        'ClixSell does not change it for you.',
+    'يستطيع أي شخص يعرف كلمة المرور التجريبية الدخول بحسابات هؤلاء الكاشيرات. '
+        'استخدم "إعادة تعيين كلمة المرور" لكل كاشير معلَّم وأعطه كلمة مرور جديدة. '
+        'لا يغيّرها ClixSell تلقائياً.',
+  );
+  String get demoPasswordTag => _t('Demo password', 'كلمة مرور تجريبية');
   String get demoPasswordWarningAction =>
       _t('Change password now', 'غيّر كلمة المرور الآن');
   String get passwordChanged => _t(

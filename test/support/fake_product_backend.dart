@@ -675,10 +675,22 @@ class FakeProductBackend {
           if (u['storeId'] == storeId && u['role'] == role) _userJson(u),
       ]);
     }
+    if (rest == '/security-status' && method == 'GET' && role == 'CASHIER') {
+      // Like the server: this store's Cashiers that still use a demo password.
+      return _json(200, {
+        'cashierIdsWithDemoPassword': [
+          for (final u in users)
+            if (u['storeId'] == storeId &&
+                u['role'] == 'CASHIER' &&
+                _isDemo(_passwords[u['username'] as String] ?? ''))
+              u['userId'],
+        ],
+      });
+    }
     if (rest == '' && method == 'POST') {
       final b = body();
       final username = (b['username'] as String? ?? '').trim().toLowerCase();
-      if (role == 'STORE_ADMIN' && _isDemo(b['password'] as String? ?? '')) {
+      if (_isDemo(b['password'] as String? ?? '')) {
         return _error(400, 'VALIDATION_FAILED', 'Some fields are not valid', {
           'password': demoPasswordMessage,
         });
@@ -712,7 +724,7 @@ class FakeProductBackend {
         if (u['status'] == 'INACTIVE') _sessions.removeWhere((_, v) => v == id);
       } else {
         final next = body()['password'] as String;
-        if (role == 'STORE_ADMIN' && _isDemo(next)) {
+        if (_isDemo(next)) {
           return _error(400, 'VALIDATION_FAILED', 'Some fields are not valid', {
             'password': demoPasswordMessage,
           });

@@ -74,13 +74,31 @@ abstract class StaffAccountsApi {
   Future<AppUser> setActive(int userId, bool active);
 
   Future<AppUser> resetPassword(int userId, String password);
+
+  /// Ids of the accounts on this screen that still use a published demo
+  /// password (only for the Store Admin's Cashiers; read only, ids only).
+  /// Screens without such a check report none and send no request.
+  Future<Set<int>> demoPasswordUserIds() async => const {};
 }
 
-class _StaffApi implements StaffAccountsApi {
-  _StaffApi(this._http, this._basePath);
+class _StaffApi extends StaffAccountsApi {
+  _StaffApi(this._http, this._basePath, {String? securityStatusPath})
+    : _securityStatusPath = securityStatusPath;
 
   final ApiHttp _http;
   final String _basePath;
+  final String? _securityStatusPath;
+
+  @override
+  Future<Set<int>> demoPasswordUserIds() async {
+    final path = _securityStatusPath;
+    if (path == null) return const {};
+    final body = await _http.get(path) as Map<String, dynamic>;
+    return {
+      for (final id in body['cashierIdsWithDemoPassword'] as List<dynamic>)
+        (id as num).toInt(),
+    };
+  }
 
   @override
   Future<List<AppUser>> list() async =>
@@ -122,6 +140,10 @@ class _StaffApi implements StaffAccountsApi {
 StaffAccountsApi storeAdminsApi(ApiHttp http, int storeId) =>
     _StaffApi(http, '/admin/stores/$storeId/admins');
 
-/// Store Admin: /api/store/cashiers (own store, decided by the backend)
-StaffAccountsApi cashiersApi(ApiHttp http) =>
-    _StaffApi(http, '/store/cashiers');
+/// Store Admin: /api/store/cashiers (own store, decided by the backend), and
+/// GET /api/store/cashiers/security-status for Cashiers with a demo password.
+StaffAccountsApi cashiersApi(ApiHttp http) => _StaffApi(
+  http,
+  '/store/cashiers',
+  securityStatusPath: '/store/cashiers/security-status',
+);

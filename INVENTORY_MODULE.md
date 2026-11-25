@@ -420,6 +420,13 @@ Requires **Java JDK 17+** (backend) and **Flutter 3.38+** (frontend). Maven and 
      System Admin resetting a Store Admin). A Store Admin that still uses one is warned about
      their own account in Settings (`GET /api/auth/me/security-status`, System Admin and Store
      Admin, own account only; Cashiers 403).
+   * Cashiers: a published demo password is refused when a Cashier is created or reset (outside
+     the demo profile). The Store Admin's Cashiers screen marks this store's Cashiers that still
+     use one (`GET /api/store/cashiers/security-status`: Store Admin only, own store, ids only;
+     Cashier and System Admin 403) and the existing "Reset password" fixes them. Nothing is reset
+     or locked automatically.
+   * `clixsell.demo-data=true` without the `demo` profile is refused at start, before the database
+     is opened (no file, no migration, no demo store or user).
    * A first start whose admin settings are missing or invalid (empty, too short, a demo password)
      stops before the database file is created: no file, no tables, no migration.
    * Folders, empty or non-SQLite files, read-only files or folders are refused with a message.

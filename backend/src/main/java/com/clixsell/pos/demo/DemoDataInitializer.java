@@ -1,6 +1,7 @@
 package com.clixsell.pos.demo;
 
 import com.clixsell.pos.auth.CurrentUser;
+import com.clixsell.pos.config.DemoDataConfigurationGuard;
 import com.clixsell.pos.product.Product;
 import com.clixsell.pos.product.ProductRequest;
 import com.clixsell.pos.product.ProductService;
@@ -40,8 +41,9 @@ import java.util.Map;
  * database). Everything is added through the normal services, so the same
  * business rules apply (BCrypt passwords, product validation, stock checks,
  * totals with discount and tax, QR receipts, stock going down and back up).
- * <p>Off by default. Enabled only by the {@code demo} profile
- * ({@code application-demo.properties}) or {@code clixsell.demo-data=true}.
+ * <p>Off by default. Enabled only by the {@code demo} profile ({@code application-demo.properties}).
+ * {@code clixsell.demo-data=true} without that profile's demo-password exception is refused at start
+ * ({@link DemoDataConfigurationGuard}) before anything is created.
  * A database that already has stores is never changed.
  */
 @Component
@@ -63,9 +65,14 @@ public class DemoDataInitializer implements ApplicationRunner {
     private final ReturnService returns;
 
     public DemoDataInitializer(@Value("${clixsell.demo-data:false}") boolean enabled,
+                               @Value("${clixsell.system-admin.allow-demo-password:false}") boolean allowDemoPasswords,
                                StoreRepository storeRepository, UserRepository userRepository,
                                StoreService stores, StaffService staff, ProductService products,
                                SaleService sales, ReturnService returns) {
+        // Second line of defence (the start is normally stopped earlier by DemoDataConfigurationGuard):
+        // never begin creating demo data that the password rules would refuse half-way.
+        String problem = DemoDataConfigurationGuard.problem(enabled, allowDemoPasswords);
+        if (problem != null) throw new IllegalStateException(problem);
         this.enabled = enabled;
         this.storeRepository = storeRepository;
         this.userRepository = userRepository;
