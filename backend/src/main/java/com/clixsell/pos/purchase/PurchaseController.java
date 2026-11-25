@@ -5,6 +5,9 @@ import com.clixsell.pos.common.ValidationException;
 import com.clixsell.pos.purchase.PurchaseResponses.Candidates;
 import com.clixsell.pos.purchase.PurchaseResponses.EventView;
 import com.clixsell.pos.purchase.PurchaseResponses.OrderPage;
+import com.clixsell.pos.purchase.PurchaseResponses.ClientActionResult;
+import com.clixsell.pos.purchase.PurchaseResponses.MessageInfo;
+import com.clixsell.pos.purchase.PurchaseResponses.MessagePreview;
 import com.clixsell.pos.purchase.PurchaseResponses.OrderView;
 import com.clixsell.pos.purchase.PurchaseResponses.Recommendations;
 import com.clixsell.pos.user.Role;
@@ -26,32 +29,53 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Purchasing, Phase 2 — Store Admin of the store only (SecurityConfig, and checked again here).
+ * Purchasing — Store Admin of the store only (SecurityConfig, and checked again here).
  *
  * <pre>
  * GET  /api/purchase-recommendations              Guardian recommendations (Guardian ON; OFF → guardianEnabled false)
  * GET  /api/purchase-candidates?supplierId=…      a supplier's products for a manual order (facts only)
  * POST /api/purchase-orders                       create (PENDING_APPROVAL); idempotent by clientRequestId
- * GET  /api/purchase-orders?status=…&amp;page=&amp;size=  list
+ * GET  /api/purchase-orders?status=…&amp;q=…&amp;page=&amp;size=  list; q searches all the store's orders
+ *                                                  (order number or saved supplier name, ≤ 80 characters)
+ * GET  /api/purchase-orders?…&amp;overdue=true      only overdue orders (all the store's orders, then paged)
+ * GET  /api/purchase-orders/summary               exact counts by status + overdue (D1; one SELECT, no paging)
  * GET  /api/purchase-orders/{id}                  details
  * GET  /api/purchase-orders/{id}/events           history
  * PUT  /api/purchase-orders/{id}                  edit (PENDING_APPROVAL)        {version, note, items, acknowledgedCautions}
  * POST /api/purchase-orders/{id}/approve          PENDING_APPROVAL → APPROVED     {version}
  * POST /api/purchase-orders/{id}/reject           PENDING_APPROVAL → REJECTED     {version, reason}
- * POST /api/purchase-orders/{id}/cancel           PENDING_APPROVAL / APPROVED → CANCELED  {version, reason}
+ * POST /api/purchase-orders/{id}/cancel           → CANCELED  {version, reason, contactStatus?, confirmNotSent?,
+ *                                                  acknowledgeSupplierNotNotified?} (rules: PurchaseOrderService.cancel)
+ *
+ * Supplier communication (Phase 3, PurchaseCommunicationService):
+ * GET  /api/purchase-orders/{id}/message-preview?language=ar|en   APPROVED: the message now (nothing saved)
+ * POST /api/purchase-orders/{id}/message                  APPROVED → MESSAGE_GENERATED  {version, language, previewToken}
+ * GET  /api/purchase-orders/{id}/message                  the stored message (read only when final)
+ * POST /api/purchase-orders/{id}/message-copied           client report (event only)     {clientActionId}
+ * POST /api/purchase-orders/{id}/whatsapp-open-requested  confirmed request → wa.me link  {clientActionId, confirmed:true}
+ * POST /api/purchase-orders/{id}/whatsapp-open-result     client report of that request   {clientActionId, result}
+ * POST /api/purchase-orders/{id}/mark-sent                MESSAGE_GENERATED → SENT        {version, confirmSentInWhatsapp:true}
+ * POST /api/purchase-orders/{id}/supplier-confirmation    SENT → CONFIRMED                {version, confirmSupplierConfirmed:true, note?}
+ * POST /api/purchase-orders/{id}/close                    CONFIRMED → CLOSED              {version, confirmNoReceiving:true}
+ * POST /api/purchase-orders/{id}/supplier-cancellation-recorded  CANCELED (event only)  {confirmSupplierAccepted:true, channel, note}
  * </pre>
- * Bodies are strict; the store is always the logged-in user's. There is no supplier message,
- * sending, confirmation, closing or receiving in this version.
+ * Bodies are strict; the store is always the logged-in user's. Nothing here sends a message,
+ * contacts a supplier, records receiving or changes stock.
  */
 @RestController
 public class PurchaseController {
 
+    private static final int MAX_QUERY = 80;
+
     private final PurchaseRecommendationService recommendations;
     private final PurchaseOrderService orders;
+    private final PurchaseCommunicationService communication;
 
-    public PurchaseController(PurchaseRecommendationService recommendations, PurchaseOrderService orders) {
+    public PurchaseController(PurchaseRecommendationService recommendations, PurchaseOrderService orders,
+                              PurchaseCommunicationService communication) {
         this.recommendations = recommendations;
         this.orders = orders;
+        this.communication = communication;
     }
 
     private static long storeOf(CurrentUser user) {
@@ -91,9 +115,19 @@ public class PurchaseController {
     @GetMapping("/api/purchase-orders")
     public OrderPage list(@AuthenticationPrincipal CurrentUser user,
                           @RequestParam(name = "status", required = false) List<String> status,
+                          @RequestParam(name = "q", required = false) String q,
+                          @RequestParam(name = "overdue", required = false) String overdue,
                           @RequestParam(name = "page", defaultValue = "0") int page,
                           @RequestParam(name = "size", defaultValue = "20") int size) {
         storeOf(user);
+        String query = q == null ? null : q.strip();
+        if (query != null && query.isEmpty()) query = null;
+        if (query != null && query.codePointCount(0, query.length()) > MAX_QUERY) {
+            throw new ValidationException(Map.of("q", "Search text must be " + MAX_QUERY + " characters or fewer"));
+        }
+        if (query != null && query.chars().anyMatch(Character::isISOControl)) {
+            throw new ValidationException(Map.of("q", "Search text must not contain control characters"));
+        }
         List<PurchaseOrderStatus> wanted = new ArrayList<>();
         if (status != null) {
             for (String s : status) {
@@ -107,7 +141,17 @@ public class PurchaseController {
                 }
             }
         }
-        return orders.list(user, wanted, page, size);
+        boolean overdueOnly;
+        if (overdue == null || overdue.isBlank() || overdue.equals("false")) overdueOnly = false;
+        else if (overdue.equals("true")) overdueOnly = true;
+        else throw new ValidationException(Map.of("overdue", "overdue must be true or false"));
+        return orders.list(user, wanted, query, overdueOnly, page, size);
+    }
+
+    @GetMapping("/api/purchase-orders/summary")
+    public PurchaseResponses.OrdersSummary summary(@AuthenticationPrincipal CurrentUser user) {
+        storeOf(user);
+        return orders.summary(user);
     }
 
     @GetMapping("/api/purchase-orders/{id}")
@@ -147,6 +191,77 @@ public class PurchaseController {
     public OrderView cancel(@AuthenticationPrincipal CurrentUser user, @PathVariable long id,
                             @RequestBody Map<String, Object> body) {
         storeOf(user);
-        return orders.cancel(user, id, PurchaseRequests.reason(body));
+        return orders.cancel(user, id, PurchaseRequests.cancel(body));
+    }
+
+    // ── supplier communication ──────────────────────────────────────────────────────
+
+    @GetMapping("/api/purchase-orders/{id}/message-preview")
+    public MessagePreview preview(@AuthenticationPrincipal CurrentUser user, @PathVariable long id,
+                                  @RequestParam(name = "language", required = false) String language) {
+        storeOf(user);
+        return communication.preview(user, id, PurchaseRequests.language(language));
+    }
+
+    @PostMapping("/api/purchase-orders/{id}/message")
+    public OrderView generate(@AuthenticationPrincipal CurrentUser user, @PathVariable long id,
+                              @RequestBody Map<String, Object> body) {
+        storeOf(user);
+        return communication.generate(user, id, PurchaseRequests.generate(body));
+    }
+
+    @GetMapping("/api/purchase-orders/{id}/message")
+    public MessageInfo message(@AuthenticationPrincipal CurrentUser user, @PathVariable long id) {
+        storeOf(user);
+        return communication.message(user, id);
+    }
+
+    @PostMapping("/api/purchase-orders/{id}/message-copied")
+    public ClientActionResult copied(@AuthenticationPrincipal CurrentUser user, @PathVariable long id,
+                                     @RequestBody Map<String, Object> body) {
+        storeOf(user);
+        return communication.copied(user, id, PurchaseRequests.copied(body));
+    }
+
+    @PostMapping("/api/purchase-orders/{id}/whatsapp-open-requested")
+    public ClientActionResult openRequested(@AuthenticationPrincipal CurrentUser user, @PathVariable long id,
+                                            @RequestBody Map<String, Object> body) {
+        storeOf(user);
+        return communication.openRequested(user, id, PurchaseRequests.openRequested(body));
+    }
+
+    @PostMapping("/api/purchase-orders/{id}/whatsapp-open-result")
+    public ClientActionResult openResult(@AuthenticationPrincipal CurrentUser user, @PathVariable long id,
+                                         @RequestBody Map<String, Object> body) {
+        storeOf(user);
+        return communication.openReported(user, id, PurchaseRequests.openResult(body));
+    }
+
+    @PostMapping("/api/purchase-orders/{id}/mark-sent")
+    public OrderView markSent(@AuthenticationPrincipal CurrentUser user, @PathVariable long id,
+                              @RequestBody Map<String, Object> body) {
+        storeOf(user);
+        return communication.markSent(user, id, PurchaseRequests.markSent(body));
+    }
+
+    @PostMapping("/api/purchase-orders/{id}/supplier-confirmation")
+    public OrderView supplierConfirmation(@AuthenticationPrincipal CurrentUser user, @PathVariable long id,
+                                          @RequestBody Map<String, Object> body) {
+        storeOf(user);
+        return communication.supplierConfirmation(user, id, PurchaseRequests.confirmation(body));
+    }
+
+    @PostMapping("/api/purchase-orders/{id}/close")
+    public OrderView close(@AuthenticationPrincipal CurrentUser user, @PathVariable long id,
+                           @RequestBody Map<String, Object> body) {
+        storeOf(user);
+        return communication.close(user, id, PurchaseRequests.close(body));
+    }
+
+    @PostMapping("/api/purchase-orders/{id}/supplier-cancellation-recorded")
+    public OrderView supplierCancellation(@AuthenticationPrincipal CurrentUser user, @PathVariable long id,
+                                          @RequestBody Map<String, Object> body) {
+        storeOf(user);
+        return communication.supplierCancellation(user, id, PurchaseRequests.supplierCancellation(body));
     }
 }

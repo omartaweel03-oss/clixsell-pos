@@ -28,10 +28,10 @@ Chromium), Linux / macOS / Git Bash. The scripts call the API on `localhost:8080
 ## Run
 ```bash
 cd backend && ./mvnw -q package -DskipTests && cd ..
-flutter build web --no-web-resources-cdn
+tools/e2e/build_web.sh   # flutter build web + a fingerprint of the sources in build/web/.clixsell_web_stamp
 CLIXSELL_E2E=1 tools/e2e/run.sh backend/target/clixsell-backend-1.0.0.jar build/web
 ```
-One suite only: add its name, e.g. `... build/web reports`. Suites: api settings reports guardian full pos supplier purchase.
+One suite only: add its name, e.g. `... build/web reports`. Suites: api settings reports guardian full pos supplier purchase communication purchase-ui.
 
 | Suite | Scripts | What it checks |
 |---|---|---|
@@ -43,5 +43,14 @@ One suite only: add its name, e.g. `... build/web reports`. Suites: api settings
 | `pos` | `real_pos.js` | real-world use in the browser: a Store Admin adds 12 products (form, search, barcode search, details, edit, duplicate barcode, delete + Undo, stock alerts); a Cashier sells with search, barcode + Enter, +/−, remove, discount, all 4 payment methods, receipt + QR, suspend / resume / cancel, full and partial returns, insufficient stock, Arabic; stock, tax, profit, reports and Guardian checked against independent calculations; a second store and direct API attacks |
 | `supplier` | `supplier_check.py`, `supplier_ui.js` | Supplier Management (Purchase Orders Phase 1): V6 in place, roles, list = database per store, add / validate / duplicate / strict body, edit, isolation between two stores, inactive supplier refused on the product form but still sold in the POS, reactivation only from Suppliers; then the Flutter Suppliers screen in English and Arabic (add with validation, search, edit, details, deactivate / activate), Neshan isolation, cashier menu, 1024×768 |
 | `purchase` | `purchase_check.py` | Purchase Orders Phase 2 through the real backend (no purchase screens exist yet): roles, Guardian OFF / ON, every Shini product's recommendation compared with an independent recalculation from the raw sales and returns rows, manual candidates, Guardian and manual orders with snapshots, idempotent retry and key reuse, edit, approve, reject, cancel with history and reservations, a closed order needing acknowledgment, two-store isolation, real concurrent requests, and no change to products, sales, returns or the report summary |
+| `communication` | `communication_check.py` | Purchase Orders Phase 3 (supplier communication) through the real backend, no screens and no WhatsApp opened: message preview rebuilt from the order's snapshot rows, no cost or internal note, length = SQLite `length()`, generation once with the previewed text and number, number change warning, copy / opening request / client result (never verified, de-duplicated), mark-sent → supplier confirmation → close (no stock change), cancel with NOT_SENT / UNKNOWN / SENT and after contact, the four reorder warnings (NOT_SENT always warns — S3), the exact summary endpoint, supplier acceptance once, a too-long order refused at approval and fixed by editing, English, isolation and roles on all 10 endpoints, concurrent requests, and no change to products, sales, returns, reports, store rows or the activity log |
+| `purchase-ui` | `purchase_ui.js` | Purchase Orders Phase 4 in the real Flutter web app on the real backend: suggestions → order (double click = one order) → edit → approve → preview Arabic / English → prepare → two-step WhatsApp opening (the link is captured; every non-local request is aborted in the browser, only Google font files load) → copy (clipboard = stored text) → I have sent → supplier confirmation → close → history; manual order and rejection; a lost answer on create (locked form, one order); two managers (stale version); a real SQLite lock; cancel with UNKNOWN / NOT_SENT after a copy / after contact; a second manager's "not sent" cancellation racing "I have sent" (S3 warning, never recorded as sent, reorder needs the acknowledgment); exact summary cards, the overdue filter and the sidebar badge after login and after an action (D1 / D2); warnings and supplier acceptance; missing and changed WhatsApp number; too-long message; Guardian off; Arabic; 1024×768; Neshan and cashier; money and stock unchanged |
 
 Helpers: `dbq.py` (read-only queries of the disposable database), `safety.py`, `safety.js`.
+
+### Fresh web build (P4-D8)
+
+`run.sh` refuses the browser suites (reports, guardian, full, pos, supplier, purchase-ui) unless
+`build/web/.clixsell_web_stamp` holds the fingerprint of the CURRENT sources (`web_stamp.sh`: the
+content of every file in lib/ and web/ plus pubspec.yaml / pubspec.lock — not file times). Build with
+`tools/e2e/build_web.sh`, which writes that stamp, the commit and the Flutter version.

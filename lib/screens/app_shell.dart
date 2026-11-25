@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../l10n/app_strings.dart';
 import '../models/app_user.dart';
 import '../models/product.dart';
+import '../models/purchase_order.dart';
 import '../services/report_api_client.dart';
 import '../services/admin_api_clients.dart';
 import '../services/api_http.dart';
@@ -28,6 +29,12 @@ import 'inventory/product_details_page.dart';
 import 'inventory/product_form_page.dart';
 import 'inventory/stock_alerts_page.dart';
 import 'purchasing/suppliers_page.dart';
+import 'purchasing/purchase_order_details_page.dart';
+import 'purchasing/purchase_order_form_page.dart';
+import 'purchasing/purchase_orders_page.dart';
+import 'purchasing/purchase_recommendations_page.dart';
+import '../l10n/purchase_order_strings.dart';
+import '../services/purchase_api_client.dart';
 import '../services/supplier_api_client.dart';
 
 /// Main layout after login: navy sidebar + content area.
@@ -72,7 +79,39 @@ class _AppShellState extends State<AppShell> {
   void initState() {
     super.initState();
     if (_choosingHome) _chooseHome();
+    // D2: the overdue badge is right from the first authenticated screen.
+    _refreshPurchaseOverdue();
   }
+
+  int _overdueRequest = 0;
+
+  /// D2: reads the exact overdue count (GET /purchase-orders/summary) for
+  /// the sidebar badge — after login, when entering the Purchasing section,
+  /// and after an order action. Never on a timer. A failed read keeps the
+  /// last known value; an older answer never overwrites a newer one.
+  Future<void> _refreshPurchaseOverdue() async {
+    if (widget.user.role != UserRole.storeAdmin) return;
+    final req = ++_overdueRequest;
+    try {
+      final n = (await PurchaseApiClient(widget.http).summary()).overdue;
+      if (!mounted || req != _overdueRequest) return;
+      _setPurchaseOverdue(n);
+    } catch (_) {
+      // keep the last value; the next action or visit tries again
+    }
+  }
+
+  void _setPurchaseOverdue(int n) {
+    if (mounted && n != _purchaseOverdue) setState(() => _purchaseOverdue = n);
+  }
+
+  static const _purchasing = {
+    SidebarDestination.suppliers,
+    SidebarDestination.purchaseOrders,
+    SidebarDestination.purchaseRecommendations,
+    SidebarDestination.purchaseOrderDetails,
+    SidebarDestination.purchaseOrderForm,
+  };
 
   /// Decision D9: Guardian Mode is the Store Admin's first page when it is ON.
   /// If the status cannot be read, Products stays the first page.
@@ -107,10 +146,55 @@ class _AppShellState extends State<AppShell> {
       _destination == SidebarDestination.addProduct ||
       _destination == SidebarDestination.editProduct;
 
-  /// Asks before leaving a product form with unsaved changes.
+  // ── Purchase Orders (Phase 4) ──
+  /// The order open in the details page (or being edited).
+  int? _purchaseOrderId;
+  String? _purchaseOrderNumber;
+
+  /// The form: a new order (optionally from suggestions) or editing [_purchaseEditId].
+  PurchaseOrderSeed? _purchaseSeed;
+  int? _purchaseEditId;
+  SidebarDestination _purchaseFormReturn = SidebarDestination.purchaseOrders;
+  GlobalKey<PurchaseOrderFormPageState> _purchaseFormKey =
+      GlobalKey<PurchaseOrderFormPageState>();
+  int _purchaseOverdue = 0;
+
+  /// Asks before leaving a product or purchase-order form with unsaved changes.
   Future<bool> _canLeaveForm() async {
+    if (_destination == SidebarDestination.purchaseOrderForm) {
+      return await _purchaseFormKey.currentState?.confirmLeave() ?? true;
+    }
     if (!_onForm) return true;
     return await _formKey.currentState?.confirmLeave() ?? true;
+  }
+
+  Future<void> _openPurchaseOrder(int orderId) async {
+    if (!await _canLeaveForm() || !mounted) return;
+    setState(() {
+      _choosingHome = false;
+      _purchaseOrderId = orderId;
+      _purchaseOrderNumber = null;
+      _purchaseEditId = null;
+      _purchaseSeed = null;
+      _destination = SidebarDestination.purchaseOrderDetails;
+    });
+  }
+
+  /// Opens the order form: new (manual or from suggestions) or editing.
+  Future<void> _openPurchaseForm({PurchaseOrderSeed? seed, int? editId}) async {
+    if (!await _canLeaveForm() || !mounted) return;
+    setState(() {
+      _choosingHome = false;
+      _purchaseFormReturn = editId != null
+          ? SidebarDestination.purchaseOrderDetails
+          : (_destination == SidebarDestination.purchaseRecommendations
+                ? SidebarDestination.purchaseRecommendations
+                : SidebarDestination.purchaseOrders);
+      _purchaseSeed = seed;
+      _purchaseEditId = editId;
+      _purchaseFormKey = GlobalKey<PurchaseOrderFormPageState>();
+      _destination = SidebarDestination.purchaseOrderForm;
+    });
   }
 
   /// Central navigation method used by the sidebar and page buttons.
@@ -120,6 +204,14 @@ class _AppShellState extends State<AppShell> {
   }) async {
     // A role can only open its own pages.
     if (!widget.user.role.destinations.contains(destination)) return;
+    if (destination == SidebarDestination.purchaseOrderDetails &&
+        _purchaseOrderId == null) {
+      return;
+    }
+    if (destination == SidebarDestination.purchaseOrderForm &&
+        _destination != SidebarDestination.purchaseOrderForm) {
+      return; // the form opens only through "New" / "Edit"
+    }
 
     bool forProduct(SidebarDestination d) =>
         d == SidebarDestination.editProduct ||
@@ -148,6 +240,11 @@ class _AppShellState extends State<AppShell> {
             _ => SidebarDestination.products,
           };
         }
+      }
+      if (_purchasing.contains(destination) &&
+          !_purchasing.contains(_destination) &&
+          destination != SidebarDestination.purchaseOrders) {
+        _refreshPurchaseOverdue(); // D2: returning to the Purchasing section
       }
       _destination = destination;
       if (forProduct(destination)) {
@@ -231,12 +328,76 @@ class _AppShellState extends State<AppShell> {
       );
     }
     switch (_destination) {
+      case SidebarDestination.purchaseOrders:
+        return PurchaseOrdersPage(
+          key: const ValueKey('purchaseOrders'),
+          api: PurchaseApiClient(widget.http),
+          onOpenOrder: _openPurchaseOrder,
+          onNewOrder: () => _openPurchaseForm(),
+          onOverdueCount: (n) {
+            _overdueRequest++; // this fresh value wins over older reads
+            _setPurchaseOverdue(n);
+          },
+        );
+      case SidebarDestination.purchaseRecommendations:
+        return PurchaseRecommendationsPage(
+          key: const ValueKey('purchaseRecommendations'),
+          api: PurchaseApiClient(widget.http),
+          onCreateOrder: (seed) => _openPurchaseForm(seed: seed),
+          onManualOrder: () => _openPurchaseForm(),
+          onOpenOrder: _openPurchaseOrder,
+        );
+      case SidebarDestination.purchaseOrderDetails:
+        return PurchaseOrderDetailsPage(
+          key: ValueKey('purchaseOrder-$_purchaseOrderId'),
+          api: _NumberTrackingPurchaseApi(PurchaseApiClient(widget.http), (n) {
+            if (mounted && _purchaseOrderNumber != n) {
+              setState(() => _purchaseOrderNumber = n);
+            }
+          }, onOrderChanged: _refreshPurchaseOverdue),
+          orderId: _purchaseOrderId!,
+          currentUserId: widget.user.userId,
+          onBack: () => _navigate(SidebarDestination.purchaseOrders),
+          onEdit: (id) => _openPurchaseForm(editId: id),
+          onOpenSuppliers: () => _navigate(SidebarDestination.suppliers),
+        );
+      case SidebarDestination.purchaseOrderForm:
+        return PurchaseOrderFormPage(
+          key: _purchaseFormKey,
+          api: _ShellPurchaseApi(
+            widget.http,
+            onOrderChanged: _refreshPurchaseOverdue,
+          ),
+          supplierApi: SupplierApiClient(widget.http),
+          seed: _purchaseSeed,
+          editOrderId: _purchaseEditId,
+          currentUserId: widget.user.userId,
+          onSaved: (order) {
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+            setState(() {
+              _purchaseOrderId = order.orderId;
+              _purchaseOrderNumber = order.orderNumber;
+              _purchaseSeed = null;
+              _purchaseEditId = null;
+              _destination = SidebarDestination.purchaseOrderDetails;
+            });
+          },
+          onCancel: () => _navigate(
+            _purchaseFormReturn == SidebarDestination.purchaseOrderDetails &&
+                    _purchaseOrderId == null
+                ? SidebarDestination.purchaseOrders
+                : _purchaseFormReturn,
+          ),
+        );
       case SidebarDestination.guardian:
         return GuardianPage(
           key: const ValueKey('guardian'),
           api: GuardianApiClient(widget.http),
           salesApi: SalesApiClient(widget.http),
           onOpenStockAlerts: () => _navigate(SidebarDestination.stockAlerts),
+          // Figure 3.1 "Create purchase order" (D21 / P4-D3): the real flow.
+          onCreatePurchaseOrder: () =>
+              _navigate(SidebarDestination.purchaseRecommendations),
           onOpenProduct: (id) async {
             // Read it again: it may have been added or deleted since login.
             final product = await store?.refreshProduct('$id');
@@ -273,6 +434,7 @@ class _AppShellState extends State<AppShell> {
         return StockAlertsPage(
           key: const ValueKey('stockAlerts'),
           api: ReportApiClient(widget.http),
+          onCreatePurchaseOrder: () => _openPurchaseForm(),
           onUpdateStock: (id) {
             final product = store?.findById(id);
             if (product != null) {
@@ -385,7 +547,9 @@ class _AppShellState extends State<AppShell> {
       layoutBuilder: (current, previous) =>
           Stack(fit: StackFit.expand, children: [...previous, ?current]),
       child: KeyedSubtree(
-        key: ValueKey('$_destination-$_editingProductId-$_choosingHome'),
+        key: ValueKey(
+          '$_destination-$_editingProductId-$_purchaseOrderId-$_purchaseEditId-$_choosingHome',
+        ),
         child: _buildContent(store),
       ),
     );
@@ -403,6 +567,18 @@ class _AppShellState extends State<AppShell> {
           alertCount: store == null
               ? 0
               : store.stats.lowStock + store.stats.outOfStock,
+          purchaseOverdue: _purchaseOverdue,
+          purchaseOrderCaption: _purchaseOrderId == null
+              ? null
+              : (_purchaseOrderNumber ?? '#$_purchaseOrderId'),
+          purchaseFormCaption:
+              _destination == SidebarDestination.purchaseOrderForm
+              ? (_purchaseEditId != null
+                    ? PurchaseOrderStrings.of(context).editOrderTitle(
+                        _purchaseOrderNumber ?? '#$_purchaseEditId',
+                      )
+                    : PurchaseOrderStrings.of(context).newOrderTitle)
+              : null,
           onSelect: (d) => _navigate(d),
           onToggleLanguage: widget.onToggleLanguage,
           onLogout: _logout,
@@ -451,4 +627,112 @@ class _MissingProduct extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Passes calls through and reports the order number of the loaded order
+/// (for the sidebar caption).
+class _NumberTrackingPurchaseApi extends _ShellPurchaseApi {
+  _NumberTrackingPurchaseApi(
+    PurchaseApiClient inner,
+    this.onNumber, {
+    required super.onOrderChanged,
+  }) : super(inner.http);
+
+  final ValueChanged<String> onNumber;
+
+  @override
+  Future<PurchaseOrder> get(int orderId) async {
+    final o = await super.get(orderId);
+    onNumber(o.orderNumber);
+    return o;
+  }
+}
+
+/// D2: passes calls through and, after every request that may change an
+/// order (successful, refused or with an unknown outcome), asks the shell to
+/// refresh the overdue badge once. No timer, no polling.
+class _ShellPurchaseApi extends PurchaseApiClient {
+  _ShellPurchaseApi(super.http, {required this.onOrderChanged});
+
+  final VoidCallback onOrderChanged;
+
+  Future<T> _after<T>(Future<T> f) async {
+    try {
+      return await f;
+    } finally {
+      onOrderChanged();
+    }
+  }
+
+  @override
+  Future<PurchaseOrder> create(CreateOrderRequest request) =>
+      _after(super.create(request));
+
+  @override
+  Future<PurchaseOrder> edit(
+    int orderId, {
+    required int version,
+    required String? note,
+    required List<OrderLine> lines,
+    required List<CautionAck> acks,
+  }) => _after(
+    super.edit(orderId, version: version, note: note, lines: lines, acks: acks),
+  );
+
+  @override
+  Future<PurchaseOrder> approve(int orderId, int version) =>
+      _after(super.approve(orderId, version));
+
+  @override
+  Future<PurchaseOrder> reject(int orderId, int version, String reason) =>
+      _after(super.reject(orderId, version, reason));
+
+  @override
+  Future<PurchaseOrder> cancel(
+    int orderId, {
+    required int version,
+    required String reason,
+    ContactStatus? contactStatus,
+    bool? confirmNotSent,
+    bool? acknowledgeSupplierNotNotified,
+  }) => _after(
+    super.cancel(
+      orderId,
+      version: version,
+      reason: reason,
+      contactStatus: contactStatus,
+      confirmNotSent: confirmNotSent,
+      acknowledgeSupplierNotNotified: acknowledgeSupplierNotNotified,
+    ),
+  );
+
+  @override
+  Future<PurchaseOrder> generateMessage(
+    int orderId, {
+    required int version,
+    required String language,
+    required String previewToken,
+  }) => _after(
+    super.generateMessage(
+      orderId,
+      version: version,
+      language: language,
+      previewToken: previewToken,
+    ),
+  );
+
+  @override
+  Future<PurchaseOrder> markSent(int orderId, int version) =>
+      _after(super.markSent(orderId, version));
+
+  @override
+  Future<PurchaseOrder> supplierConfirmation(
+    int orderId,
+    int version,
+    String? note,
+  ) => _after(super.supplierConfirmation(orderId, version, note));
+
+  @override
+  Future<PurchaseOrder> close(int orderId, int version) =>
+      _after(super.close(orderId, version));
 }

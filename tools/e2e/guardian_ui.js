@@ -87,7 +87,12 @@ const get = (path, token) => JSON.parse(execSync(`curl -s localhost:8080/api${pa
   await p.screenshot({ path: `${S}/g02_en_full.png` });
   t = await txt(p);
   ok('recommendations: order before stockout lists G Water', t.includes('Order stock before it runs out'));
-  ok('purchase request visibly unavailable', t.includes('Purchase requests are not available yet'));
+  // Purchase Orders Phase 4 (P4-D3): "Create purchase request" opens the real Reorder Suggestions.
+  ok('purchase request available (no "not available yet" text)', t.includes('Create purchase request') && !t.includes('Purchase requests are not available yet'));
+  await click(p, 'Create purchase request', 2500);
+  ok('Create purchase request opens the real Reorder Suggestions page', (await txt(p)).includes('Reorder Suggestions'));
+  await p.getByRole('button', { name: 'Guardian Mode' }).first().click(); await p.waitForTimeout(3000);
+  t = await txt(p);
   ok('store map by category + cashier area', t.includes('Live store map') && t.includes('Cashier area'));
   ok('products most at risk: G Water with expected date', t.includes('G Water 1.5L') && t.includes(D.atRiskProducts.find(x => x.name === 'G Water 1.5L').expectedStockout));
   ok('profit protection: cheese safe discount 5%', t.includes('G Cheese 250g') && t.includes('Safe discount: up to 5%'));

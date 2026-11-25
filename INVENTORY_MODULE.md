@@ -283,20 +283,21 @@ API: `GET/POST /api/suppliers`, `GET/PUT /api/suppliers/{id}`, `PUT /api/supplie
 ## Purchase Orders – Phase 2: recommendations, candidates and order workflow (backend only)
 
 Backend API only (the purchase screens are Phase 4). Store Admin only; the store always comes from the
-login; another store's data answers 404. No supplier messages, sending, confirmation, closing or
-receiving yet (Phase 3): APPROVED is the last state reachable before cancel / reject.
+login; another store's data answers 404. The supplier communication that follows APPROVED is Phase 3
+(next section); receiving goods is not part of the purchasing feature yet.
 
 | Endpoint | What it does |
 |---|---|
 | `GET /api/purchase-recommendations` | Guardian Mode ON: products to buy, by supplier, with the rule and numbers. OFF: `guardianEnabled: false`, nothing calculated |
 | `GET /api/purchase-candidates?supplierId=` | Manual order: the supplier's products with stock facts, open orders and cautions — never a suggested quantity |
 | `POST /api/purchase-orders` | Create (`PENDING_APPROVAL`). Body: `clientRequestId` (UUID), `supplierId`, `source` (MANUAL / GUARDIAN), `note`, `items[{productId, quantity}]`, `acknowledgedCautions[{productId, orderId}]` |
-| `GET /api/purchase-orders?status=&page=&size=` | List |
+| `GET /api/purchase-orders?status=&q=&overdue=&page=&size=` | List (`overdue=true`: only overdue orders, the server's rule over all orders, then paged) |
+| `GET /api/purchase-orders/summary` | Exact counts by status, open and overdue — one SQL statement, no paging, no limit |
 | `GET /api/purchase-orders/{id}` / `…/events` | Details (items, allowed actions, approval blockers) / history |
 | `PUT /api/purchase-orders/{id}` | Edit while PENDING_APPROVAL: `{version, note, items, acknowledgedCautions}` (full replacement) |
 | `POST /api/purchase-orders/{id}/approve` | `{version}` → APPROVED |
 | `POST /api/purchase-orders/{id}/reject` | `{version, reason}` → REJECTED (reservations released) |
-| `POST /api/purchase-orders/{id}/cancel` | `{version, reason}` from PENDING_APPROVAL or APPROVED → CANCELED (released) |
+| `POST /api/purchase-orders/{id}/cancel` | `{version, reason}` from PENDING_APPROVAL or APPROVED → CANCELED (released); after the message see Phase 3 |
 
 **Rules (D5):** candidates are out of stock, at / below the minimum, or running out within 7 days.
 URGENT = within 3 days (exactly Guardian's alert), SOON = 4–7 days. With enough history (≥ 7 observed
@@ -314,7 +315,92 @@ transaction with exactly one history event; "database is locked" is retried and 
 supplier contact (30 days, no recorded supplier acceptance) need an explicit acknowledgment
 (`REORDER_CAUTION_ACK_REQUIRED`). Purchasing never changes stock, prices, costs, sales, returns or reports.
 
-## Run (Windows / macOS)
+## Purchase Orders – Phase 3: supplier communication (backend only, UR-M15 / SR28 / SR29)
+
+Backend API only (the screens and the WhatsApp button are Phase 4). **ClixSell never sends a message
+and never contacts WhatsApp or a supplier.** It prepares the message, returns a `wa.me` link after the
+manager confirms, and stores what the app reports (copy, opening) and what the manager records by hand
+(sent, supplier confirmed, closed, supplier accepted a cancellation). Nothing is ever "delivered" or
+"verified". Store Admin only; another store's order answers 404.
+
+| Endpoint | What it does |
+|---|---|
+| `GET …/{id}/message-preview?language=ar\|en` | APPROVED: the message now (Arabic by default), number, length report, `previewToken`. Nothing saved |
+| `POST …/{id}/message` | `{version, language, previewToken}` APPROVED → MESSAGE_GENERATED: text, number, language stored once (V6 T7) |
+| `GET …/{id}/message` | The stored message (never a link; read only when the order is final) |
+| `POST …/{id}/message-copied` | `{clientActionId}` app report, event only, `verified: false` |
+| `POST …/{id}/whatsapp-open-requested` | `{clientActionId, confirmed: true}` event (phase REQUESTED) + `wa.me/<stored number>?text=<stored message>`; MESSAGE_GENERATED / SENT / CONFIRMED only |
+| `POST …/{id}/whatsapp-open-result` | `{clientActionId, result: OPENED\|FAILED}` app report for that request (phase CLIENT_REPORTED) |
+| `POST …/{id}/mark-sent` | `{version, confirmSentInWhatsapp: true}` MESSAGE_GENERATED → SENT (the manager's statement) |
+| `POST …/{id}/supplier-confirmation` | `{version, confirmSupplierConfirmed: true, note?}` SENT → CONFIRMED |
+| `POST …/{id}/close` | `{version, confirmNoReceiving: true}` CONFIRMED → CLOSED: not receiving, stock unchanged, reservations released |
+| `POST …/{id}/cancel` | MESSAGE_GENERATED: `contactStatus` required — `NOT_SENT` (+ `confirmNotSent: true`), `UNKNOWN`, or `SENT` → 409 `RECORD_SENT_FIRST`. SENT / CONFIRMED: `acknowledgeSupplierNotNotified: true` (canceled after contact) |
+| `POST …/{id}/supplier-cancellation-recorded` | `{confirmSupplierAccepted: true, channel, note 3–300}` once, for a canceled order whose supplier may have it |
+
+**Message:** order number, store, date, supplier, and per line the snapshot name, barcode and quantity.
+Never a price, cost, total, internal note or score. Length is counted in Unicode code points exactly as
+SQLite's `length()` (V6 limit 2000; emoji = 1, not 2); names are cleaned (control and bidi characters
+removed) and isolated for Arabic. Nothing is ever cut: an order whose message cannot fit in any language
+is not approved (`MESSAGE_TOO_LONG`, with the longest lines and how many to remove); split it while
+pending. Order details show `messageLength` per language before approval.
+
+**Warnings (30 days, until a supplier acceptance is recorded):** CANCELED_AFTER_CONTACT, CONTACT_UNKNOWN
+(canceled with UNKNOWN), DECLARED_NOT_SENT (every NOT_SENT cancellation after the message was prepared —
+final corrections S3: "not sent" is a declaration that cannot be verified, e.g. another manager may have
+sent it at the same moment); RECENTLY_CLOSED
+14 days. **Overdue (display):** message prepared ≥ 1 day, sent ≥ 3 days, confirmed ≥ 14 days.
+**Concurrency:** every Phase 3 change takes SQLite's write lock first with an UPDATE that matches no
+row (changes nothing), then checks and writes; client reports are de-duplicated by `clientActionId`
+and the supplier acceptance by order. This uniqueness is enforced by the service, not by a database
+constraint.
+
+## Purchase Orders – Phase 4: the Flutter screens (Store Admin)
+
+Sidebar section **Purchasing** (Store Admin only): Purchase Orders, Reorder Suggestions, Suppliers.
+
+* **Purchase Orders** — the store's orders: summary cards (waiting for approval, to contact the
+  supplier, waiting for the supplier, overdue) with the server's exact counts
+  (`GET /api/purchase-orders/summary`), status filter, the overdue card as a server filter
+  (`overdue=true`), search by order number or supplier (`GET /api/purchase-orders?q=`, searched by the
+  server over all orders), paging. The sidebar badge (overdue orders) is read after login, after an
+  order action and when the manager returns to Purchasing — never on a timer.
+* **Conflicts (final corrections D3)** — a stale request (409 `ORDER_CHANGED` / `INVALID_TRANSITION`)
+  carries `details.lastChange` (type, user, time). The app says whose change won — possibly the
+  manager's own earlier request that finished after a timeout — reloads, and never repeats anything.
+  After an unknown outcome that is not saved yet, "Check again" only reloads; a new attempt is safe
+  because the version check refuses a second change.
+* **Reorder Suggestions** — Guardian's rule-based suggestions by supplier (not an AI model):
+  stock / minimum, urgency, the server's suggested quantity and how it was calculated, open orders,
+  inactive suppliers, recent-order warnings. Select products of one supplier → order form. With
+  Guardian Mode off nothing is suggested; a manual order is always possible.
+* **New / Edit order** — supplier, products (the supplier's own), quantities, internal note (never in
+  the supplier message), recent-order warnings to acknowledge. One `clientRequestId` per form: if
+  the answer to "Save" is lost, the form locks and "Check and retry" resends exactly the same request
+  (the server returns the existing order), so a second order is never created by accident.
+* **Order details** — progress (Figure 3.20), the actions the backend allows (`allowedActions`),
+  approval blockers, message length, the supplier message, the communication record and the history.
+
+**WhatsApp (never sent by ClixSell):** "Prepare Message" (Arabic by default, English on request) →
+"Open WhatsApp": step 1 shows the saved number and the full message and needs the manager's
+confirmation (records the request, the server returns the `wa.me` link); step 2 "Open WhatsApp Now"
+opens it with `url_launcher` (a separate click, so browsers do not block the window). Opening or
+copying never records sending: the manager presses **"I Have Sent This Message"** and confirms. After
+the order was sent, opening again is only under **More**, with a duplicate warning and an extra
+confirmation. If the supplier's number changed after the message was prepared, the saved number is
+shown, a warning explains it, and opening needs one more confirmation; the link is never redirected.
+
+**Cancel after the message:** the manager must answer "Did you send this message?" — *No, I am sure*
+(with a confirmation), *I do not know* (canceled without recording any sending; 30-day warning), or
+*Yes* (leads to recording the sending first). After sending: acknowledgment that ClixSell does not
+notify the supplier. **Errors:** a changed order is reloaded and the manager decides again (never
+replayed automatically); when the outcome is unknown (timeout, busy database) the stored state is
+checked before anything is said.
+
+Dependency: `url_launcher` 6.3.2 (with `url_launcher_android` pinned to 6.3.30, which still supports
+Flutter 3.38). On the web it hands the link to the browser and always reports success (a popup
+blocker cannot be detected), so the app's "opened" record means only "handed to the browser".
+
+
 Requires **Java JDK 17+** (backend) and **Flutter 3.38+** (frontend). Maven and SQLite need no installation.
 
 1. First login: **`sysadmin` / `Admin12345`** (created on the first start, when the

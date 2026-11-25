@@ -57,7 +57,11 @@ const sup = name => dbJson(`select supplier_id, name, phone, whatsapp_number, ad
     ok('EN: page title and Add Supplier button', t.includes('Add Supplier') && t.includes('Suppliers'));
     ok(`EN: all ${dbNames.length} Shini suppliers from the DB are listed`, dbNames.every(n => t.includes(n)), dbNames.filter(n => !t.includes(n)).join(', '));
     ok('EN: no Neshan-only supplier shown', !t.includes('E2E Fresh Farms') || one("select count(*) from suppliers where store_id=1 and name='E2E Fresh Farms'") === 1);
-    ok('EN: nothing about purchase orders or sending in Phase 1', !/Purchase Order|Send/i.test(t));
+    // Since Purchase Orders Phase 4 the sidebar has a Purchasing section; the Suppliers page itself
+    // still offers no purchase order and no sending.
+    const sidebarOnly = t.replace(/\bPurchase Orders\b/g, '').replace(/PURCHASING/g, '');
+    ok('EN: Suppliers page has no purchase-order or send action (Purchase Orders only in the sidebar)',
+      !/Purchase Order|Send/i.test(sidebarOnly) && (await p.getByRole('button', { name: /send/i }).count()) === 0);
     await shot(p, 'en_suppliers_list');
   });
 

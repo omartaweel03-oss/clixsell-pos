@@ -39,6 +39,20 @@ public final class PurchaseRequests {
     private static final Set<String> ACK_FIELDS = Set.of("productId", "orderId");
     private static final Set<String> VERSION_FIELDS = Set.of("version");
     private static final Set<String> REASON_FIELDS = Set.of("version", "reason");
+    private static final Set<String> CANCEL_FIELDS = Set.of("version", "reason", "contactStatus", "confirmNotSent",
+            "acknowledgeSupplierNotNotified");
+    private static final Set<String> GENERATE_FIELDS = Set.of("version", "language", "previewToken");
+    private static final Set<String> COPY_FIELDS = Set.of("clientActionId");
+    private static final Set<String> OPEN_FIELDS = Set.of("clientActionId", "confirmed");
+    private static final Set<String> OPEN_RESULT_FIELDS = Set.of("clientActionId", "result");
+    private static final Set<String> MARK_SENT_FIELDS = Set.of("version", "confirmSentInWhatsapp");
+    private static final Set<String> CONFIRMATION_FIELDS = Set.of("version", "confirmSupplierConfirmed", "note");
+    private static final Set<String> CLOSE_FIELDS = Set.of("version", "confirmNoReceiving");
+    private static final Set<String> SUPPLIER_CANCEL_FIELDS = Set.of("confirmSupplierAccepted", "channel", "note");
+    public static final int MAX_CONFIRMATION_NOTE = 300;
+    public static final Set<String> CONTACT_STATUSES = Set.of("NOT_SENT", "UNKNOWN", "SENT");
+    public static final Set<String> OPEN_RESULTS = Set.of("OPENED", "FAILED");
+    public static final Set<String> CHANNELS = Set.of("PHONE", "WHATSAPP", "IN_PERSON", "OTHER");
     private static final Pattern UUID = Pattern.compile("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
     private static final JsonMapper JSON = JsonMapper.builder().build();
 
@@ -56,6 +70,27 @@ public final class PurchaseRequests {
     }
 
     public record Reason(int version, String reason) {
+    }
+
+    /**
+     * Cancel. contactStatus / confirmNotSent are for an order whose message was generated
+     * (MESSAGE_GENERATED); acknowledgeSupplierNotNotified for an order the manager recorded as
+     * sent (SENT / CONFIRMED). Which ones are required is decided by the order's state.
+     */
+    public record Cancel(int version, String reason, String contactStatus, Boolean confirmNotSent,
+                         Boolean acknowledgeSupplierNotNotified) {
+    }
+
+    public record Generate(int version, String language, String previewToken) {
+    }
+
+    public record OpenResult(String clientActionId, String result) {
+    }
+
+    public record Confirmation(int version, String note) {
+    }
+
+    public record SupplierCancellation(String channel, String note) {
     }
 
     private PurchaseRequests() {
@@ -104,20 +139,168 @@ public final class PurchaseRequests {
         StrictJson.requireOnly(body, REASON_FIELDS);
         Map<String, String> errors = new LinkedHashMap<>();
         Integer v = version(body, errors);
-        String reason = null;
-        Object raw = body.get("reason");
+        String reason = reasonText(body, "reason", errors);
+        if (!errors.isEmpty()) throw new ValidationException(errors);
+        return new Reason(v, reason);
+    }
+
+    public static Cancel cancel(Map<String, Object> body) {
+        StrictJson.requireOnly(body, CANCEL_FIELDS);
+        Map<String, String> errors = new LinkedHashMap<>();
+        Integer v = version(body, errors);
+        String reason = reasonText(body, "reason", errors);
+        String contact = StrictJson.text(body, "contactStatus");
+        if (contact != null && !CONTACT_STATUSES.contains(contact)) {
+            errors.put("contactStatus", "Must be NOT_SENT, UNKNOWN or SENT");
+        }
+        Boolean notSent = optionalBoolean(body, "confirmNotSent", errors);
+        Boolean ack = optionalBoolean(body, "acknowledgeSupplierNotNotified", errors);
+        if (!errors.isEmpty()) throw new ValidationException(errors);
+        return new Cancel(v, reason, contact, notSent, ack);
+    }
+
+    public static String language(String raw) {
+        String l = raw == null || raw.isBlank() ? "ar" : raw.trim();
+        if (!WhatsappMessageBuilder.LANGUAGES.contains(l)) throw new ValidationException(Map.of("language", "Must be ar or en"));
+        return l;
+    }
+
+    public static Generate generate(Map<String, Object> body) {
+        StrictJson.requireOnly(body, GENERATE_FIELDS);
+        Map<String, String> errors = new LinkedHashMap<>();
+        Integer v = version(body, errors);
+        String language = StrictJson.text(body, "language");
+        if (language == null || !WhatsappMessageBuilder.LANGUAGES.contains(language)) {
+            errors.put("language", "Must be ar or en (the language of the preview you saw)");
+        }
+        String token = StrictJson.text(body, "previewToken");
+        if (token == null || !token.matches("[0-9a-f]{64}")) {
+            errors.put("previewToken", "The previewToken of the message preview you saw is required");
+        }
+        if (!errors.isEmpty()) throw new ValidationException(errors);
+        return new Generate(v, language, token);
+    }
+
+    /** {clientActionId} — a copy reported by the client. */
+    public static String copied(Map<String, Object> body) {
+        StrictJson.requireOnly(body, COPY_FIELDS);
+        Map<String, String> errors = new LinkedHashMap<>();
+        String id = actionId(body, errors);
+        if (!errors.isEmpty()) throw new ValidationException(errors);
+        return id;
+    }
+
+    /** {clientActionId, confirmed: true} — the manager confirmed the number and message first. */
+    public static String openRequested(Map<String, Object> body) {
+        StrictJson.requireOnly(body, OPEN_FIELDS);
+        Map<String, String> errors = new LinkedHashMap<>();
+        String id = actionId(body, errors);
+        mustBeTrue(body, "confirmed", "Confirm the supplier number and the message before opening WhatsApp", errors);
+        if (!errors.isEmpty()) throw new ValidationException(errors);
+        return id;
+    }
+
+    public static OpenResult openResult(Map<String, Object> body) {
+        StrictJson.requireOnly(body, OPEN_RESULT_FIELDS);
+        Map<String, String> errors = new LinkedHashMap<>();
+        String id = actionId(body, errors);
+        String result = StrictJson.text(body, "result");
+        if (result == null || !OPEN_RESULTS.contains(result)) errors.put("result", "Must be OPENED or FAILED");
+        if (!errors.isEmpty()) throw new ValidationException(errors);
+        return new OpenResult(id, result);
+    }
+
+    public static int markSent(Map<String, Object> body) {
+        StrictJson.requireOnly(body, MARK_SENT_FIELDS);
+        Map<String, String> errors = new LinkedHashMap<>();
+        Integer v = version(body, errors);
+        mustBeTrue(body, "confirmSentInWhatsapp", "Confirm that you sent the message to the supplier yourself", errors);
+        if (!errors.isEmpty()) throw new ValidationException(errors);
+        return v;
+    }
+
+    public static Confirmation confirmation(Map<String, Object> body) {
+        StrictJson.requireOnly(body, CONFIRMATION_FIELDS);
+        Map<String, String> errors = new LinkedHashMap<>();
+        Integer v = version(body, errors);
+        mustBeTrue(body, "confirmSupplierConfirmed", "Confirm that the supplier confirmed this order", errors);
+        String note = null;
+        Object raw = body.get("note");
         if (raw != null && !(raw instanceof String)) {
-            errors.put("reason", "Must be text");
+            errors.put("note", "Must be text");
         } else {
-            reason = trim((String) raw);
-            if (reason == null || reason.length() < MIN_REASON) {
-                errors.put("reason", "A reason of at least " + MIN_REASON + " characters is required");
-            } else if (reason.length() > MAX_REASON) {
-                errors.put("reason", "The reason must be " + MAX_REASON + " characters or fewer");
+            note = trim((String) raw);
+            if (note != null && length(note) > MAX_CONFIRMATION_NOTE) {
+                errors.put("note", "The note must be " + MAX_CONFIRMATION_NOTE + " characters or fewer");
             }
         }
         if (!errors.isEmpty()) throw new ValidationException(errors);
-        return new Reason(v, reason);
+        return new Confirmation(v, note);
+    }
+
+    public static int close(Map<String, Object> body) {
+        StrictJson.requireOnly(body, CLOSE_FIELDS);
+        Map<String, String> errors = new LinkedHashMap<>();
+        Integer v = version(body, errors);
+        mustBeTrue(body, "confirmNoReceiving",
+                "Confirm that closing does not record receiving: stock does not change", errors);
+        if (!errors.isEmpty()) throw new ValidationException(errors);
+        return v;
+    }
+
+    public static SupplierCancellation supplierCancellation(Map<String, Object> body) {
+        StrictJson.requireOnly(body, SUPPLIER_CANCEL_FIELDS);
+        Map<String, String> errors = new LinkedHashMap<>();
+        mustBeTrue(body, "confirmSupplierAccepted", "Confirm that the supplier accepted the cancellation", errors);
+        String channel = StrictJson.text(body, "channel");
+        if (channel == null || !CHANNELS.contains(channel)) errors.put("channel", "Must be PHONE, WHATSAPP, IN_PERSON or OTHER");
+        String note = reasonText(body, "note", errors);
+        if (!errors.isEmpty()) throw new ValidationException(errors);
+        return new SupplierCancellation(channel, note);
+    }
+
+    /** A required reason-like text: 3..300 characters (code points, as the database counts) after trimming. */
+    private static String reasonText(Map<String, Object> body, String field, Map<String, String> errors) {
+        Object raw = body.get(field);
+        if (raw != null && !(raw instanceof String)) {
+            errors.put(field, "Must be text");
+            return null;
+        }
+        String text = trim((String) raw);
+        if (text == null || length(text) < MIN_REASON) {
+            errors.put(field, "A " + field + " of at least " + MIN_REASON + " characters is required");
+        } else if (length(text) > MAX_REASON) {
+            errors.put(field, "The " + field + " must be " + MAX_REASON + " characters or fewer");
+        }
+        return text;
+    }
+
+    /** Characters as SQLite's length() counts them (Unicode code points). */
+    static int length(String s) {
+        return s.codePointCount(0, s.length());
+    }
+
+    private static String actionId(Map<String, Object> body, Map<String, String> errors) {
+        String id = StrictJson.text(body, "clientActionId");
+        if (id == null || !UUID.matcher(id).matches()) {
+            errors.put("clientActionId", "A UUID is required (generated once per action; resend the same one when retrying)");
+            return null;
+        }
+        return id.toLowerCase();
+    }
+
+    private static void mustBeTrue(Map<String, Object> body, String field, String message, Map<String, String> errors) {
+        if (!Boolean.TRUE.equals(body.get(field))) errors.put(field, message + " (" + field + ": true)");
+    }
+
+    private static Boolean optionalBoolean(Map<String, Object> body, String field, Map<String, String> errors) {
+        Object v = body.get(field);
+        if (v == null) return null;
+        if (!(v instanceof Boolean b)) {
+            errors.put(field, "Must be true or false");
+            return null;
+        }
+        return b;
     }
 
     /**
@@ -169,7 +352,7 @@ public final class PurchaseRequests {
             return null;
         }
         String note = trim(s);
-        if (note != null && note.length() > MAX_NOTE) errors.put("note", "The note must be " + MAX_NOTE + " characters or fewer");
+        if (note != null && length(note) > MAX_NOTE) errors.put("note", "The note must be " + MAX_NOTE + " characters or fewer");
         return note;
     }
 
