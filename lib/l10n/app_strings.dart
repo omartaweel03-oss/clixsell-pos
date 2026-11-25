@@ -947,6 +947,35 @@ class AppStrings {
     'Choose a password different from the current one',
     'اختر كلمة مرور مختلفة عن الحالية',
   );
+
+  /// The server refused a publicly documented demo password (outside the demo
+  /// profile). [demoPasswordServerMessage] is the exact server text.
+  static const demoPasswordServerMessage =
+      'This is a publicly documented demo password. Choose your own password.';
+  String get passwordIsDemo => _t(
+    'This is a publicly known demo password. Choose your own password.',
+    'هذه كلمة مرور تجريبية منشورة ومعروفة للجميع. اختر كلمة مرور خاصة بك.',
+  );
+
+  /// A password field error from the server, in the UI language when known.
+  String passwordServerError(String message) =>
+      message == demoPasswordServerMessage ? passwordIsDemo : message;
+
+  // Security warning (System Admin, Settings)
+  String get demoPasswordWarningTitle => _t(
+    'Security warning: you are using the demo password',
+    'تحذير أمني: أنت تستخدم كلمة المرور التجريبية',
+  );
+  String get demoPasswordWarningBody => _t(
+    'Your System Admin account still uses a publicly documented demo password, '
+        'so anyone who knows it can sign in as System Admin. Change it now: '
+        'Settings → Profile → Change password. ClixSell does not change it for you.',
+    'حساب مدير النظام ما زال يستخدم كلمة مرور تجريبية منشورة، فيستطيع أي شخص يعرفها '
+        'الدخول كمدير نظام. غيّرها الآن: الإعدادات ← الملف الشخصي ← تغيير كلمة المرور. '
+        'لا يغيّرها ClixSell تلقائياً.',
+  );
+  String get demoPasswordWarningAction =>
+      _t('Change password now', 'غيّر كلمة المرور الآن');
   String get passwordChanged => _t(
     'Password changed. Your other sessions were logged out.',
     'تم تغيير كلمة المرور. تم تسجيل الخروج من جلساتك الأخرى.',

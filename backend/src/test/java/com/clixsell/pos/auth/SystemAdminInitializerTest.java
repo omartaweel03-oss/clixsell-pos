@@ -26,15 +26,18 @@ class SystemAdminInitializerTest {
 
     private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder(4);
 
-    /** A minimal in-memory UserRepository: only the two methods the initializer uses. */
+    /** A minimal in-memory UserRepository: only the methods the initializer uses. */
     private static final class Users {
         boolean adminExists;
+        final List<User> existing = new ArrayList<>();
         final List<User> saved = new ArrayList<>();
 
         UserRepository proxy() {
             return (UserRepository) Proxy.newProxyInstance(UserRepository.class.getClassLoader(),
                     new Class<?>[]{UserRepository.class}, (p, m, a) -> switch (m.getName()) {
-                        case "existsByRole" -> adminExists || (a[0] == Role.SYSTEM_ADMIN && !saved.isEmpty());
+                        case "existsByRole" -> adminExists || !existing.isEmpty()
+                                || (a[0] == Role.SYSTEM_ADMIN && !saved.isEmpty());
+                        case "findAllByRole" -> List.copyOf(existing);
                         case "save" -> {
                             saved.add((User) a[0]);
                             yield a[0];
@@ -48,7 +51,7 @@ class SystemAdminInitializerTest {
     }
 
     private SystemAdminInitializer init(Users u, String password, boolean demo) {
-        return new SystemAdminInitializer(u.proxy(), encoder, "sysadmin", password, demo);
+        return new SystemAdminInitializer(u.proxy(), encoder, new DemoPasswords(encoder, demo), "sysadmin", password);
     }
 
     @Test
@@ -106,5 +109,46 @@ class SystemAdminInitializerTest {
         Users u = new Users();
         assertThatThrownBy(() -> init(u, "short", false).run(null)).isInstanceOf(RuntimeException.class);
         assertThat(u.saved).isEmpty();
+    }
+
+    // ── existing databases: a System Admin that still uses a published demo password ─────────────
+
+    private Users existingAdmin(String password) {
+        Users u = new Users();
+        u.existing.add(User.create(Role.SYSTEM_ADMIN, null, "sysadmin", "System Administrator", encoder.encode(password)));
+        return u;
+    }
+
+    @Test
+    void aLegacyDemoPasswordIsReportedClearlyButNeverChangedOrLogged(CapturedOutput out) {
+        Users u = existingAdmin("Admin12345");
+        String hashBefore = u.existing.get(0).getPasswordHash();
+        init(u, null, false).run(null); // starts normally: the administrator is not locked out
+        assertThat(u.saved).as("no account created or saved").isEmpty();
+        assertThat(u.existing.get(0).getPasswordHash()).as("password not changed").isEqualTo(hashBefore);
+        assertThat(out.getAll())
+                .contains("SECURITY WARNING", "System Admin 'sysadmin'", "Settings -> Profile -> Change password")
+                .doesNotContain("Admin12345").doesNotContain(hashBefore);
+    }
+
+    @Test
+    void everyPublishedSpellingIsRecognised(CapturedOutput out) {
+        for (String demo : DemoPasswords.PUBLISHED_SPELLINGS) {
+            init(existingAdmin(demo), null, false).run(null);
+        }
+        assertThat(out.getAll().split("SECURITY WARNING", -1)).hasSize(DemoPasswords.PUBLISHED_SPELLINGS.size() + 1);
+    }
+
+    @Test
+    void aSecureExistingPasswordGivesNoWarning(CapturedOutput out) {
+        init(existingAdmin("Owner-Chosen-Pass-42"), null, false).run(null);
+        assertThat(out.getAll()).doesNotContain("SECURITY WARNING").doesNotContain("demo password");
+    }
+
+    @Test
+    void theDemoProfileOnlyNotesTheIntendedDemoPassword(CapturedOutput out) {
+        init(existingAdmin("Admin12345"), null, true).run(null);
+        assertThat(out.getAll()).doesNotContain("SECURITY WARNING").contains("Demo profile: System Admin 'sysadmin'")
+                .doesNotContain("Admin12345");
     }
 }

@@ -71,6 +71,23 @@ class FakeProductBackend {
   /// Database backups made through Settings → Backup (newest first).
   final List<Map<String, dynamic>> backups = [];
 
+  /// Like the real server: true in the demo profile (the default here, as in the
+  /// E2E runs), where published demo passwords are allowed and not flagged.
+  /// Set to false to behave like a real installation.
+  bool demoProfile = true;
+
+  /// The published demo passwords (compared ignoring case, like the server).
+  static const publicDemoPasswords = {
+    'admin12345',
+    'admin-pass-1',
+    'admin-pass-2',
+    'cashier-pass-1',
+  };
+  static const demoPasswordMessage =
+      'This is a publicly documented demo password. Choose your own password.';
+  bool _isDemo(String p) =>
+      !demoProfile && publicDemoPasswords.contains(p.toLowerCase());
+
   /// The password a user would log in with now (to check password changes).
   String? passwordOf(String username) => _passwords[username];
 
@@ -328,6 +345,14 @@ class FakeProductBackend {
     // System Admin area
     if (path.startsWith('/api/admin/')) {
       if (role != 'SYSTEM_ADMIN') return _forbidden();
+      if (path == '/api/admin/security-status' && method == 'GET') {
+        // The real server checks the stored hash; the fake knows the password.
+        return _json(200, {
+          'demoPasswordInUse': _isDemo(
+            _passwords[user['username'] as String] ?? '',
+          ),
+        });
+      }
       return _admin(path, method, body);
     }
     // Store Admin: cashiers of own store
@@ -483,6 +508,8 @@ class FakeProductBackend {
         'newPassword':
             'The new password must be different from the current one',
       };
+    } else if (_isDemo(next)) {
+      problem = {'newPassword': demoPasswordMessage};
     }
     if (problem != null) {
       return _error(
@@ -669,7 +696,13 @@ class FakeProductBackend {
         u['status'] = body()['status'];
         if (u['status'] == 'INACTIVE') _sessions.removeWhere((_, v) => v == id);
       } else {
-        _passwords[u['username'] as String] = body()['password'] as String;
+        final next = body()['password'] as String;
+        if (role == 'STORE_ADMIN' && _isDemo(next)) {
+          return _error(400, 'VALIDATION_FAILED', 'Some fields are not valid', {
+            'password': demoPasswordMessage,
+          });
+        }
+        _passwords[u['username'] as String] = next;
         _sessions.removeWhere((_, v) => v == id);
       }
       return _json(200, _userJson(u));

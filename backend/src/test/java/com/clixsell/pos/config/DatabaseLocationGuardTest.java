@@ -4,6 +4,7 @@ import com.clixsell.pos.config.DatabaseLocationGuard.Decision;
 import com.clixsell.pos.config.DatabaseLocationGuard.UnsafeDatabaseLocationException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.mock.env.MockEnvironment;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -133,5 +134,79 @@ class DatabaseLocationGuardTest {
         assertThat(DatabaseLocationGuard.check("jdbc:sqlite:file:" + db + "?foreign_keys=on&busy_timeout=3000", false)
                 .path()).isEqualTo(db.toAbsolutePath().normalize());
         assertThat(Arrays.asList(DatabaseLocationGuard.check(url(db), false).isNew())).containsExactly(false);
+    }
+
+    // ── first start: the System Admin settings are checked BEFORE a new database exists ──────────
+
+    private void start(Path db, String password, boolean allowDemo, String username) {
+        MockEnvironment env = new MockEnvironment()
+                .withProperty("spring.datasource.url", url(db))
+                .withProperty("clixsell.db.create-if-missing", "true")
+                .withProperty("clixsell.system-admin.allow-demo-password", String.valueOf(allowDemo));
+        if (password != null) env.setProperty("clixsell.system-admin.password", password);
+        if (username != null) env.setProperty("clixsell.system-admin.username", username);
+        DatabaseLocationGuard guard = new DatabaseLocationGuard();
+        guard.setEnvironment(env);
+        guard.postProcessBeanFactory(null);
+    }
+
+    private void assertNothingCreated(Path db) throws Exception {
+        try (var files = Files.list(dir)) {
+            assertThat(files.toList()).as("no database, journal or WAL file").isEmpty();
+        }
+        assertThat(db).doesNotExist();
+    }
+
+    @Test
+    void aNewDatabaseWithoutAnAdminPasswordIsRefusedBeforeAnythingIsCreated() throws Exception {
+        Path db = dir.resolve("new.db");
+        for (String missing : new String[]{null, "", "  "}) {
+            assertThatThrownBy(() -> start(db, missing, false, null))
+                    .isInstanceOf(DatabaseLocationGuard.UnsafeDatabaseLocationException.class)
+                    .hasMessageContaining("CLIXSELL_ADMIN_PASSWORD").hasMessageContaining("Nothing was created");
+        }
+        assertNothingCreated(db);
+    }
+
+    @Test
+    void aNewDatabaseWithADemoPasswordIsRefusedBeforeAnythingIsCreated() throws Exception {
+        Path db = dir.resolve("new.db");
+        for (String demo : new String[]{"Admin12345", "admin12345", "ADMIN-PASS-1", "Cashier-Pass-1"}) {
+            assertThatThrownBy(() -> start(db, demo, false, null))
+                    .isInstanceOf(DatabaseLocationGuard.UnsafeDatabaseLocationException.class)
+                    .hasMessageContaining("publicly documented demo password")
+                    .hasMessageContaining("Nothing was created")
+                    .satisfies(e -> assertThat(e.getMessage()).doesNotContain(demo));
+        }
+        assertNothingCreated(db);
+    }
+
+    @Test
+    void aNewDatabaseWithAnInvalidPasswordOrUsernameIsRefusedBeforeAnythingIsCreated() throws Exception {
+        Path db = dir.resolve("new.db");
+        assertThatThrownBy(() -> start(db, "short1", false, null))
+                .isInstanceOf(DatabaseLocationGuard.UnsafeDatabaseLocationException.class)
+                .hasMessageContaining("at least").hasMessageContaining("Nothing was created")
+                .satisfies(e -> assertThat(e.getMessage()).doesNotContain("short1"));
+        assertThatThrownBy(() -> start(db, "Good-Owner-Pass-7", false, "x"))
+                .isInstanceOf(DatabaseLocationGuard.UnsafeDatabaseLocationException.class)
+                .hasMessageContaining("Username");
+        assertNothingCreated(db);
+    }
+
+    @Test
+    void validFirstStartSettingsAndTheDemoProfilePassTheGuard() throws Exception {
+        Path db = dir.resolve("new.db");
+        start(db, "Good-Owner-Pass-7", false, null);   // the database itself is created later by SQLite
+        start(db, "Admin12345", true, null);           // demo profile: the demo password is intended
+        assertNothingCreated(db);                       // the guard itself never writes anything
+    }
+
+    @Test
+    void anExistingDatabaseNeedsNoAdminSettingsAtAll() throws Exception {
+        Path db = realDatabase(dir.resolve("existing.db"));
+        start(db, null, false, null);
+        start(db, "Admin12345", false, null); // not used: a database that exists is never initialised again
+        assertThat(db).exists();
     }
 }

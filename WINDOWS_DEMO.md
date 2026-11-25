@@ -122,7 +122,8 @@ Do not close the backend by killing the window while a sale is being saved.
 | `The folder for the database does not exist` | Typo or missing folder. | Create the folder (step 2) or fix the path. |
 | `must be readable and writable` / `folder … must be writable` | File or folder is read-only (e.g. on a USB stick or in `Program Files`). | Use a folder in your user profile, e.g. `C:\ClixSell\data`. |
 | `No System Admin exists yet and no initial password is configured` | New database without `CLIXSELL_ADMIN_PASSWORD`. | Use 3b. |
-| `publicly documented demo password` | You used a demo password outside the demo profile. | Choose your own password. |
+| `publicly documented demo password` | You used a demo password outside the demo profile. | Choose your own password. No database was created. |
+| `SECURITY WARNING: System Admin '…' still uses a publicly documented demo password` (log) / red warning in Settings | An older installation still has the demo password. Nothing was changed. | Take a backup, sign in as `sysadmin`, Settings → Profile → Change password. |
 | `Port 8080 was already in use` | Another program uses the port. | Close the other ClixSell window, or check `Get-NetTCPConnection -LocalPort 8080`. You can run the backend on another port with `--server.port=8081`, then start the app with `--dart-define=API_BASE_URL=http://localhost:8081/api`. |
 | The app says the server cannot be reached | Backend not started or still starting. | Wait for `Started ClixsellBackendApplication` in terminal 1. |
 | Arabic shows as boxes | Should not happen with the bundled fonts. | Rebuild the app (`flutter build web --no-web-resources-cdn`) from the current sources. |

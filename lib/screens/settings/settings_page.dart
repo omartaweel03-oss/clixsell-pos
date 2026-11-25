@@ -80,12 +80,13 @@ class SettingsPage extends StatelessWidget {
       }
     }
 
-    Future<void> profile() async {
+    Future<bool> profile() async {
       final changed = await showDialog<bool>(
         context: context,
         builder: (_) => ProfileDialog(user: user, api: api),
       );
       if (changed == true) toast(s.passwordChanged);
+      return changed == true;
     }
 
     Future<void> language() async {
@@ -177,12 +178,115 @@ class SettingsPage extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _Header(title: s.navSettings, description: s.settingsDescription),
+              if (_isSystemAdmin)
+                _DemoPasswordWarning(api: api, onChangePassword: profile),
               const SizedBox(height: AppSpacing.xxl),
               _CardGrid(cards: cards),
             ],
           ),
         );
       },
+    );
+  }
+}
+
+/// System Admin only: a clear warning while the signed-in System Admin still
+/// uses a publicly documented demo password (GET /api/admin/security-status).
+/// Nothing is shown when the account is safe, in the demo profile, or when the
+/// status cannot be read. The button opens the existing password change; the
+/// warning disappears once the password was changed. Nothing changes by itself.
+class _DemoPasswordWarning extends StatefulWidget {
+  const _DemoPasswordWarning({
+    required this.api,
+    required this.onChangePassword,
+  });
+
+  final SettingsApiClient api;
+
+  /// Opens Settings → Profile; true when the password was changed.
+  final Future<bool> Function() onChangePassword;
+
+  @override
+  State<_DemoPasswordWarning> createState() => _DemoPasswordWarningState();
+}
+
+class _DemoPasswordWarningState extends State<_DemoPasswordWarning> {
+  bool _show = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final inUse = await widget.api.demoPasswordInUse();
+      if (mounted) setState(() => _show = inUse);
+    } catch (_) {
+      // No warning when the status cannot be read (e.g. an older backend).
+      if (mounted) setState(() => _show = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_show) return const SizedBox.shrink();
+    final s = AppStrings.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.xl),
+      child: Container(
+        key: const Key('demoPasswordWarning'),
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        decoration: BoxDecoration(
+          color: AppColors.dangerSoft,
+          border: Border.all(color: AppColors.danger),
+          borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(
+              Icons.gpp_maybe_rounded,
+              color: AppColors.danger,
+              size: 28,
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Semantics(
+                    header: true,
+                    child: Text(
+                      s.demoPasswordWarningTitle,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.danger,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(s.demoPasswordWarningBody),
+                  const SizedBox(height: AppSpacing.md),
+                  FilledButton.icon(
+                    key: const Key('demoPasswordChange'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.danger,
+                    ),
+                    onPressed: () async {
+                      if (await widget.onChangePassword()) await _load();
+                    },
+                    icon: const Icon(Icons.lock_reset_rounded, size: 18),
+                    label: Text(s.demoPasswordWarningAction),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

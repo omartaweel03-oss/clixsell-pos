@@ -412,6 +412,14 @@ Requires **Java JDK 17+** (backend) and **Flutter 3.38+** (frontend). Maven and 
      `sysadmin` is created with that password. There is no built-in password, and no password is
      ever printed or logged. Later starts need neither variable.
    * An existing database with a System Admin starts exactly as before; nothing is reset.
+     If a System Admin still uses a published demo password (an installation from before this
+     version), the start logs a `SECURITY WARNING` (username only, never the password or hash) and
+     Settings shows that System Admin a warning (`GET /api/admin/security-status`, System Admin
+     only). Fix: Settings → Profile → Change password. Outside the demo profile a published demo
+     password is refused as a new administrator password (own change; System Admin resetting a
+     Store Admin).
+   * A first start whose admin settings are missing or invalid (empty, too short, a demo password)
+     stops before the database file is created: no file, no tables, no migration.
    * Folders, empty or non-SQLite files, read-only files or folders are refused with a message.
    * The `demo` profile (throwaway presentation / test database only) still uses the documented
      demo logins (`sysadmin` / `Admin12345`, see the demo table) and may create its new database.

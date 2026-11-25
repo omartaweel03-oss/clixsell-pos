@@ -10,6 +10,7 @@ import 'api_http.dart';
 /// | myStore             | GET  /api/store            | Store Admin              |
 /// | updateStoreSettings | PUT  /api/store/settings   | Store Admin (own store)  |
 /// | changeOwnPassword   | PUT  /api/auth/me/password | System Admin, Store Admin|
+/// | demoPasswordInUse   | GET  /api/admin/security-status | System Admin        |
 /// | listBackups         | GET  /api/admin/backups    | System Admin             |
 /// | createBackup        | POST /api/admin/backups    | System Admin             |
 class SettingsApiClient {
@@ -47,6 +48,15 @@ class SettingsApiClient {
     'currentPassword': currentPassword,
     'newPassword': newPassword,
   });
+
+  /// System Admin only: true while the signed-in System Admin still uses a
+  /// publicly documented demo password (Settings shows a warning). Only a
+  /// yes / no about the caller's own account; nothing is changed.
+  Future<bool> demoPasswordInUse() async {
+    final body =
+        await _http.get('/admin/security-status') as Map<String, dynamic>;
+    return body['demoPasswordInUse'] == true;
+  }
 
   Future<BackupList> listBackups() async => BackupList.fromJson(
     await _http.get('/admin/backups') as Map<String, dynamic>,

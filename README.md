@@ -49,7 +49,15 @@ $env:CLIXSELL_ADMIN_PASSWORD = "<your own password>"
 Log in as `sysadmin` with that password, then create a store, its Store Admin, products and
 cashiers. Later starts need no variables (only `CLIXSELL_DB_PATH` if you use it): an existing
 database is used as it is, and a missing one is never created silently. There is no built-in
-password. See `WINDOWS_DEMO.md` for the full Windows guide.
+password. If the password is missing, too short or a published demo password, the start stops
+**before** any database file is created. See `WINDOWS_DEMO.md` for the full Windows guide.
+
+**Older installations** (created before this version) may still have `sysadmin` / `Admin12345`.
+ClixSell does not change it by itself: it writes a `SECURITY WARNING` line at start and shows a red
+warning to the System Admin in Settings. Sign in and change it: Settings → Profile → Change
+password (take a backup first). Setting `CLIXSELL_ADMIN_PASSWORD` does **not** change an existing
+password. Outside the demo profile, published demo passwords cannot be chosen again for an
+administrator.
 
 ## Demo data (optional – presentations and testing only)
 Off by default. To start with two ready Palestinian demo stores, use the `demo` profile

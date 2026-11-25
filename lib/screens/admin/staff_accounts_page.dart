@@ -549,9 +549,10 @@ class _ResetPasswordDialogState extends State<_ResetPasswordDialog> {
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _error =
-            e.fieldErrors['password'] ??
-            (e.isNetworkError ? s.networkError : s.requestFailed(e.message));
+        final password = e.fieldErrors['password'];
+        _error = password != null
+            ? s.passwordServerError(password)
+            : (e.isNetworkError ? s.networkError : s.requestFailed(e.message));
       });
     }
   }

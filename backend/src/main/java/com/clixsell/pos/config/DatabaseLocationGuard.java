@@ -1,5 +1,6 @@
 package com.clixsell.pos.config;
 
+import com.clixsell.pos.auth.SystemAdminInitializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
@@ -33,6 +34,9 @@ import java.util.Arrays;
  *   <li>A missing file is created ONLY when {@code clixsell.db.create-if-missing=true}
  *       ({@code CLIXSELL_DB_CREATE=true}): the first start of a new installation, the demo
  *       profile, tests. The folder must already exist; it is never created here.</li>
+ *   <li>Before a NEW database is created, the first System Admin settings are checked (password set,
+ *       not a published demo password outside the demo profile, valid username / password); if they
+ *       fail, the start stops and no file is created and no migration runs.</li>
  *   <li>Any other case stops the start with a clear message. Nothing is ever deleted, replaced
  *       or moved.</li>
  * </ul>
@@ -61,12 +65,22 @@ public class DatabaseLocationGuard implements BeanFactoryPostProcessor, Environm
         String url = environment.getProperty("spring.datasource.url");
         boolean create = environment.getProperty("clixsell.db.create-if-missing", Boolean.class, false);
         Decision d = check(url, create);
-        String adminPassword = environment.getProperty("clixsell.system-admin.password", "");
-        if (d.isNew() && adminPassword.isBlank()) {
-            // A new database needs its first System Admin: stop BEFORE anything is created.
-            throw new UnsafeDatabaseLocationException("A new database would be created at " + d.path() + ", but no"
-                    + " initial System Admin password is configured. Set CLIXSELL_ADMIN_PASSWORD for this first"
-                    + " start. Nothing was created.");
+        if (d.isNew()) {
+            // A new database needs its first System Admin: check those settings BEFORE anything is
+            // created, so a refused start leaves no file, no tables and no migration behind.
+            String adminPassword = environment.getProperty("clixsell.system-admin.password", "");
+            if (adminPassword.isBlank()) {
+                throw new UnsafeDatabaseLocationException("A new database would be created at " + d.path() + ", but no"
+                        + " initial System Admin password is configured. Set CLIXSELL_ADMIN_PASSWORD for this first"
+                        + " start. Nothing was created.");
+            }
+            String problem = SystemAdminInitializer.initialCredentialsProblem(
+                    environment.getProperty("clixsell.system-admin.username", "sysadmin"), adminPassword,
+                    environment.getProperty("clixsell.system-admin.allow-demo-password", Boolean.class, false));
+            if (problem != null) {
+                throw new UnsafeDatabaseLocationException(problem + " A new database would be created at " + d.path()
+                        + ". Nothing was created.");
+            }
         }
         if (d.path() != null) {
             if (d.isNew()) log.warn("ClixSell database: creating a NEW database at {} (clixsell.db.create-if-missing=true)", d.path());

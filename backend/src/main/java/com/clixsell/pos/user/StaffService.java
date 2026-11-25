@@ -1,5 +1,6 @@
 package com.clixsell.pos.user;
 
+import com.clixsell.pos.auth.DemoPasswords;
 import com.clixsell.pos.auth.UserSessionRepository;
 import com.clixsell.pos.common.AccountStatus;
 import com.clixsell.pos.common.ConflictException;
@@ -30,10 +31,12 @@ public class StaffService {
     private final StoreRepository stores;
     private final UserSessionRepository sessions;
     private final PasswordEncoder passwordEncoder;
+    private final DemoPasswords demoPasswords;
 
     public StaffService(UserRepository users, StoreRepository stores, UserSessionRepository sessions,
-                        PasswordEncoder passwordEncoder) {
+                        PasswordEncoder passwordEncoder, DemoPasswords demoPasswords) {
         this.users = users;
+        this.demoPasswords = demoPasswords;
         this.stores = stores;
         this.sessions = sessions;
         this.passwordEncoder = passwordEncoder;
@@ -73,9 +76,13 @@ public class StaffService {
         return UserResponse.from(users.save(user));
     }
 
-    /** Sets a new password, unlocks the account and ends its current logins. */
+    /**
+     * Sets a new password, unlocks the account and ends its current logins. A Store Admin
+     * (administrator) password may not be a published demo password outside the demo profile.
+     */
     public UserResponse resetPassword(long storeId, Role role, long userId, String newPassword) {
         User.validatePassword(newPassword);
+        if (role == Role.STORE_ADMIN) demoPasswords.rejectIfDemo("password", newPassword);
         User user = find(storeId, role, userId);
         user.changePassword(passwordEncoder.encode(newPassword));
         sessions.deleteByUser_UserId(userId);
