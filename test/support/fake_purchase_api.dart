@@ -186,6 +186,7 @@ class FakePurchaseApi implements PurchaseApi {
   Future<PurchaseOrderPage> list({
     List<PurchaseOrderStatus> statuses = const [],
     String? query,
+    bool overdueOnly = false,
     int page = 0,
     int size = 20,
   }) => _do(
@@ -193,6 +194,7 @@ class FakePurchaseApi implements PurchaseApi {
     {
       'statuses': statuses.map((s) => s.code).join(','),
       'q': query,
+      'overdue': overdueOnly,
       'page': page,
       'size': size,
     },
@@ -200,22 +202,44 @@ class FakePurchaseApi implements PurchaseApi {
       listQueries.add({
         'statuses': statuses.map((s) => s.code).join(','),
         'q': query,
+        'overdue': overdueOnly,
         'page': page,
         'size': size,
       });
-      final rows = size == 100
-          ? listRows
-                .where((r) => statuses.any((s) => s.code == r['status']))
-                .toList()
+      final rows = overdueOnly
+          ? listRows.where((r) => r['overdue'] == true).toList()
           : listRows;
       return PurchaseOrderPage.fromJson({
         'page': page,
         'size': size,
-        'total': size == 100 ? rows.length : listTotal,
+        'total': overdueOnly ? rows.length : listTotal,
         'orders': rows,
       });
     },
   );
+
+  /// D1: the server's exact counts. Null → counted from [listRows].
+  Map<String, dynamic>? summaryJson;
+
+  @override
+  Future<PurchaseOrdersSummary> summary() => _do('summary', const {}, () {
+    final j = summaryJson;
+    if (j != null) return PurchaseOrdersSummary.fromJson(j);
+    final by = <String, int>{
+      for (final s in PurchaseOrderStatus.values) s.code: 0,
+    };
+    var overdue = 0;
+    for (final r in listRows) {
+      by[r['status'] as String] = (by[r['status'] as String] ?? 0) + 1;
+      if (r['overdue'] == true) overdue++;
+    }
+    return PurchaseOrdersSummary.fromJson({
+      'byStatus': by,
+      'open': 0,
+      'overdue': overdue,
+      'overdueByStatus': const {},
+    });
+  });
 
   @override
   Future<PurchaseOrder> get(int orderId) => _do('get', {'id': orderId}, _o);

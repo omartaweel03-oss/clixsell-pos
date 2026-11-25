@@ -91,12 +91,18 @@ extension ContactStatusCode on ContactStatus {
 /// login on the server; no store id is ever sent. Only the fields each
 /// endpoint accepts are sent (the server refuses unknown fields).
 abstract class PurchaseApi {
+  /// [overdueOnly]: only overdue orders (the server's rule over ALL the
+  /// store's orders, then paged).
   Future<PurchaseOrderPage> list({
     List<PurchaseOrderStatus> statuses = const [],
     String? query,
+    bool overdueOnly = false,
     int page = 0,
     int size = 20,
   });
+
+  /// D1: exact counts by status and overdue (GET /purchase-orders/summary).
+  Future<PurchaseOrdersSummary> summary();
 
   Future<PurchaseOrder> get(int orderId);
 
@@ -181,6 +187,7 @@ class PurchaseApiClient implements PurchaseApi {
   Future<PurchaseOrderPage> list({
     List<PurchaseOrderStatus> statuses = const [],
     String? query,
+    bool overdueOnly = false,
     int page = 0,
     int size = 20,
   }) async {
@@ -189,6 +196,7 @@ class PurchaseApiClient implements PurchaseApi {
         'status=${statuses.map((s) => s.code).join(',')}',
       if (query != null && query.trim().isNotEmpty)
         'q=${Uri.encodeQueryComponent(query.trim())}',
+      if (overdueOnly) 'overdue=true',
       'page=$page',
       'size=$size',
     ];
@@ -196,6 +204,12 @@ class PurchaseApiClient implements PurchaseApi {
       await _http.get('$_base?${params.join('&')}') as Map<String, dynamic>,
     );
   }
+
+  @override
+  Future<PurchaseOrdersSummary> summary() async =>
+      PurchaseOrdersSummary.fromJson(
+        await _http.get('$_base/summary') as Map<String, dynamic>,
+      );
 
   @override
   Future<PurchaseOrder> get(int orderId) =>

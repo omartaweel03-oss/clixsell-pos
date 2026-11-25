@@ -161,10 +161,8 @@ class PurchaseOrderStrings {
     'Rules: urgent = runs out within 3 days, soon = 4–7 days. Suggested quantities are calculated by the server; you can change them before saving.',
     'القواعد: عاجل = ينفد خلال 3 أيام، قريب = خلال 4–7 أيام. الكميات المقترحة يحسبها الخادم؛ ويمكنك تغييرها قبل الحفظ.',
   );
-  String createFromSelected(int n) => _t(
-    'Create order from $n selected',
-    'إنشاء أمر من ${iso('$n')} محدد',
-  );
+  String createFromSelected(int n) =>
+      _t('Create order from $n selected', 'إنشاء أمر من ${iso('$n')} محدد');
   String selectProduct(String name) => _t('Select $name', 'تحديد ${iso(name)}');
   String get selectOneSupplier => _t(
     'Select products of one supplier to create an order.',
@@ -251,8 +249,8 @@ class PurchaseOrderStrings {
       'أُلغي — غير معروف إن وصلت الرسالة للمورد',
     ),
     'DECLARED_NOT_SENT' => _t(
-      'Canceled as "not sent" after the message was copied/opened',
-      'أُلغي كـ"لم تُرسل" بعد نسخ/فتح الرسالة',
+      'Canceled as "not sent" after the message was prepared (a declaration, not verified)',
+      'أُلغي كـ"لم تُرسل" بعد تجهيز الرسالة (تصريح غير مُتحقق منه)',
     ),
     _ => type,
   };
@@ -439,8 +437,8 @@ class PurchaseOrderStrings {
   );
   String contactAtCancel(String? c) => switch (c) {
     'NOT_SENT' => _t(
-      'Canceled — the manager declared the message was not sent',
-      'أُلغي — صرّح المدير أن الرسالة لم تُرسل',
+      'Canceled — the manager declared the message was not sent (a declaration; ClixSell cannot verify it)',
+      'أُلغي — صرّح المدير أن الرسالة لم تُرسل (تصريح؛ لا يستطيع ClixSell التحقق منه)',
     ),
     'UNKNOWN' => _t(
       'Canceled — unknown whether the supplier got the message',
@@ -456,8 +454,8 @@ class PurchaseOrderStrings {
     ),
   };
   String get cancelNotTold => _t(
-    'Cancelling in ClixSell does not mean the supplier was told or agreed.',
-    'الإلغاء في ClixSell لا يعني أن المورد أُبلغ أو وافق.',
+    'Cancelling in ClixSell does not cancel anything with the supplier: the supplier was not told and has not agreed. If the supplier may have the message, tell them yourself.',
+    'الإلغاء في ClixSell لا يلغي أي شيء لدى المورد: المورد لم يُبلَّغ ولم يوافق. إن كانت الرسالة قد تكون وصلته، فأبلغه بنفسك.',
   );
   String get supplierAcceptanceRecorded => _t(
     'Supplier acceptance of the cancellation: recorded (manual record)',
@@ -685,9 +683,11 @@ class PurchaseOrderStrings {
   String get recordAcceptance => _t('Record acceptance', 'تسجيل القبول');
 
   // ── history ────────────────────────────────────────────────────────────────
-  String event(PurchaseOrderEvent e) {
-    final phase = e.details['phase'];
-    return switch (e.type) {
+  String event(PurchaseOrderEvent e) => eventType(e.type, e.details);
+
+  String eventType(String type, Map<String, dynamic> details) {
+    final phase = details['phase'];
+    return switch (type) {
       'CREATED' => _t('Order created', 'أُنشئ الأمر'),
       'EDITED' => _t('Order edited', 'عُدّل الأمر'),
       'APPROVED' => _t('Approved', 'تمت الموافقة'),
@@ -703,7 +703,7 @@ class PurchaseOrderStrings {
       ),
       'WHATSAPP_OPEN_REQUESTED' =>
         phase == 'CLIENT_REPORTED'
-            ? (e.details['result'] == 'OPENED'
+            ? (details['result'] == 'OPENED'
                   ? _t(
                       'Link handed to the browser (reported by the app)',
                       'سُلّم الرابط للمتصفح (حسب التطبيق)',
@@ -732,7 +732,7 @@ class PurchaseOrderStrings {
         'Manager recorded the supplier accepted the cancellation',
         'سجّل المدير قبول المورد للإلغاء',
       ),
-      _ => e.type,
+      _ => type,
     };
   }
 
@@ -784,7 +784,7 @@ class PurchaseOrderStrings {
   // ── errors ─────────────────────────────────────────────────────────────────
   /// A clear sentence for a backend error code (the technical text is shown
   /// separately under "details").
-  String error(ApiException e) {
+  String error(ApiException e, {int? currentUserId}) {
     if (e.isNetworkError) {
       return _t(
         'The server could not be reached. If you were saving something, we check whether it was saved before you retry.',
@@ -792,10 +792,7 @@ class PurchaseOrderStrings {
       );
     }
     return switch (e.code) {
-      'ORDER_CHANGED' || 'INVALID_TRANSITION' => _t(
-        'Another manager changed this order meanwhile. It was reloaded: review it and choose again.',
-        'غيّر مدير آخر هذا الأمر للتو. أُعيد تحميله: راجعه واختر من جديد.',
-      ),
+      'ORDER_CHANGED' || 'INVALID_TRANSITION' => conflict(e, currentUserId),
       'DATABASE_BUSY' => _t(
         'The database was busy and the change could not be confirmed. We check the saved state before you retry.',
         'كانت قاعدة البيانات مشغولة ولم يُتأكد من التغيير. نتحقق من الحالة المحفوظة قبل إعادة المحاولة.',
@@ -861,12 +858,73 @@ class PurchaseOrderStrings {
   }
 
   String get technicalDetails => _t('Details', 'تفاصيل');
+
+  /// D3: a stale request (ORDER_CHANGED / INVALID_TRANSITION). The server
+  /// names the change that won (type, who, when); it may be the manager's own
+  /// earlier request that finished after the app stopped waiting, so nothing
+  /// here assumes "another manager". Nothing is ever repeated automatically.
+  String conflict(ApiException e, int? currentUserId) {
+    final lc = e.detailsMap['lastChange'];
+    const reloaded = (
+      'Nothing was repeated. The order was reloaded: check its current state before doing anything else.',
+      'لم يُكرَّر أي شيء. أُعيد تحميل الأمر: راجع حالته الحالية قبل أي إجراء.',
+    );
+    if (lc is! Map) {
+      return _t(
+        'This order changed meanwhile — possibly by your own earlier request that did not answer in time, or by another manager. ${reloaded.$1}',
+        'تغيّر هذا الأمر في هذه الأثناء — ربما بطلبك السابق الذي لم يصل ردّه في الوقت، أو بمدير آخر. ${reloaded.$2}',
+      );
+    }
+    final type = lc['type'] as String? ?? '';
+    final user = lc['user'] is Map ? lc['user'] as Map : const {};
+    final who = iso(user['fullName'] as String? ?? '—');
+    final at = lc['at'] is String
+        ? iso((lc['at'] as String).replaceFirst('T', ' ').substring(0, 16))
+        : '—';
+    final label = '«${iso(eventType(type, const {}))}»';
+    final mine =
+        currentUserId != null &&
+        (user['userId'] as num?)?.toInt() == currentUserId;
+    final String text;
+    if (mine) {
+      text = _t(
+        'This order changed meanwhile. Its latest change, $label at $at, was made with your own account — possibly your earlier request that did not answer in time, so it is already saved. ${reloaded.$1}',
+        'تغيّر هذا الأمر في هذه الأثناء. آخر تغيير عليه، $label في $at، تمّ بحسابك أنت — ربما هو طلبك السابق الذي لم يصل ردّه في الوقت، فهو محفوظ بالفعل. ${reloaded.$2}',
+      );
+    } else if (currentUserId != null) {
+      text = _t(
+        'This order changed meanwhile. Its latest change, $label, was made by another manager, $who, at $at. Your request was not applied. ${reloaded.$1}',
+        'تغيّر هذا الأمر في هذه الأثناء. آخر تغيير عليه، $label، قام به مدير آخر، $who، في $at. طلبك لم يُطبَّق. ${reloaded.$2}',
+      );
+    } else {
+      text = _t(
+        'This order changed meanwhile. Its latest change: $label by $who at $at. If that was you (for example an earlier request that did not answer in time), it is already saved. Your new request was not applied. ${reloaded.$1}',
+        'تغيّر هذا الأمر في هذه الأثناء. آخر تغيير عليه: $label بواسطة $who في $at. إن كان هذا أنت (مثلاً طلب سابق لم يصل ردّه في الوقت) فهو محفوظ بالفعل. طلبك الجديد لم يُطبَّق. ${reloaded.$2}',
+      );
+    }
+    final contact = lc['contactStatus'];
+    if (!mine &&
+        type == 'CANCELED' &&
+        (contact == 'NOT_SENT' || contact == 'UNKNOWN')) {
+      return '$text ${canceledWhileYouActed(who, contact == 'NOT_SENT')}';
+    }
+    return text;
+  }
+
+  /// S3: another manager canceled the order (declaring "not sent" / "unknown")
+  /// while this manager was acting on it — e.g. recording that it WAS sent.
+  String canceledWhileYouActed(String who, bool declaredNotSent) => _t(
+    'Important: $who canceled this order ${declaredNotSent ? 'declaring that the message was NOT sent' : 'saying it is unknown whether the message was sent'}. If you did send the message, the supplier may still deliver: tell the supplier yourself now. ClixSell did not tell the supplier and cannot change that record. A new order for these products shows a warning that must be confirmed.',
+    'مهم: ألغى $who هذا الأمر ${declaredNotSent ? 'مصرّحاً أن الرسالة لم تُرسل' : 'مع أنه غير معروف إن أُرسلت الرسالة'}. إن كنت قد أرسلت الرسالة فعلاً، فقد يورّد المورد الطلب: أبلغ المورد بنفسك الآن. ClixSell لم يُبلغ المورد ولا يمكنه تغيير ذلك السجل. أي أمر جديد لهذه المنتجات يظهر معه تحذير يجب تأكيده.',
+  );
+
   String get savedAfterCheck => _t(
     'Checked: the change had been saved.',
     'تم التحقق: التغيير كان قد حُفظ.',
   );
   String get notSavedAfterCheck => _t(
-    'Checked: the change is not saved at this moment. If the server was busy it may still finish — press Refresh before trying again.',
-    'تم التحقق: التغيير غير محفوظ في هذه اللحظة. إذا كان الخادم مشغولاً فقد يكتمل لاحقاً — اضغط تحديث قبل إعادة المحاولة.',
+    'Checked: the change is not saved at this moment. If the server was busy it may still finish — press "Check again" before trying again. Trying again is safe: if the first request is saved meanwhile, ClixSell refuses the second one and tells you.',
+    'تم التحقق: التغيير غير محفوظ في هذه اللحظة. إذا كان الخادم مشغولاً فقد يكتمل لاحقاً — اضغط «تحقق مرة أخرى» قبل إعادة المحاولة. إعادة المحاولة آمنة: إذا حُفظ الطلب الأول في هذه الأثناء، يرفض ClixSell الطلب الثاني ويخبرك.',
   );
+  String get checkAgain => _t('Check again', 'تحقق مرة أخرى');
 }

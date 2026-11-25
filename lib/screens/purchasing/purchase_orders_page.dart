@@ -53,13 +53,6 @@ class _Summary {
 
 class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
   static const _pageSize = 20;
-  static const _open = [
-    PurchaseOrderStatus.pendingApproval,
-    PurchaseOrderStatus.approved,
-    PurchaseOrderStatus.messageGenerated,
-    PurchaseOrderStatus.sent,
-    PurchaseOrderStatus.confirmed,
-  ];
 
   final _search = TextEditingController();
   Timer? _debounce;
@@ -69,7 +62,6 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
   int _page = 0;
   PurchaseOrderPage? _data;
   _Summary? _summary;
-  List<PurchaseOrderSummary>? _overdueRows;
   bool _loading = true;
   ApiException? _error;
   int _request = 0;
@@ -87,7 +79,8 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
     super.dispose();
   }
 
-  /// Loads the page and, in parallel, the summary of the open orders.
+  /// Loads the page and, in parallel, the exact summary from the server
+  /// (D1: counted by the database — no paging, no limit, nothing twice).
   Future<void> _load() async {
     final req = ++_request;
     setState(() {
@@ -95,39 +88,29 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
       _error = null;
     });
     try {
-      final results = await Future.wait([
+      final results = await Future.wait<Object>([
         widget.api.list(
           statuses: _filter ?? const [],
           query: _query,
+          overdueOnly: _overdueOnly,
           page: _page,
           size: _pageSize,
         ),
-        _loadOpenOrders(),
+        widget.api.summary(),
       ]);
       if (!mounted || req != _request) return;
-      final open = results[1] as List<PurchaseOrderSummary>;
+      final sum = results[1] as PurchaseOrdersSummary;
       final summary = _Summary(
-        open
-            .where((o) => o.status == PurchaseOrderStatus.pendingApproval)
-            .length,
-        open
-            .where(
-              (o) =>
-                  o.status == PurchaseOrderStatus.approved ||
-                  o.status == PurchaseOrderStatus.messageGenerated,
-            )
-            .length,
-        open.where((o) => o.status == PurchaseOrderStatus.sent).length,
-        open.where((o) => o.overdue).length,
+        sum.count(PurchaseOrderStatus.pendingApproval),
+        sum.count(PurchaseOrderStatus.approved) +
+            sum.count(PurchaseOrderStatus.messageGenerated),
+        sum.count(PurchaseOrderStatus.sent),
+        sum.overdue,
       );
       widget.onOverdueCount?.call(summary.overdue);
       setState(() {
         _data = results[0] as PurchaseOrderPage;
         _summary = summary;
-        _overdueRows = [
-          for (final o in open)
-            if (o.overdue) o,
-        ];
         _loading = false;
       });
     } on ApiException catch (e) {
@@ -137,18 +120,6 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
         _loading = false;
       });
     }
-  }
-
-  /// All open orders (paged 100 at a time) for the cards; the overdue flag
-  /// comes from the server.
-  Future<List<PurchaseOrderSummary>> _loadOpenOrders() async {
-    final out = <PurchaseOrderSummary>[];
-    for (var p = 0; p < 20; p++) {
-      final page = await widget.api.list(statuses: _open, page: p, size: 100);
-      out.addAll(page.orders);
-      if ((p + 1) * 100 >= page.total) break;
-    }
-    return out;
   }
 
   void _onSearch(String text) {
@@ -337,15 +308,7 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
       );
     }
     final data = _data!;
-    final rows = _overdueOnly
-        ? [
-            for (final o in _overdueRows ?? const <PurchaseOrderSummary>[])
-              if (_query.isEmpty ||
-                  o.orderNumber.toLowerCase().contains(_query.toLowerCase()) ||
-                  o.supplierName.toLowerCase().contains(_query.toLowerCase()))
-                o,
-          ]
-        : data.orders;
+    final rows = data.orders;
     if (rows.isEmpty) {
       final nothingAtAll = _query.isEmpty && _filter == null && !_overdueOnly;
       return MessageState(
@@ -363,7 +326,7 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
       children: [
         if (_loading) const LinearProgressIndicator(minHeight: 2),
         _table(t, rows),
-        if (!_overdueOnly) _pager(t, data),
+        _pager(t, data),
       ],
     );
   }

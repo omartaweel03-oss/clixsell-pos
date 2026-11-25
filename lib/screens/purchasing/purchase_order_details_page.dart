@@ -25,6 +25,7 @@ class PurchaseOrderDetailsPage extends StatefulWidget {
     this.onOpenSuppliers,
     this.opener = const LauncherUrlOpener(),
     this.clipboard = const SystemClipboardWriter(),
+    this.currentUserId,
   });
 
   final PurchaseApi api;
@@ -34,6 +35,9 @@ class PurchaseOrderDetailsPage extends StatefulWidget {
   final VoidCallback? onOpenSuppliers;
   final UrlOpener opener;
   final ClipboardWriter clipboard;
+
+  /// The logged-in manager (D3: explains whose change won a conflict).
+  final int? currentUserId;
 
   @override
   State<PurchaseOrderDetailsPage> createState() =>
@@ -52,6 +56,10 @@ class _PurchaseOrderDetailsPageState extends State<PurchaseOrderDetailsPage> {
 
   /// A successful copy whose history record is not saved yet (same id on retry).
   String? _pendingCopyId;
+
+  /// D3: after an unknown outcome that was not saved yet, "Check again"
+  /// reloads and tests this again (nothing is resent).
+  bool Function(PurchaseOrder)? _unconfirmed;
 
   @override
   void initState() {
@@ -106,6 +114,7 @@ class _PurchaseOrderDetailsPageState extends State<PurchaseOrderDetailsPage> {
       _busy = true;
       _actionError = null;
       _notice = null;
+      _unconfirmed = null;
     });
     try {
       await call();
@@ -122,6 +131,7 @@ class _PurchaseOrderDetailsPageState extends State<PurchaseOrderDetailsPage> {
           } else {
             _actionError = e;
             _notice = now == null ? null : t.notSavedAfterCheck;
+            _unconfirmed = applied;
           }
         });
       } else {
@@ -135,6 +145,27 @@ class _PurchaseOrderDetailsPageState extends State<PurchaseOrderDetailsPage> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// D3: reloads the saved state and tells whether the earlier, unconfirmed
+  /// change is stored now. Never sends the change again.
+  Future<void> _checkAgain() async {
+    final t = PurchaseOrderStrings.of(context);
+    final applied = _unconfirmed;
+    if (applied == null) return;
+    setState(() => _busy = true);
+    final now = await _load(quiet: true);
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      if (now != null && applied(now)) {
+        _notice = t.savedAfterCheck;
+        _actionError = null;
+        _unconfirmed = null;
+      } else if (now != null) {
+        _notice = t.notSavedAfterCheck;
+      }
+    });
   }
 
   // ── actions ────────────────────────────────────────────────────────────────
@@ -408,8 +439,12 @@ class _PurchaseOrderDetailsPageState extends State<PurchaseOrderDetailsPage> {
         if (_actionError != null) ...[
           ApiErrorBox(
             _actionError!,
+            currentUserId: widget.currentUserId,
             action: _pendingCopyId != null
                 ? () => _reportCopy(o.orderId)
+                : (_unconfirmed != null && !_busy ? _checkAgain : null),
+            actionLabel: _pendingCopyId == null && _unconfirmed != null
+                ? t.checkAgain
                 : null,
           ),
           const SizedBox(height: AppSpacing.md),

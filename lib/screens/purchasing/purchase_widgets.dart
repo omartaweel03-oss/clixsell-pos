@@ -213,6 +213,7 @@ class ApiErrorBox extends StatelessWidget {
     this.action,
     this.actionLabel,
     this.extra,
+    this.currentUserId,
   });
 
   final ApiException error;
@@ -220,12 +221,15 @@ class ApiErrorBox extends StatelessWidget {
   final String? actionLabel;
   final String? extra;
 
+  /// The logged-in manager (D3: "your own earlier request" vs another one).
+  final int? currentUserId;
+
   @override
   Widget build(BuildContext context) {
     final t = PurchaseOrderStrings.of(context);
     return NoticeBox.danger(
       key: const Key('purchaseError'),
-      [t.error(error), ?extra].join(' '),
+      [t.error(error, currentUserId: currentUserId), ?extra].join(' '),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

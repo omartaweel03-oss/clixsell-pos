@@ -28,6 +28,7 @@ class PurchaseOrderFormPage extends StatefulWidget {
     required this.onCancel,
     this.seed,
     this.editOrderId,
+    this.currentUserId,
   });
 
   final PurchaseApi api;
@@ -36,6 +37,9 @@ class PurchaseOrderFormPage extends StatefulWidget {
   final VoidCallback onCancel;
   final PurchaseOrderSeed? seed;
   final int? editOrderId;
+
+  /// The logged-in manager (D3: explains whose change won a conflict).
+  final int? currentUserId;
 
   @override
   State<PurchaseOrderFormPage> createState() => PurchaseOrderFormPageState();
@@ -865,7 +869,7 @@ class PurchaseOrderFormPageState extends State<PurchaseOrderFormPage> {
           ],
           if (_saveError != null && _unresolved == null) ...[
             const SizedBox(height: AppSpacing.lg),
-            ApiErrorBox(_saveError!),
+            ApiErrorBox(_saveError!, currentUserId: widget.currentUserId),
           ],
           if (_info != null) ...[
             const SizedBox(height: AppSpacing.md),

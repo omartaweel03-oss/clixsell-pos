@@ -301,6 +301,72 @@ void main() {
     },
   );
 
+  // ── D1: the cards are the server's exact counts (no client counting, no 2,000 limit) ──────
+  testWidgets(
+    'D1: cards show the exact server summary above 2,000; overdue card is a server-paged filter',
+    (tester) async {
+      int? reported;
+      final api = FakePurchaseApi()
+        ..listRows = [
+          {
+            'orderId': 1,
+            'orderNumber': 'PO-000001',
+            'status': 'PENDING_APPROVAL',
+            'source': 'MANUAL',
+            'supplierId': 7,
+            'supplierName': 'Dairy Co',
+            'itemCount': 1,
+            'createdBy': {'userId': 1, 'fullName': 'Ahmad'},
+            'createdAt': '2026-11-20T09:00:00',
+            'overdue': true,
+            'version': 0,
+          },
+        ]
+        ..listTotal = 2950
+        ..summaryJson = {
+          'byStatus': {
+            'PENDING_APPROVAL': 2350,
+            'APPROVED': 300,
+            'MESSAGE_GENERATED': 125,
+            'SENT': 170,
+            'CONFIRMED': 5,
+            'CLOSED': 9,
+            'REJECTED': 1,
+            'CANCELED': 2,
+          },
+          'open': 2950,
+          'overdue': 431,
+          'overdueByStatus': {'PENDING_APPROVAL': 400, 'SENT': 31},
+        };
+      await _pump(
+        tester,
+        PurchaseOrdersPage(
+          api: api,
+          onOpenOrder: (_) {},
+          onNewOrder: () {},
+          onOverdueCount: (n) => reported = n,
+        ),
+      );
+      String card(String key) => (tester.widgetList<Text>(
+        find.descendant(of: _key(key), matching: find.byType(Text)),
+      )).map((t) => t.data).join('|');
+      expect(card('poCardPending'), contains('2350'));
+      expect(card('poCardToContact'), contains('425'));
+      expect(card('poCardAwaiting'), contains('170'));
+      expect(card('poCardOverdue'), contains('431'));
+      expect(reported, 431);
+      expect(
+        api.listQueries.where((q) => q['size'] == 100),
+        isEmpty,
+        reason: 'no client-side counting of pages',
+      );
+      await _tap(tester, _key('poCardOverdue'));
+      expect(api.listQueries.last['overdue'], true);
+      expect(api.listQueries.last['size'], 20);
+      expect(find.text('PO-000001'), findsOneWidget);
+    },
+  );
+
   // ── details: actions follow allowedActions in every state ────────────────────────────────
   testWidgets(
     'details: the buttons are exactly the allowed actions of each state; final orders are read only',
@@ -428,10 +494,204 @@ void main() {
       await _tap(tester, _key('confirmActionButton'));
       expect(api.count('approve'), 1);
       expect(api.count('get'), 2); // first load + reload after the conflict
+      // D3: never claims "another manager"; says the page was reloaded and nothing repeated
+      expect(find.textContaining('Another manager'), findsNothing);
       expect(
-        find.textContaining('Another manager changed this order'),
+        find.textContaining('possibly by your own earlier request'),
         findsOneWidget,
       );
+      expect(find.textContaining('Nothing was repeated'), findsOneWidget);
+    },
+  );
+
+  // ── D3: the conflict names the change that won ─────────────────────────────────────────
+  ApiException conflict(
+    String code, {
+    required String type,
+    required int userId,
+    required String name,
+    String? contactStatus,
+  }) => ApiException(
+    statusCode: 409,
+    code: code,
+    message: 'stale',
+    details: {
+      'currentStatus': type == 'CANCELED' ? 'CANCELED' : 'SENT',
+      'currentVersion': 3,
+      'lastChange': {
+        'type': type,
+        'user': {'userId': userId, 'fullName': name},
+        'at': '2026-11-24T10:41:07',
+        'contactStatus': contactStatus,
+      },
+    },
+  );
+
+  Widget detailsAs(FakePurchaseApi api, int me) => PurchaseOrderDetailsPage(
+    api: api,
+    orderId: 1,
+    onBack: () {},
+    onEdit: (_) {},
+    opener: FakeUrlOpener(),
+    clipboard: FakeClipboard(),
+    currentUserId: me,
+  );
+
+  Future<void> markSentOnce(WidgetTester tester) async {
+    await _tap(tester, _key('poMarkSent'));
+    await _tap(tester, _key('checkDialogBox'));
+    await _tap(tester, _key('checkDialogConfirm'));
+  }
+
+  testWidgets(
+    'D3: own earlier request won → "your own account"; other manager → named; never resent',
+    (tester) async {
+      FakePurchaseApi generated() => FakePurchaseApi(
+        order: orderJson(
+          status: 'MESSAGE_GENERATED',
+          version: 2,
+          message: messageJson(),
+        ),
+      );
+      final own = generated()
+        ..failNext['markSent'] = conflict(
+          'INVALID_TRANSITION',
+          type: 'MARKED_SENT',
+          userId: 1,
+          name: 'Ahmad',
+        );
+      await _pump(tester, detailsAs(own, 1));
+      await markSentOnce(tester);
+      expect(find.textContaining('made with your own account'), findsOneWidget);
+      expect(find.textContaining('already saved'), findsOneWidget);
+      expect(find.textContaining('Another manager'), findsNothing);
+      expect(own.count('markSent'), 1, reason: 'never repeated');
+      expect(own.count('get'), 2, reason: 'reloaded after the conflict');
+
+      final other = generated()
+        ..failNext['markSent'] = conflict(
+          'INVALID_TRANSITION',
+          type: 'MARKED_SENT',
+          userId: 2,
+          name: 'Huda',
+        );
+      await _pump(tester, detailsAs(other, 1));
+      await markSentOnce(tester);
+      expect(find.textContaining('Huda'), findsWidgets);
+      expect(
+        find.textContaining('was made by another manager'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('If that was you'), findsNothing);
+      expect(find.textContaining('Important:'), findsNothing);
+
+      // Arabic
+      final ar = generated()
+        ..failNext['markSent'] = conflict(
+          'INVALID_TRANSITION',
+          type: 'MARKED_SENT',
+          userId: 1,
+          name: 'Ahmad',
+        );
+      await _pump(tester, detailsAs(ar, 1), locale: const Locale('ar'));
+      await markSentOnce(tester);
+      expect(find.textContaining('تمّ بحسابك أنت'), findsOneWidget);
+      expect(find.textContaining('مدير آخر'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'S3: recording "sent" after another manager canceled as "not sent" → strong warning, nothing recorded',
+    (tester) async {
+      final api =
+          FakePurchaseApi(
+              order: orderJson(
+                status: 'MESSAGE_GENERATED',
+                version: 2,
+                message: messageJson(),
+              ),
+            )
+            ..failNext['markSent'] = conflict(
+              'INVALID_TRANSITION',
+              type: 'CANCELED',
+              userId: 2,
+              name: 'Huda',
+              contactStatus: 'NOT_SENT',
+            );
+      await _pump(tester, detailsAs(api, 1));
+      await markSentOnce(tester);
+      expect(
+        find.textContaining('declaring that the message was NOT sent'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('tell the supplier yourself now'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('ClixSell did not tell the supplier'),
+        findsOneWidget,
+      );
+      expect(api.count('markSent'), 1);
+
+      await _pump(
+        tester,
+        detailsAs(
+          FakePurchaseApi(
+              order: orderJson(
+                status: 'MESSAGE_GENERATED',
+                version: 2,
+                message: messageJson(),
+              ),
+            )
+            ..failNext['markSent'] = conflict(
+              'INVALID_TRANSITION',
+              type: 'CANCELED',
+              userId: 2,
+              name: 'Huda',
+              contactStatus: 'NOT_SENT',
+            ),
+          1,
+        ),
+        locale: const Locale('ar'),
+      );
+      await markSentOnce(tester);
+      expect(
+        find.textContaining('مصرّحاً أن الرسالة لم تُرسل'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('أبلغ المورد بنفسك الآن'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'D3: unknown outcome not saved yet → "Check again" reloads (never resends) and reports the late save',
+    (tester) async {
+      final api = FakePurchaseApi(
+        order: orderJson(
+          status: 'MESSAGE_GENERATED',
+          version: 2,
+          message: messageJson(),
+        ),
+      )..failNext['markSent'] = databaseBusy;
+      await _pump(tester, _details(api));
+      await markSentOnce(tester);
+      expect(find.textContaining('not saved at this moment'), findsOneWidget);
+      expect(find.textContaining('Trying again is safe'), findsOneWidget);
+      expect(find.text('Check again'), findsOneWidget);
+      // the server finished the first request later
+      api.order = orderJson(status: 'SENT', version: 3, message: messageJson());
+      final gets = api.count('get');
+      await _tap(tester, _key('purchaseErrorAction'));
+      expect(api.count('get'), gets + 1);
+      expect(
+        find.textContaining('Checked: the change had been saved'),
+        findsOneWidget,
+      );
+      expect(_key('purchaseError'), findsNothing);
+      expect(api.count('markSent'), 1, reason: 'never resent');
     },
   );
 

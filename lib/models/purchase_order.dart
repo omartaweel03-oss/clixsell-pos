@@ -494,6 +494,41 @@ class PurchaseOrderPage {
       ]);
 }
 
+/// D1: exact counts of the store's orders from the server (one database
+/// statement: no paging, no limit, nothing counted twice).
+class PurchaseOrdersSummary {
+  const PurchaseOrdersSummary({
+    required this.byStatus,
+    required this.open,
+    required this.overdue,
+    required this.overdueByStatus,
+  });
+
+  final Map<PurchaseOrderStatus, int> byStatus;
+  final int open;
+  final int overdue;
+  final Map<PurchaseOrderStatus, int> overdueByStatus;
+
+  int count(PurchaseOrderStatus s) => byStatus[s] ?? 0;
+
+  factory PurchaseOrdersSummary.fromJson(Map<String, dynamic> j) {
+    Map<PurchaseOrderStatus, int> counts(Object? v) {
+      final m = v is Map ? v : const {};
+      return {
+        for (final s in PurchaseOrderStatus.values)
+          if (m.containsKey(s.code)) s: _int(m[s.code]),
+      };
+    }
+
+    return PurchaseOrdersSummary(
+      byStatus: counts(j['byStatus']),
+      open: _int(j['open']),
+      overdue: _int(j['overdue']),
+      overdueByStatus: counts(j['overdueByStatus']),
+    );
+  }
+}
+
 /// One history entry (append only).
 class PurchaseOrderEvent {
   const PurchaseOrderEvent({
