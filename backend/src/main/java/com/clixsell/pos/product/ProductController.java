@@ -1,6 +1,8 @@
 package com.clixsell.pos.product;
 
 import com.clixsell.pos.auth.CurrentUser;
+import com.clixsell.pos.common.NotFoundException;
+import com.clixsell.pos.common.ValidationException;
 import com.clixsell.pos.user.Role;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -11,6 +13,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
@@ -75,6 +78,34 @@ public class ProductController {
     public ResponseEntity<Void> delete(@AuthenticationPrincipal CurrentUser user, @PathVariable long id) {
         service.deleteProduct(user, id);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Camera barcode lookup (AI Product Identification, Phase 1). Read only. The store comes from the
+     * session; Cashiers get no cost price. 400 when the value cannot be a ClixSell product barcode
+     * (8–14 digits), 404 PRODUCT_NOT_FOUND when this store has no product with it.
+     */
+    @GetMapping("/by-barcode")
+    public BarcodeLookupResponse byBarcode(@AuthenticationPrincipal CurrentUser user,
+                                           @RequestParam(value = "code", required = false) String code,
+                                           @RequestParam(value = "format", required = false) String format) {
+        long storeId = user.requireStoreId();
+        if (format != null && !BarcodeForms.FORMATS.contains(format)) {
+            throw new ValidationException(Map.of("format", "Unsupported barcode format"));
+        }
+        if (!BarcodeForms.isProductBarcode(code)) {
+            throw new ValidationException(Map.of("code", "A product barcode has 8 to 14 digits"));
+        }
+        ProductService.BarcodeMatch m = service.findByBarcode(storeId, code, format)
+                .orElseThrow(() -> new NotFoundException("PRODUCT_NOT_FOUND",
+                        "No product with this barcode in your store"));
+        return new BarcodeLookupResponse(code, m.matchedBarcode(), m.exact() ? "EXACT" : "GTIN_EQUIVALENT",
+                ProductResponse.from(m.product(), seesCost(user)));
+    }
+
+    /** scannedCode = what the camera read; matchedBarcode = the product's stored barcode. */
+    public record BarcodeLookupResponse(String scannedCode, String matchedBarcode, String matchType,
+                                        ProductResponse product) {
     }
 
     @GetMapping("/generate-barcode")

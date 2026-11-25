@@ -24,6 +24,9 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
 
     boolean existsByStore_StoreIdAndBarcode(Long storeId, String barcode);
 
+    /** Exact barcode within one store (read only; used by the camera lookup). */
+    java.util.Optional<Product> findByStore_StoreIdAndBarcode(Long storeId, String barcode);
+
     boolean existsByStore_StoreIdAndBarcodeAndProductIdNot(Long storeId, String barcode, Long productId);
 
     /** Products of one supplier of the store (Supplier Management details). */

@@ -63,6 +63,26 @@ public class ProductService {
     }
 
     /** INSERT: validates, checks the barcode is unique in the store, then saves a new row. */
+    /** A product found by its barcode: the product and whether the exact value or a GTIN-equivalent form matched. */
+    public record BarcodeMatch(Product product, String matchedBarcode, boolean exact) {
+    }
+
+    /**
+     * Camera lookup (AI Product Identification, Phase 1): the product of THIS store whose barcode is the
+     * scanned value, else one of its GS1-equivalent forms ({@link BarcodeForms}). Read only.
+     */
+    @Transactional(readOnly = true)
+    public java.util.Optional<BarcodeMatch> findByBarcode(long storeId, String code, String format) {
+        java.util.List<String> forms = BarcodeForms.candidates(code, format);
+        for (int i = 0; i < forms.size(); i++) {
+            String form = forms.get(i);
+            boolean exact = i == 0;
+            java.util.Optional<Product> p = products.findByStore_StoreIdAndBarcode(storeId, form);
+            if (p.isPresent()) return java.util.Optional.of(new BarcodeMatch(p.get(), form, exact));
+        }
+        return java.util.Optional.empty();
+    }
+
     public Product createProduct(long storeId, ProductRequest request) {
         Product.validate(request);
         String barcode = request.barcode().trim();
