@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/fake_product_backend.dart';
+import 'support/pos_checkout.dart';
 
 /// Shini (store 1): Milk ₪5 ×24 (id 1), Bread ₪2 ×3 (id 2), Eggs ₪15 ×0 (id 3).
 FakeProductBackend _backend() => FakeProductBackend()
@@ -110,7 +111,7 @@ void main() {
     await _tap(tester, 'posProduct-1');
     await _tap(tester, 'posProduct-1');
     await _tap(tester, 'pay-card');
-    await _tap(tester, 'completeSaleButton');
+    await completeSaleLikeACashier(tester);
 
     expect(backend.requests, contains('POST /api/sales'));
     final sale = backend.sales.single;
@@ -135,7 +136,7 @@ void main() {
     await _tap(tester, 'posProduct-2');
     await _tap(tester, 'posProduct-2');
     backend.rowById(2)!['quantity'] = 1; // another cashier sold some meanwhile
-    await _tap(tester, 'completeSaleButton');
+    await completeSaleLikeACashier(tester);
     expect(find.text('Not enough stock'), findsOneWidget);
     expect(find.textContaining('Only 1 left in stock'), findsOneWidget);
     expect(backend.sales, isEmpty);
@@ -157,7 +158,7 @@ void main() {
     expect(find.text('#INV-000001'), findsOneWidget);
     expect(_text(tester, 'qty-1'), '1');
 
-    await _tap(tester, 'completeSaleButton');
+    await completeSaleLikeACashier(tester);
     expect(backend.sales.single['status'], 'COMPLETED');
     expect(backend.sales.single['invoiceNumber'], 'INV-000001');
   });
@@ -224,7 +225,7 @@ void main() {
     await _openPos(tester, backend);
     await _tap(tester, 'posProduct-1');
     await _tap(tester, 'posProduct-1');
-    await _tap(tester, 'completeSaleButton');
+    await completeSaleLikeACashier(tester);
     await _tap(tester, 'receiptCloseButton');
     expect(backend.rowById(1)!['quantity'], 22);
 
@@ -257,7 +258,7 @@ void main() {
     await _tap(tester, 'posProduct-1');                 // Milk ×1   ₪5.00
     await _tap(tester, 'posProduct-2');
     await _tap(tester, 'posProduct-2');                 // Bread ×2  ₪4.00
-    await _tap(tester, 'completeSaleButton');           // total (9.00 + 16 %) = 10.44
+    await completeSaleLikeACashier(tester);           // total (9.00 + 16 %) = 10.44
     await _tap(tester, 'receiptCloseButton');
     expect(backend.rowById(1)!['quantity'], 23);
     expect(backend.rowById(2)!['quantity'], 1);
@@ -338,7 +339,7 @@ void main() {
       expect(find.byKey(const Key('minWidthScroll')), findsOneWidget);
       await _tap(tester, 'posProduct-1');
       expect(_text(tester, 'qty-1'), '1');
-      await _tap(tester, 'completeSaleButton');
+      await completeSaleLikeACashier(tester);
       expect(find.byKey(const Key('receiptDialog')), findsOneWidget);
       expect(backend.sales.single['status'], 'COMPLETED');
       expect(tester.takeException(), isNull);

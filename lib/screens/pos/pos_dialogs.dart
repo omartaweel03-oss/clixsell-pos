@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../l10n/app_strings.dart';
+import '../../l10n/checkout_strings.dart';
 import '../../models/sale.dart';
 import '../../services/api_http.dart';
 import '../../services/sales_api_client.dart';
@@ -684,6 +685,17 @@ class ReceiptDialog extends StatelessWidget {
               row(s.totalLabel, Formatters.currency(sale.total), bold: true),
               if (sale.paymentMethod != null)
                 row(s.paidBy, paymentLabel(sale.paymentMethod!, s)),
+              if (sale.cashReceived != null) ...[
+                row(
+                  CheckoutStrings.of(context).received,
+                  Formatters.currency(sale.cashReceived!),
+                ),
+                row(
+                  CheckoutStrings.of(context).change,
+                  Formatters.currency(sale.changeDue ?? 0),
+                  bold: true,
+                ),
+              ],
               const SizedBox(height: AppSpacing.lg),
               Center(
                 child: Container(

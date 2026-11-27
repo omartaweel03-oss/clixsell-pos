@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/fake_product_backend.dart';
+import 'support/pos_checkout.dart';
 
 /// Guardian Mode screen (report Figure 3.1). The rules themselves are tested
 /// in the backend; here the screen must show exactly what the API sends, in
@@ -584,7 +585,7 @@ void main() {
     // A real sale (id 1) so "View invoice" has an invoice to show.
     await _tapKey(tester, 'nav-pos');
     await _tapKey(tester, 'posProduct-2');
-    await _tapKey(tester, 'completeSaleButton');
+    await completeSaleLikeACashier(tester);
     await _tapKey(tester, 'receiptCloseButton');
     await _tapKey(tester, 'nav-guardian');
 

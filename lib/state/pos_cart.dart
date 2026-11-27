@@ -96,6 +96,9 @@ class PosCart extends ChangeNotifier {
   double get tax => _taxCents / 100;
   double get total => (_subtotalCents - _discountCents + _taxCents) / 100;
 
+  /// The invoice total in cents (agorot): exact, for the cash change.
+  int get totalCents => _subtotalCents - _discountCents + _taxCents;
+
   /// Highest discount amount allowed for the current subtotal.
   double get maxDiscountAmount =>
       (_subtotalCents * maxDiscountPercent / 100).floor() / 100;

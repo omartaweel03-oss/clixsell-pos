@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/fake_product_backend.dart';
+import 'support/pos_checkout.dart';
 
 /// Product Details – report Figure 3.4 (UR-M5 / SR18), Store Admin screen.
 /// Shini: Milk ₪5 ×24 (min 10, cost 3.20), Bread ₪2 ×3 (min 10), Eggs ×0.
@@ -149,7 +150,7 @@ void main() {
     await _tap(tester, 'nav-pos');
     await _tap(tester, 'posProduct-1');
     await _tap(tester, 'posProduct-1');
-    await _tap(tester, 'completeSaleButton');
+    await completeSaleLikeACashier(tester);
     await _tap(tester, 'receiptCloseButton');
     await _tap(tester, 'nav-products');
     await _tap(tester, 'open-1');

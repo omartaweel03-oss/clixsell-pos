@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/fake_product_backend.dart';
+import 'support/pos_checkout.dart';
 
 /// Shini: Milk ₪5 ×24 (id 1), Bread ₪2 ×30 (id 2). Tax 16 %.
 /// Suspended (by the cashier "Ahmad Saleh"):
@@ -280,8 +281,7 @@ void main() {
         findsOneWidget,
       );
 
-      await tester.tap(find.byKey(const Key('completeSaleButton')));
-      await tester.pumpAndSettle();
+      await completeSaleLikeACashier(tester);
       final done = backend.sales.firstWhere(
         (x) => x['saleId'] == sale['saleId'],
       );

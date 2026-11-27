@@ -11,6 +11,7 @@ class SaleDraft {
     this.discountType,
     this.discountValue = 0,
     this.paymentMethod,
+    this.cashReceivedCents,
   });
 
   /// productId → quantity
@@ -19,6 +20,20 @@ class SaleDraft {
   final DiscountType? discountType;
   final double discountValue;
   final PaymentMethod? paymentMethod;
+
+  /// Cash only: what the customer handed over, in cents (agorot). The server
+  /// checks it against its own total and answers with the change.
+  final int? cashReceivedCents;
+
+  /// The same draft with the cash amount received.
+  SaleDraft withCashReceived(int cents) => SaleDraft(
+    lines: lines,
+    saleId: saleId,
+    discountType: discountType,
+    discountValue: discountValue,
+    paymentMethod: paymentMethod,
+    cashReceivedCents: cents,
+  );
 
   Map<String, dynamic> toJson() => {
     'saleId': saleId,
@@ -29,6 +44,8 @@ class SaleDraft {
     'discountType': discountValue > 0 ? discountType?.apiName : null,
     'discountValue': discountValue > 0 ? discountValue : null,
     'paymentMethod': paymentMethod?.apiName,
+    // cents / 100 prints the exact decimal (e.g. 4010 -> 40.1)
+    if (cashReceivedCents != null) 'cashReceived': cashReceivedCents! / 100,
   };
 }
 

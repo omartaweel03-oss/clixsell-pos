@@ -1,5 +1,6 @@
 package com.clixsell.pos.sale;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -15,8 +16,17 @@ public record SaleRequest(
         List<Line> items,
         DiscountType discountType,
         Double discountValue,
-        PaymentMethod paymentMethod
+        PaymentMethod paymentMethod,
+        // Cash only, optional: what the customer handed over. Checked against the total the
+        // server calculates; the change is returned, never recorded as revenue.
+        BigDecimal cashReceived
 ) {
+    /** The earlier form without the cash amount (suspend / existing callers). */
+    public SaleRequest(Long saleId, List<Line> items, DiscountType discountType, Double discountValue,
+                       PaymentMethod paymentMethod) {
+        this(saleId, items, discountType, discountValue, paymentMethod, null);
+    }
+
     public record Line(Long productId, Integer quantity) {
     }
 }

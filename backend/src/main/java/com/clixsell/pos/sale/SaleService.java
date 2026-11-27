@@ -55,6 +55,7 @@ public class SaleService {
     /** Completes the current invoice (new or resumed): stock, payment and receipt. */
     public SaleResponse complete(CurrentUser user, SaleRequest request) {
         Sale sale = openSale(user, request);
+        BigDecimal change = cashChange(request, sale);
         sale.completeSale(request.paymentMethod());
         Sale saved = sales.save(sale);
         if (saved.getDiscount() > 0) {
@@ -73,7 +74,32 @@ public class SaleService {
             activity.record(user, ActivityEventType.DISCOUNT_APPLIED, "SALE", saved.getSaleId(),
                     saved.getInvoiceNumber(), d);
         }
-        return SaleResponse.from(saved);
+        SaleResponse response = SaleResponse.from(saved);
+        return change == null ? response
+                : response.withCash(request.cashReceived().doubleValue(), change.doubleValue());
+    }
+
+    /**
+     * Cash amount received (optional, CASH only): must cover the total the server calculated, with at
+     * most 2 decimals. Returns the change to give back, or null when no amount was sent. The payment
+     * itself is still recorded at the invoice total, so change is never revenue.
+     */
+    static BigDecimal cashChange(SaleRequest request, Sale sale) {
+        BigDecimal received = request.cashReceived();
+        if (received == null) return null;
+        if (request.paymentMethod() != PaymentMethod.CASH) {
+            throw new ValidationException(Map.of("cashReceived", "The amount received is only for cash payments"));
+        }
+        if (received.signum() <= 0 || received.stripTrailingZeros().scale() > 2) {
+            throw new ValidationException(Map.of("cashReceived", "Enter the amount received, with at most 2 decimals"));
+        }
+        BigDecimal total = BigDecimal.valueOf(sale.getTotal()).setScale(2, RoundingMode.HALF_UP);
+        if (received.compareTo(total) < 0) {
+            throw new ValidationException(Map.of("cashReceived", "The amount received is "
+                    + received.setScale(2, RoundingMode.HALF_UP).toPlainString() + "; still to pay: "
+                    + total.subtract(received).setScale(2, RoundingMode.HALF_UP).toPlainString()));
+        }
+        return received.subtract(total).setScale(2, RoundingMode.HALF_UP);
     }
 
     /** Suspends the current invoice (SR9). A resumed invoice keeps its number. */

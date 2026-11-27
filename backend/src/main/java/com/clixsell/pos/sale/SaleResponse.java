@@ -19,8 +19,18 @@ public record SaleResponse(
         PaymentMethod paymentMethod,
         String receiptCode,
         LocalDateTime createdAt,
-        LocalDateTime completedAt
+        LocalDateTime completedAt,
+        // Only in the answer to a cash sale that sent cashReceived (not stored yet: needs V7).
+        Double cashReceived,
+        Double changeDue
 ) {
+    /** The same answer with the cash handed over and the change to give back. */
+    public SaleResponse withCash(double received, double change) {
+        return new SaleResponse(saleId, invoiceNumber, status, cashierName, items, itemCount, subtotal,
+                discount, taxRate, tax, total, paymentMethod, receiptCode, createdAt, completedAt,
+                received, change);
+    }
+
     public record Item(Long saleItemId, Long productId, String productName, String barcode,
                        int quantity, double unitPrice, double lineTotal,
                        int returnedQuantity, int returnableQuantity) {
@@ -37,6 +47,6 @@ public record SaleResponse(
                 s.getCashier().getFullName(), items, items.size(), s.getSubtotal(), s.getDiscount(),
                 s.getTaxRate(), s.getTax(), s.getTotal(), s.getPaymentMethod(),
                 s.getReceipt() == null ? null : s.getReceipt().getQrCodeValue(),
-                s.getCreatedAt(), s.getCompletedAt());
+                s.getCreatedAt(), s.getCompletedAt(), null, null);
     }
 }

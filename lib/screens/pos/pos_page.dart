@@ -11,6 +11,7 @@ import '../../state/product_store.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/min_width_scroll.dart';
 import '../../widgets/page_header.dart';
+import 'cash_payment_dialog.dart';
 import 'pos_dialogs.dart';
 import 'pos_resume.dart';
 import 'pos_widgets.dart';
@@ -88,6 +89,10 @@ class _PosPageState extends State<PosPage> {
           content: Text(message),
           backgroundColor: error ? AppColors.danger : null,
           duration: const Duration(seconds: 3),
+          // Floating and narrow, centred over the invoice column: never over
+          // the checkout footer (Complete Sale) in the summary column.
+          behavior: SnackBarBehavior.floating,
+          width: (MediaQuery.sizeOf(context).width - 32).clamp(200.0, 440.0),
         ),
       );
   }
@@ -176,15 +181,29 @@ class _PosPageState extends State<PosPage> {
     if (ok) cart.clearLines();
   }
 
+  bool _askingCash = false;
+
   Future<void> _complete() async {
     final s = AppStrings.of(context);
     final cart = PosCartScope.read(context);
-    if (cart.isEmpty || _busy) return;
+    if (cart.isEmpty || _busy || _askingCash) return;
+    var draft = cart.toDraft(withPayment: true);
+    // Cash: ask how much the customer gave (feature 3). The server checks
+    // it against its own total and answers with the change.
+    if (cart.paymentMethod == PaymentMethod.cash) {
+      _askingCash = true; // a second Complete cannot open a second dialog
+      final int? received;
+      try {
+        received = await CashPaymentDialog.show(context, cart.totalCents);
+      } finally {
+        _askingCash = false;
+      }
+      if (!mounted || received == null) return;
+      draft = draft.withCashReceived(received);
+    }
     setState(() => _busy = true);
     try {
-      final sale = await widget.api.completeSale(
-        cart.toDraft(withPayment: true),
-      );
+      final sale = await widget.api.completeSale(draft);
       cart.reset();
       if (!mounted) return;
       setState(() => _busy = false);
@@ -354,7 +373,8 @@ class _PosPageState extends State<PosPage> {
       onDiscount: _discount,
       onClear: _clearAll,
     );
-    final summary = PosSummaryPanel(
+    final summary = PosSummaryPanel(cart: cart);
+    final footer = PosCheckoutFooter(
       cart: cart,
       busy: _busy,
       onComplete: _complete,
@@ -405,9 +425,21 @@ class _PosPageState extends State<PosPage> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      // Summary and payment methods scroll if the window
+                      // is short; the checkout footer (total + Complete
+                      // Sale) is outside the scroll and always visible.
                       SizedBox(
                         width: 300,
-                        child: SingleChildScrollView(child: summary),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(
+                              child: SingleChildScrollView(child: summary),
+                            ),
+                            const SizedBox(height: AppSpacing.sm),
+                            footer,
+                          ],
+                        ),
                       ),
                       const SizedBox(width: AppSpacing.lg),
                       Expanded(flex: 5, child: invoicePanel()),

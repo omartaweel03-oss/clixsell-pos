@@ -85,6 +85,8 @@ class Sale {
     this.paymentMethod,
     this.receiptCode,
     this.completedAt,
+    this.cashReceived,
+    this.changeDue,
   });
 
   factory Sale.fromJson(Map<String, dynamic> j) => Sale(
@@ -110,6 +112,8 @@ class Sale {
     completedAt: j['completedAt'] == null
         ? null
         : DateTime.parse(j['completedAt'] as String),
+    cashReceived: (j['cashReceived'] as num?)?.toDouble(),
+    changeDue: (j['changeDue'] as num?)?.toDouble(),
   );
 
   final int saleId;
@@ -128,6 +132,11 @@ class Sale {
   final String? receiptCode;
   final DateTime createdAt;
   final DateTime? completedAt;
+
+  /// Only in the answer to a cash sale paid with an amount received: what the
+  /// customer handed over and the change given back (not stored yet).
+  final double? cashReceived;
+  final double? changeDue;
 
   int get itemCount => items.length;
 }
