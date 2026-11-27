@@ -28,10 +28,14 @@ abstract class ProductCamera {
   static bool get supported =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
+  /// [overlay] (the scan frame) is drawn over the live picture only. When the
+  /// camera cannot be used, [onProblem]'s view is shown alone, with no
+  /// overlay on top of its text and buttons.
   Widget preview({
     required void Function(ScannedCode code) onCode,
     required Widget Function(BuildContext context, CameraProblem problem)
     onProblem,
+    Widget? overlay,
   });
 
   Future<void> start();
@@ -85,8 +89,11 @@ class DeviceProductCamera implements ProductCamera {
     required void Function(ScannedCode code) onCode,
     required Widget Function(BuildContext context, CameraProblem problem)
     onProblem,
+    Widget? overlay,
   }) => MobileScanner(
     controller: _scanner,
+    // mobile_scanner builds the overlay only while there is no error.
+    overlayBuilder: overlay == null ? null : (_, _) => overlay,
     onDetect: (capture) {
       for (final b in capture.barcodes) {
         final value = b.rawValue;

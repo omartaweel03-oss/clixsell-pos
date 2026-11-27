@@ -308,9 +308,13 @@ class _AiIdentifyPageState extends State<AiIdentifyPage>
                     problem: problem,
                     onRetry: _startScanner,
                   ),
+                  // Only over the live picture: never over the camera
+                  // problem view (it used to cut through its text / button).
+                  overlay: looking
+                      ? null
+                      : const IgnorePointer(child: _ScanFrame()),
                 ),
               ),
-              if (!looking) const IgnorePointer(child: _ScanFrame()),
               if (looking)
                 ColoredBox(
                   key: const Key('aiLookingUp'),
@@ -790,6 +794,7 @@ class _ScanFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Center(
+    key: const Key('aiScanFrame'),
     child: FractionallySizedBox(
       widthFactor: 0.8,
       heightFactor: 0.3,

@@ -53,9 +53,16 @@ class BarcodeLookupClient implements BarcodeLookupApi {
   static bool isProductBarcode(String code) =>
       RegExp(r'^\d{8,14}$').hasMatch(code);
 
+  /// Removes leading / trailing spaces and control characters exactly like
+  /// Java's String.trim(), which the inventory applies before it checks and
+  /// stores a barcode (Product.validate).
+  static String trimLikeInventory(String code) =>
+      code.replaceAll(RegExp(r'^[\x00-\x20]+|[\x00-\x20]+$'), '');
+
   @override
-  Future<BarcodeLookupResult> lookup(String code, {String? format}) async {
-    if (!isProductBarcode(code)) return BarcodeLookupResult.invalid(code);
+  Future<BarcodeLookupResult> lookup(String raw, {String? format}) async {
+    final code = trimLikeInventory(raw);
+    if (!isProductBarcode(code)) return BarcodeLookupResult.invalid(raw);
     final query = StringBuffer('code=${Uri.encodeQueryComponent(code)}');
     if (format != null) {
       query.write('&format=${Uri.encodeQueryComponent(format)}');

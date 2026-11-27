@@ -90,6 +90,8 @@ public class ProductController {
                                            @RequestParam(value = "code", required = false) String code,
                                            @RequestParam(value = "format", required = false) String format) {
         long storeId = user.requireStoreId();
+        // Same as Product.validate, which trims a barcode before checking and storing it.
+        code = code == null ? null : code.trim();
         if (format != null && !BarcodeForms.FORMATS.contains(format)) {
             throw new ValidationException(Map.of("format", "Unsupported barcode format"));
         }

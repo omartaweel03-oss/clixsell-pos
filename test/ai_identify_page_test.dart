@@ -45,11 +45,20 @@ class FakeCamera implements ProductCamera {
   Widget preview({
     required void Function(ScannedCode code) onCode,
     required Widget Function(BuildContext, CameraProblem) onProblem,
+    Widget? overlay,
   }) {
     this.onCode = onCode;
+    // Same contract as the real camera (mobile_scanner): the overlay is
+    // drawn over the live picture only, never over the problem view.
     return Builder(
       builder: (context) => problem == null
-          ? const SizedBox.expand(key: Key('fakePreview'))
+          ? Stack(
+              fit: StackFit.expand,
+              children: [
+                const SizedBox.expand(key: Key('fakePreview')),
+                ?overlay,
+              ],
+            )
           : onProblem(context, problem!),
     );
   }
@@ -180,6 +189,7 @@ void main() {
       );
       expect(h.camera.starts, 1);
       expect(_k('fakePreview'), findsOneWidget);
+      expect(_k('aiScanFrame'), findsOneWidget); // over the live picture
       expect(
         find.text(
           lang == 'ar'
@@ -436,6 +446,15 @@ void main() {
     ) async {
       final h = await _pump(tester, setup: (h) => h.camera.problem = problem);
       expect(_k('aiCameraProblem-${problem.name}'), findsOneWidget);
+      // Regression: the scan frame was drawn over this view and cut through
+      // the instructions and the Try again button.
+      expect(_k('aiScanFrame'), findsNothing);
+      final retry = tester.getRect(_k('aiCameraRetry'));
+      final view = tester.getRect(_k('aiCameraProblem-${problem.name}'));
+      expect(
+        view.contains(retry.topLeft) && view.contains(retry.bottomRight),
+        isTrue,
+      );
       final before = h.camera.starts;
       await _tap(tester, _k('aiCameraRetry'));
       expect(h.camera.starts, before + 1);
@@ -540,6 +559,36 @@ void main() {
         'code': '036000291452',
         'format': 'UPC_A',
       });
+    });
+
+    test('spaces / control characters around the value are trimmed like '
+        'the inventory (Java String.trim)', () async {
+      final c = client((_) => json({'code': 'PRODUCT_NOT_FOUND'}, 404));
+      await c.lookup(' 4006381333931\t\n', format: 'EAN_13');
+      expect(requests.single.queryParameters['code'], '4006381333931');
+      expect(
+        BarcodeLookupClient.trimLikeInventory('\x1d12345678 '),
+        '12345678',
+      );
+      // not trimmed inside the value
+      expect((await c.lookup('4006 381333931')).invalid, isTrue);
+      expect(requests, hasLength(1));
+    });
+
+    test('every length the inventory accepts (8 to 14 digits) is looked up, '
+        'not refused', () async {
+      final c = client((_) => json({'code': 'PRODUCT_NOT_FOUND'}, 404));
+      for (var n = 8; n <= 14; n++) {
+        final code = List.filled(n, '1').join();
+        expect((await c.lookup(code, format: 'CODE_128')).invalid, isFalse);
+      }
+      expect(requests, hasLength(7));
+      // the same rule as the inventory: 7 or 15 digits, letters, Arabic-Indic
+      // digits are not product barcodes
+      for (final v in ['1234567', '123456789012345', 'AB123456', '١٢٣٤٥٦٧٨']) {
+        expect((await c.lookup(v)).invalid, isTrue, reason: v);
+      }
+      expect(requests, hasLength(7));
     });
 
     test('404 is "not found"; 400 is "invalid"; 500 is an error', () async {

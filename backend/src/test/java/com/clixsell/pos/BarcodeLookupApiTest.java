@@ -115,4 +115,39 @@ class BarcodeLookupApiTest extends ApiTestBase {
         createProduct(shini.adminToken(), "Empty Shelf Item", "4006381333931", 5.5, 0);
         lookup(shini.cashierToken(), "4006381333931", null).andExpect(jsonPath("$.product.quantity").value(0));
     }
+
+    /**
+     * Final validation: every barcode the inventory accepts (Product.validate: digits only, 8–14,
+     * no check-digit rule) is found by the camera lookup, whatever symbology printed it, including
+     * internal numeric Code 128 labels and lengths that are not GTINs.
+     */
+    @Test
+    void everyBarcodeTheInventoryAcceptsIsFoundByTheCamera() throws Exception {
+        String[][] cases = {
+                {"12345678", "EAN_8"},          // 8 digits, wrong EAN-8 check digit: still a valid inventory barcode
+                {"123456789", "CODE_128"},      // 9 digits
+                {"1000000042", "CODE_128"},     // 10-digit internal shelf label
+                {"12345678901", "CODE_128"},    // 11 digits
+                {"40063813339310", "CODE_128"}, // 14 digits
+                {"4006381333931", null},        // no format reported
+        };
+        for (String[] c : cases) {
+            long id = createProduct(shini.adminToken(), "Item " + c[0], c[0], 1.0, 3);
+            lookup(shini.cashierToken(), c[0], c[1]).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.matchType").value("EXACT"))
+                    .andExpect(jsonPath("$.matchedBarcode").value(c[0]))
+                    .andExpect(jsonPath("$.product.productId").value(id));
+        }
+    }
+
+    /** The inventory trims a barcode before checking and storing it; the lookup does the same. */
+    @Test
+    void surroundingSpacesAreTrimmedLikeTheInventoryDoes() throws Exception {
+        long id = createProduct(shini.adminToken(), "Jericho Milk 1L", " 4006381333931 ", 5.5, 12);
+        lookup(shini.cashierToken(), " 4006381333931\t", "EAN_13").andExpect(status().isOk())
+                .andExpect(jsonPath("$.scannedCode").value("4006381333931"))
+                .andExpect(jsonPath("$.product.productId").value(id));
+        // spaces inside the value are not trimmed: still not a product barcode
+        lookup(shini.cashierToken(), "4006 381333931", "EAN_13").andExpect(status().isBadRequest());
+    }
 }

@@ -119,7 +119,7 @@ class AiStrings {
       _t('Camera permission needed', 'يلزم إذن الكاميرا');
   String get permissionBody => _t(
     'ClixSell needs the camera to scan barcodes. Tap Try again. If Android no longer asks, allow it in Settings > Apps > ClixSell > Permissions > Camera.',
-    'يحتاج ClixSell الكاميرا لمسح الباركود. اضغط إعادة المحاولة. إن لم يعد Android يسأل، اسمح بها من الإعدادات > التطبيقات > ClixSell > الأذونات > الكاميرا.',
+    'يحتاج ClixSell الكاميرا لمسح الباركود. اضغط إعادة المحاولة. إن لم يعد Android يسأل، افتح الإعدادات، ثم التطبيقات، ثم ClixSell، ثم الأذونات، واسمح بالكاميرا.',
   );
   String get unavailableTitle =>
       _t('Camera not available', 'الكاميرا غير متاحة');
