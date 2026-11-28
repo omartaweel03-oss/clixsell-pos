@@ -118,8 +118,9 @@ chk('another store cannot see the shift (404)', call(f'/shifts/{shift}', T['nesh
 chk('another store cannot close it (404)', call(f'/shifts/{sh2["shiftId"]}/admin-close', T['neshan.admin'], 'POST', {'countedCash': 0, 'reason': 'Not mine'})[0], 404)
 chk('admin close without a reason -> 400', call(f'/shifts/{sh2["shiftId"]}/admin-close', T['shini.admin'], 'POST', {'countedCash': 0})[0], 400)
 cur = call('/shifts/current', T['shini.cashier'])[1]['shift']
+chk('a refund from a drawer opened with 0.00 leaves a negative expected cash (reported, not blocked)', cur['expectedCash'] < 0, True)
 s, b = call(f'/shifts/{sh2["shiftId"]}/admin-close', T['shini.admin'], 'POST',
-            {'countedCash': max(cur['expectedCash'], 0), 'reason': 'End of day, cashier left'})
+            {'countedCash': 0, 'note': 'Refund paid from the safe', 'reason': 'End of day, cashier left'})
 chk('Store Admin exceptional close -> ADMIN_EXCEPTION', (s, b['closeKind']), (200, 'ADMIN_EXCEPTION'))
 lst = call('/shifts', T['shini.admin'])[1]
 chk('Store Admin list shows both shifts', sorted(x['shiftId'] for x in lst if x['drawerId'] == drawer), sorted([shift, sh2['shiftId']]))
