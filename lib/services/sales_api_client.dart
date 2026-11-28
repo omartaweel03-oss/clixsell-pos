@@ -14,7 +14,8 @@ class SaleDraft {
     this.cashReceivedCents,
   });
 
-  /// productId → quantity
+  /// line key → quantity. The key is the product id (pieces), or "productId@packageId" for
+  /// a carton / box (quantity = packages).
   final Map<String, int> lines;
   final int? saleId;
   final DiscountType? discountType;
@@ -39,7 +40,11 @@ class SaleDraft {
     'saleId': saleId,
     'items': [
       for (final e in lines.entries)
-        {'productId': int.parse(e.key), 'quantity': e.value},
+        {
+          'productId': int.parse(e.key.split('@').first),
+          'quantity': e.value,
+          if (e.key.contains('@')) 'packageId': int.parse(e.key.split('@').last),
+        },
     ],
     'discountType': discountValue > 0 ? discountType?.apiName : null,
     'discountValue': discountValue > 0 ? discountValue : null,

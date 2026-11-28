@@ -27,6 +27,10 @@ public record SaleRequest(
         this(saleId, items, discountType, discountValue, paymentMethod, null);
     }
 
-    public record Line(Long productId, Integer quantity) {
+    /** packageId: optional carton / box of the product (feature 6); null = pieces. */
+    public record Line(Long productId, Integer quantity, Long packageId) {
+        public Line(Long productId, Integer quantity) {
+            this(productId, quantity, null);
+        }
     }
 }

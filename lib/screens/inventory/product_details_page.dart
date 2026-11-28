@@ -1,3 +1,5 @@
+import '../../services/package_api_client.dart';
+import 'product_packages_card.dart';
 import 'package:flutter/material.dart';
 
 import '../../l10n/app_strings.dart';
@@ -28,7 +30,11 @@ class ProductDetailsPage extends StatefulWidget {
     required this.productId,
     required this.onBack,
     required this.onEdit,
+    this.packages,
   });
+
+  /// Cartons / boxes of the product (Store Admin; null = not shown).
+  final PackageApiClient? packages;
 
   final String productId;
   final VoidCallback onBack;
@@ -107,11 +113,21 @@ class _ProductDetailsPageState extends State<ProductDetailsPage> {
         ),
       );
     } else {
-      body = _Details(
+      final details = _Details(
         product: product,
         onEdit: () => widget.onEdit(product),
         onDelete: () => _delete(product),
       );
+      final packages = widget.packages;
+      body = packages == null
+          ? details
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                details,
+                ProductPackagesCard(api: packages, productId: product.id),
+              ],
+            );
     }
 
     return LayoutBuilder(

@@ -60,8 +60,12 @@ public class ReturnService {
         Long shiftId = shifts.shiftForTill(user, cash);
         BigDecimal forLine = BigDecimal.valueOf(returns.refundedForLine(item.getSaleItemId())).setScale(2, RoundingMode.HALF_UP);
         BigDecimal forSale = BigDecimal.valueOf(returns.refundedForSale(sale.getSaleId())).setScale(2, RoundingMode.HALF_UP);
+        int q = request.quantity() == null ? 0 : request.quantity();
+        boolean lastReturn = sale.getItems().stream()
+                .allMatch(i -> i == item ? i.getReturnableQuantity() == q : i.getReturnableQuantity() == 0);
         ReturnProduct saved = returns.save(ReturnProduct.process(sale, item, request.quantity(),
-                request.reason(), cashier, LocalDateTime.now(), maxDays, forLine, forSale, shiftId));
+                request.reason(), cashier, LocalDateTime.now(), maxDays, forLine, forSale, shiftId,
+                sale.getStore().getCashRoundingMinor(), lastReturn));
         return ReturnResponse.from(saved);
     }
 }

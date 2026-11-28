@@ -66,7 +66,7 @@ public class ProductService {
     public Product createProduct(long storeId, ProductRequest request) {
         Product.validate(request);
         String barcode = request.barcode().trim();
-        if (products.existsByStore_StoreIdAndBarcode(storeId, barcode)) {
+        if (products.existsByStore_StoreIdAndBarcode(storeId, barcode) || products.countPackageBarcode(storeId, barcode) > 0) {
             throw new DuplicateBarcodeException(barcode);
         }
         Store store = stores.findById(storeId).orElseThrow();
@@ -85,7 +85,8 @@ public class ProductService {
         Product product = getProduct(storeId, productId);
         Product.validate(request);
         String barcode = request.barcode().trim();
-        if (products.existsByStore_StoreIdAndBarcodeAndProductIdNot(storeId, barcode, productId)) {
+        if (products.existsByStore_StoreIdAndBarcodeAndProductIdNot(storeId, barcode, productId)
+                || products.countPackageBarcode(storeId, barcode) > 0) {
             throw new DuplicateBarcodeException(barcode);
         }
         double oldPrice = product.getSellingPrice();

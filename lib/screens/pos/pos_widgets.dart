@@ -157,7 +157,7 @@ class PosProductsPanel extends StatelessWidget {
                     itemCount: products.length,
                     itemBuilder: (context, i) => _ProductCard(
                       product: products[i],
-                      inCart: cart.lineFor(products[i].id)?.quantity ?? 0,
+                      inCart: cart.piecesOf(products[i].id),
                       onTap: () => onAdd(products[i]),
                     ),
                   ),
@@ -360,9 +360,9 @@ class PosInvoicePanel extends StatelessWidget {
         separatorBuilder: (_, _) => const Divider(height: 1),
         itemBuilder: (context, i) => _InvoiceLine(
           line: cart.lines[i],
-          onIncrement: () => onIncrement(cart.lines[i].product.id),
-          onDecrement: () => cart.decrement(cart.lines[i].product.id),
-          onRemove: () => cart.remove(cart.lines[i].product.id),
+          onIncrement: () => onIncrement(cart.lines[i].key),
+          onDecrement: () => cart.decrement(cart.lines[i].key),
+          onRemove: () => cart.remove(cart.lines[i].key),
         ),
       );
     }
@@ -490,7 +490,7 @@ class _InvoiceLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
-    final id = line.product.id;
+    final id = line.key;
     Widget stepButton(IconData icon, String tip, VoidCallback onTap, Key key) =>
         SizedBox(
           width: 30,
@@ -526,7 +526,7 @@ class _InvoiceLine extends StatelessWidget {
                   ],
                   Expanded(
                     child: Text(
-                      line.product.name,
+                      line.displayName,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -666,6 +666,18 @@ class PosSummaryPanel extends StatelessWidget {
                   Formatters.currency(cart.discount),
                   key: const Key('summaryDiscount'),
                 ),
+                if (cart.roundingCents != 0) ...[
+                  row(
+                    CheckoutStrings.of(context).cashRounding,
+                    '${cart.roundingCents > 0 ? '+' : '−'} ${Formatters.currency(cart.roundingCents.abs() / 100)}',
+                    key: const Key('summaryRounding'),
+                  ),
+                  row(
+                    CheckoutStrings.of(context).amountDue,
+                    Formatters.currency(cart.amountDueCents / 100),
+                    key: const Key('summaryAmountDue'),
+                  ),
+                ],
                 // D5 (UI only): no tax row on the everyday checkout. The tax is
                 // still calculated by the server, included in the total and shown
                 // on the receipt and in the reports; the rate is a Store Admin

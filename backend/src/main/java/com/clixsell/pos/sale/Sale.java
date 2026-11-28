@@ -24,6 +24,7 @@ import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -102,6 +103,13 @@ public class Sale {
     @Column(name = "shift_id")
     private Long shiftId;
 
+    /**
+     * V7, D4: cash rounding in agorot (payable − total; 0 = none). The invoice total itself is never
+     * changed; the payment records total + rounding. Fixed once the sale is completed.
+     */
+    @Column(name = "rounding_minor", nullable = false)
+    private long roundingMinor = 0;
+
     @OneToMany(mappedBy = "sale", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("saleItemId")
     private List<SaleItem> items = new ArrayList<>();
@@ -144,13 +152,20 @@ public class Sale {
      * of a second line.
      */
     public void addItem(Product product, int quantity) {
+        addItem(product, quantity, null);
+    }
+
+    /** Adds pieces ({@code pkg} null) or packages of a product; the same product AND unit merge. */
+    public void addItem(Product product, int quantity, PackageSnapshot pkg) {
         requireOpen();
         SaleItem.validateQuantity(quantity);
         if (!product.belongsTo(store.getStoreId())) {
             throw new IllegalArgumentException("Product of another store");
         }
+        Long pkgId = pkg == null ? null : pkg.packageId();
         for (SaleItem item : items) {
-            if (item.getProduct() != null && Objects.equals(item.getProduct().getProductId(), product.getProductId())) {
+            if (item.getProduct() != null && Objects.equals(item.getProduct().getProductId(), product.getProductId())
+                    && Objects.equals(item.getPackageId(), pkgId)) {
                 item.updateQuantity(item.getQuantity() + quantity);
                 return;
             }
@@ -158,7 +173,7 @@ public class Sale {
         if (items.size() >= MAX_LINES) {
             throw new ValidationException(Map.of("items", "An invoice can have at most " + MAX_LINES + " products"));
         }
-        items.add(SaleItem.of(this, product, quantity));
+        items.add(SaleItem.of(this, product, quantity, pkg));
     }
 
     // ── Totals ────────────────────────────────────────────────────────────
@@ -237,8 +252,44 @@ public class Sale {
      */
     /** Completes the sale in a cash shift (see {@link #completeSale(PaymentMethod)}). */
     public void completeSale(PaymentMethod method, Long shiftId) {
+        completeSale(method, shiftId, 0);
+    }
+
+    /** Completes the sale; a CASH payment is rounded to {@code cashRoundingStep} agorot (D4, 0 = none). */
+    public void completeSale(PaymentMethod method, Long shiftId, int cashRoundingStep) {
+        prepareCashRounding(method, cashRoundingStep);
         completeSale(method);
         this.shiftId = shiftId;
+    }
+
+    /**
+     * Sets the cash rounding BEFORE completion, so a resumed invoice can be written with it before
+     * its payment is inserted (the database checks payment = total + rounding).
+     */
+    public void prepareCashRounding(PaymentMethod method, int cashRoundingStep) {
+        requireOpen();
+        this.roundingMinor = method == PaymentMethod.CASH ? cashRounding(totalMinor(), cashRoundingStep) : 0;
+    }
+
+    /** Nearest multiple of the step, an exact midpoint UP (19.95 → 20.00 at 0.10); minus the total. */
+    public static long cashRounding(long totalMinor, int step) {
+        if (step <= 0) return 0;
+        long q = totalMinor / step, r = totalMinor % step;
+        return (2 * r >= step ? q + 1 : q) * step - totalMinor;
+    }
+
+    /** The invoice total in agorot. */
+    public long totalMinor() {
+        return BigDecimal.valueOf(total).movePointRight(2).setScale(0, RoundingMode.HALF_UP).longValueExact();
+    }
+
+    /** What the customer pays: total + cash rounding, in agorot. */
+    public long payableMinor() {
+        return totalMinor() + roundingMinor;
+    }
+
+    public long getRoundingMinor() {
+        return roundingMinor;
     }
 
     public Long getShiftId() {
@@ -252,11 +303,19 @@ public class Sale {
             throw new ValidationException(Map.of("paymentMethod", "Choose a payment method"));
         }
         Map<String, String> shortages = new LinkedHashMap<>();
+        // pieces and packages of one product share its stock (in base units)
+        Map<Long, Integer> needed = new LinkedHashMap<>();
         for (SaleItem item : items) {
             Product p = item.getProduct();
             if (p == null) {
                 shortages.put(item.getProductName(), "This product is no longer available");
-            } else if (p.getQuantity() < item.getQuantity()) {
+            } else {
+                needed.merge(p.getProductId(), item.getBaseUnits(), Integer::sum);
+            }
+        }
+        for (SaleItem item : items) {
+            Product p = item.getProduct();
+            if (p != null && p.getQuantity() < needed.get(p.getProductId())) {
                 shortages.put(item.getProductName(), "Only " + p.getQuantity() + " left in stock");
             }
         }
@@ -264,14 +323,14 @@ public class Sale {
             throw new InsufficientStockException(shortages);
         }
         for (SaleItem item : items) {
-            item.getProduct().updateStock(-item.getQuantity());
+            item.getProduct().updateStock(-item.getBaseUnits());
             item.recordUnitCost(); // sale-time cost snapshot for profit
         }
         LocalDateTime now = now();
         status = SaleStatus.COMPLETED;
         completedAt = now;
         updatedAt = now;
-        payments.add(new Payment(this, method, total, now));
+        payments.add(new Payment(this, method, BigDecimal.valueOf(payableMinor(), 2).doubleValue(), now));
         receipt = Receipt.issue(this, now);
     }
 

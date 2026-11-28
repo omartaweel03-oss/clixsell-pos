@@ -96,6 +96,10 @@ class ApiHttp {
     () => client.put(_uri(path), headers: _headers, body: jsonEncode(body)),
   );
 
+  Future<dynamic> patch(String path, Object? body) => _send(
+    () => client.patch(_uri(path), headers: _headers, body: jsonEncode(body)),
+  );
+
   Future<dynamic> delete(String path) =>
       _send(() => client.delete(_uri(path), headers: _headers));
 

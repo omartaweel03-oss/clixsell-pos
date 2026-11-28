@@ -29,6 +29,7 @@ import 'inventory/product_details_page.dart';
 import 'inventory/product_form_page.dart';
 import 'inventory/stock_alerts_page.dart';
 import 'purchasing/suppliers_page.dart';
+import 'shifts/shifts_page.dart';
 import 'purchasing/purchase_order_details_page.dart';
 import 'purchasing/purchase_order_form_page.dart';
 import 'purchasing/purchase_orders_page.dart';
@@ -36,6 +37,9 @@ import 'purchasing/purchase_recommendations_page.dart';
 import '../l10n/purchase_order_strings.dart';
 import '../services/product_file_client.dart';
 import '../services/purchase_api_client.dart';
+import '../services/shift_api_client.dart';
+import '../services/favorite_api_client.dart';
+import '../services/package_api_client.dart';
 import '../services/supplier_api_client.dart';
 
 /// Main layout after login: navy sidebar + content area.
@@ -418,7 +422,15 @@ class _AppShellState extends State<AppShell> {
         return PosPage(
           key: const ValueKey('pos'),
           api: SalesApiClient(widget.http),
+          shifts: ShiftApiClient(widget.http),
+          favorites: FavoriteApiClient(widget.http),
+          packages: PackageApiClient(widget.http),
           message: message,
+        );
+      case SidebarDestination.shifts:
+        return ShiftsPage(
+          key: const ValueKey('shifts'),
+          api: ShiftApiClient(widget.http),
         );
       case SidebarDestination.suspendedInvoices:
         return SuspendedInvoicesPage(
@@ -490,6 +502,10 @@ class _AppShellState extends State<AppShell> {
           productFiles: widget.user.role == UserRole.storeAdmin
               ? ProductFileApiClient(widget.http)
               : null,
+          // POS favorites (feature 5): Store Admins choose and order them.
+          favorites: widget.user.role == UserRole.storeAdmin
+              ? FavoriteApiClient(widget.http)
+              : null,
           onAddProduct: () => _navigate(SidebarDestination.addProduct),
           onEditProduct: (p) =>
               _navigate(SidebarDestination.editProduct, product: p),
@@ -506,6 +522,7 @@ class _AppShellState extends State<AppShell> {
           productId: id,
           onBack: () => _navigate(SidebarDestination.products),
           onEdit: (p) => _navigate(SidebarDestination.editProduct, product: p),
+          packages: PackageApiClient(widget.http),
         );
       case SidebarDestination.addProduct:
         return ProductFormPage(

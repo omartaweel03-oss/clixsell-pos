@@ -35,7 +35,11 @@ public final class DatabaseRules {
             Map.entry("PAYMENT_AMOUNT_MISMATCH", "The payment does not match the invoice total"),
             Map.entry("PAYMENT_NO_UPDATE", "A recorded payment cannot be changed"),
             Map.entry("RETURN_AMOUNT_INVALID", "The refund amount is not valid for this invoice"),
-            Map.entry("RETURN_FIXED", "A recorded return cannot be changed"));
+            Map.entry("RETURN_FIXED", "A recorded return cannot be changed"),
+            Map.entry("BARCODE_USED_BY_PACKAGE", "A package of this store already uses this barcode"),
+            Map.entry("BARCODE_USED_BY_PRODUCT", "A product of this store already uses this barcode"),
+            Map.entry("PACKAGE_IDENTITY_FIXED", "A package's size cannot change; add a new package instead"),
+            Map.entry("SALE_ITEM_PACKAGE_SNAPSHOT", "The package on this invoice line is not consistent"));
 
     /** The rule code inside a database error, or null when it is not a rule refusal. */
     public static String code(Throwable e) {

@@ -2,6 +2,9 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import '../../l10n/favorite_strings.dart';
+import '../../services/favorite_api_client.dart';
+import '../favorites/favorites_dialog.dart';
 import '../../l10n/app_strings.dart';
 import '../../l10n/product_file_strings.dart';
 import '../../models/product.dart';
@@ -30,6 +33,7 @@ class InventoryPage extends StatefulWidget {
     this.onOpenProduct,
     this.readOnly = false,
     this.productFiles,
+    this.favorites,
     this.fileIO = const PickerProductFileIO(),
   });
 
@@ -43,6 +47,9 @@ class InventoryPage extends StatefulWidget {
   /// Import / export of product files (UR-M11, Figure 3.3). Store Admins only:
   /// null (no buttons) for Cashiers. The backend refuses other roles anyway.
   final ProductFileApi? productFiles;
+
+  /// POS favorites (feature 5); Store Admins only (null = no button).
+  final FavoriteApiClient? favorites;
   final ProductFileIO fileIO;
 
   @override
@@ -193,6 +200,17 @@ class _InventoryPageState extends State<InventoryPage> {
   Future<void> _deleteProduct(Product product) =>
       deleteProductWithUndo(context, product);
 
+  Future<void> _favorites() async {
+    final api = widget.favorites;
+    if (api == null) return;
+    final saved = await FavoritesDialog.show(context, api, ProductStoreScope.read(context).products);
+    if (saved == true && mounted) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(FavoriteStrings.of(context).saved)));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
@@ -232,6 +250,9 @@ class _InventoryPageState extends State<InventoryPage> {
                     onExport: widget.readOnly || widget.productFiles == null
                         ? null
                         : _export,
+                    onFavorites: widget.readOnly || widget.favorites == null
+                        ? null
+                        : _favorites,
                     importing: _importing,
                     exporting: _exporting,
                   ),
@@ -352,6 +373,7 @@ class _Header extends StatelessWidget {
     required this.onAddProduct,
     this.onImport,
     this.onExport,
+    this.onFavorites,
     this.importing = false,
     this.exporting = false,
   });
@@ -362,6 +384,9 @@ class _Header extends StatelessWidget {
   /// Import / export (Figure 3.3); null when not available (Cashier).
   final VoidCallback? onImport;
   final VoidCallback? onExport;
+
+  /// POS favorites (Store Admin); null = hidden.
+  final VoidCallback? onFavorites;
   final bool importing;
   final bool exporting;
 
@@ -435,6 +460,13 @@ class _Header extends StatelessWidget {
               label: Text(f.exportButton),
             ),
           ),
+        if (onFavorites != null)
+          OutlinedButton.icon(
+            key: const Key('headerFavoritesButton'),
+            onPressed: onFavorites,
+            icon: const Icon(Icons.star_outline_rounded, size: 20),
+            label: Text(FavoriteStrings.of(context).button),
+          ),
         add,
       ],
     );
@@ -443,7 +475,8 @@ class _Header extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, c) {
-        if (c.maxWidth < 640) {
+        // four buttons (with POS favorites) need more room beside the title
+        if (c.maxWidth < (onFavorites != null ? 1000 : 640)) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [

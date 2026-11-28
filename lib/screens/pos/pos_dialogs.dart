@@ -4,6 +4,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../l10n/app_strings.dart';
 import '../../l10n/checkout_strings.dart';
+import '../../l10n/shift_strings.dart';
 import '../../models/sale.dart';
 import '../../services/api_http.dart';
 import '../../services/sales_api_client.dart';
@@ -17,7 +18,7 @@ String describeApiError(ApiException e, AppStrings s) => e.isNetworkError
     ? s.networkError
     : e.isForbidden
     ? s.notAllowed
-    : e.message;
+    : ShiftStrings.forLanguage(arabic: s.isArabic).forCode(e.code) ?? e.message;
 
 String _dateTime(BuildContext context, DateTime d) {
   final l = MaterialLocalizations.of(context);
@@ -683,6 +684,17 @@ class ReceiptDialog extends StatelessWidget {
                 row(s.discountLabel, '− ${Formatters.currency(sale.discount)}'),
               row(s.taxLabel(sale.taxRate), Formatters.currency(sale.tax)),
               row(s.totalLabel, Formatters.currency(sale.total), bold: true),
+              if (sale.roundingAdjustment != 0) ...[
+                row(
+                  CheckoutStrings.of(context).cashRounding,
+                  '${sale.roundingAdjustment > 0 ? '+' : '−'} ${Formatters.currency(sale.roundingAdjustment.abs())}',
+                ),
+                row(
+                  CheckoutStrings.of(context).amountPaid,
+                  Formatters.currency(sale.amountDue ?? sale.total),
+                  bold: true,
+                ),
+              ],
               if (sale.paymentMethod != null)
                 row(s.paidBy, paymentLabel(sale.paymentMethod!, s)),
               if (sale.cashReceived != null) ...[

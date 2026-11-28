@@ -33,4 +33,9 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     @Query("SELECT p.supplier.supplierId, COUNT(p) FROM Product p WHERE p.store.storeId = :storeId "
             + "GROUP BY p.supplier.supplierId")
     List<Object[]> countProductsBySupplier(@Param("storeId") Long storeId);
+
+    /** V7: a carton / box of the store already uses this barcode (one barcode = one thing to sell). */
+    @org.springframework.data.jpa.repository.Query(value = "SELECT COUNT(*) FROM product_packages WHERE store_id = :storeId "
+            + "AND barcode = :barcode", nativeQuery = true)
+    long countPackageBarcode(@Param("storeId") long storeId, @Param("barcode") String barcode);
 }

@@ -201,11 +201,11 @@ public class GuardianRepository {
                 (rs, i) -> log(rs), storeId, type, start, end);
     }
 
-    /** Units sold (completed sales) minus units returned since {@code since}, by product. */
+    /** Pieces sold (completed sales; a carton counts its pieces) minus pieces returned since {@code since}, by product. */
     Map<Long, Long> netUnitsSince(long storeId, String since) {
         Map<Long, Long> out = new HashMap<>();
         db.query("""
-                SELECT si.product_id, SUM(si.quantity)
+                SELECT si.product_id, SUM(si.quantity * si.units_per_package)
                 FROM sale_items si JOIN sales s ON s.sale_id = si.sale_id
                 WHERE s.store_id = ? AND s.status = 'COMPLETED' AND s.completed_at >= ? AND si.product_id IS NOT NULL
                 GROUP BY si.product_id""",
@@ -213,9 +213,10 @@ public class GuardianRepository {
                     out.merge(rs.getLong(1), rs.getLong(2), Long::sum);
                 }, storeId, since);
         db.query("""
-                SELECT product_id, SUM(quantity) FROM returns
-                WHERE store_id = ? AND return_date >= ? AND product_id IS NOT NULL
-                GROUP BY product_id""",
+                SELECT r.product_id, SUM(r.quantity * si.units_per_package)
+                FROM returns r JOIN sale_items si ON si.sale_item_id = r.sale_item_id
+                WHERE r.store_id = ? AND r.return_date >= ? AND r.product_id IS NOT NULL
+                GROUP BY r.product_id""",
                 rs -> {
                     out.merge(rs.getLong(1), -rs.getLong(2), Long::sum);
                 }, storeId, since);
@@ -237,7 +238,7 @@ public class GuardianRepository {
                 WHERE store_id = ? AND status = 'COMPLETED' AND completed_at >= ? AND completed_at <= ?""",
                 Double.class, storeId, dayStart(day), TEXT.format(to));
         Double refunds = db.queryForObject("""
-                SELECT COALESCE(SUM(refund_amount), 0) FROM returns
+                SELECT COALESCE(SUM(refund_amount - rounding_minor / 100.0), 0) FROM returns
                 WHERE store_id = ? AND return_date >= ? AND return_date <= ?""",
                 Double.class, storeId, dayStart(day), TEXT.format(to));
         return (sales == null ? 0 : sales) - (refunds == null ? 0 : refunds);

@@ -33,4 +33,7 @@ class CheckoutStrings {
   String get received => _t('Cash received', 'النقد المستلم');
   String get change => _t('Change given', 'الباقي المُعاد');
   String get taxIncluded => _t('Includes tax', 'يشمل الضريبة');
+  String get cashRounding => _t('Cash rounding', 'تقريب النقد');
+  String get amountDue => _t('Amount due (cash)', 'المطلوب نقداً');
+  String get amountPaid => _t('Amount paid', 'المبلغ المدفوع');
 }
