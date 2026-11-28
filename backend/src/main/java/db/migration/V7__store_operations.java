@@ -765,6 +765,29 @@ public class V7__store_operations extends BaseJavaMigration {
                 + "-" + HexFormat.of().formatHex(r) + ".db";
     }
 
+    /**
+     * True when the schema history holds a FAILED version 7 attempt and none of V7's changes are in the
+     * database. V7 runs its whole schema change in ONE transaction that rolls back on any error, but Flyway
+     * still records the failed attempt, and that record alone would stop every later start ("run repair").
+     * Only then may the record be removed: V7 runs again from the start, with its pre-flight checks and a
+     * new checked backup. Anything else (a successful V7, any V7 table or column present) returns false.
+     */
+    public static boolean failedAttemptLeftNoChanges(Connection c, String historyTable) throws SQLException {
+        String h = '"' + historyTable.replace("\"", "\"\"") + '"';
+        if (count(c, "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = '"
+                + historyTable.replace("'", "''") + "'") == 0) return false;
+        if (count(c, "SELECT COUNT(*) FROM " + h + " WHERE version = '7' AND success = 0") == 0) return false;
+        if (count(c, "SELECT COUNT(*) FROM " + h + " WHERE success = 1 AND CAST(version AS INTEGER) >= 7") > 0) return false;
+        for (String t : NEW_TABLES) {
+            if (count(c, "SELECT COUNT(*) FROM sqlite_master WHERE name = '" + t + "'") > 0) return false;
+        }
+        if (count(c, "SELECT COUNT(*) FROM sqlite_master WHERE name = 'payments_v7'") > 0) return false;
+        return count(c, "SELECT COUNT(*) FROM pragma_table_info('stores') WHERE name IN ('require_cash_shift', 'cash_rounding_minor')")
+                + count(c, "SELECT COUNT(*) FROM pragma_table_info('sales') WHERE name IN ('shift_id', 'rounding_minor', 'client_request_id')")
+                + count(c, "SELECT COUNT(*) FROM pragma_table_info('sale_items') WHERE name IN ('package_id', 'units_per_package')")
+                + count(c, "SELECT COUNT(*) FROM pragma_table_info('returns') WHERE name IN ('shift_id', 'refund_minor', 'request_key')") == 0;
+    }
+
     /** Stops before ANY change (no backup, no schema) when the database is not a sound V6 database. */
     static void preflight(Connection c) throws SQLException {
         String integrity = one(c, "PRAGMA integrity_check");

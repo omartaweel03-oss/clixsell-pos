@@ -3,6 +3,9 @@ package com.clixsell.pos.v7;
 import db.migration.V7__store_operations;
 
 import org.flywaydb.core.Flyway;
+import java.util.ArrayList;
+import java.sql.ResultSet;
+import com.clixsell.pos.config.FailedV7AttemptRecovery;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -212,6 +215,111 @@ public class V7MigrationValidationTest {
     }
 
     // ── 2. Failures: before the backup, in the backup, in the migration ────────────
+
+    // ── failed V7 attempts: Flyway records them, the application must still be able to start again ──
+
+    private Flyway flyway() {
+        return Flyway.configure().dataSource(url(), null, null).locations("classpath:db/migration")
+                .baselineOnMigrate(true).baselineVersion("1").load();
+    }
+
+    /** Every table except the schema history (rows in order) plus the whole schema: equal = nothing changed. */
+    private String contentAndSchema() throws Exception {
+        StringBuilder b = new StringBuilder();
+        try (Connection c = open(); Statement st = c.createStatement()) {
+            List<String> tables = new ArrayList<>();
+            try (ResultSet r = st.executeQuery("SELECT type, name, coalesce(sql, '') FROM sqlite_master ORDER BY type, name")) {
+                while (r.next()) {
+                    b.append(r.getString(1)).append(' ').append(r.getString(2)).append(' ').append(r.getString(3)).append('\n');
+                    if ("table".equals(r.getString(1)) && !r.getString(2).startsWith("sqlite_")
+                            && !"flyway_schema_history".equals(r.getString(2))) tables.add(r.getString(2));
+                }
+            }
+            for (String t : tables) {
+                try (ResultSet r = st.executeQuery("SELECT * FROM \"" + t + "\" ORDER BY rowid")) {
+                    int n = r.getMetaData().getColumnCount();
+                    while (r.next()) {
+                        for (int i = 1; i <= n; i++) b.append(r.getString(i)).append('|');
+                        b.append('\n');
+                    }
+                }
+            }
+        }
+        return b.toString();
+    }
+
+    private long backups() throws Exception {
+        try (Stream<Path> s = Files.list(dir)) {
+            return s.filter(p -> p.getFileName().toString().startsWith(V7__store_operations.BACKUP_PREFIX)).count();
+        }
+    }
+
+    @Test
+    void failedAttemptInsideTheTransaction_rolledBack_recordedFailed_thenTheApplicationRecovers() throws Exception {
+        fillV6();
+        // a late V7 object name already taken: V7 fails INSIDE its transaction, after the backup
+        try (Connection c = open()) { sql(c, "CREATE INDEX ux_returns_request_key ON products (name)"); }
+        String before = contentAndSchema();
+        assertThatThrownBy(() -> flyway().migrate()).hasStackTraceContaining("ux_returns_request_key");
+        assertThat(contentAndSchema()).as("data and schema rolled back completely").isEqualTo(before);
+        assertThat(backups()).as("the checked backup taken before the failure is kept").isEqualTo(1);
+        try (Connection c = open()) {
+            assertThat(n(c, "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '7' AND success = 0"))
+                    .as("Flyway records the failed attempt").isEqualTo(1);
+        }
+        // the original problem: that record alone blocks every later start, even with the cause removed
+        try (Connection c = open()) { sql(c, "DROP INDEX ux_returns_request_key"); }
+        assertThatThrownBy(() -> flyway().migrate()).hasStackTraceContaining("failed migration");
+        // the fix: the record is removed only because no V7 change is in the database; V7 then runs normally
+        Flyway f = flyway();
+        assertThat(FailedV7AttemptRecovery.clearRolledBackAttempt(f)).isTrue();
+        f.migrate();
+        try (Connection c = open()) {
+            assertThat(one(c, "SELECT max(CAST(version AS INTEGER)) FROM flyway_schema_history WHERE success = 1")).isEqualTo("7");
+            assertThat(n(c, "SELECT COUNT(*) FROM flyway_schema_history WHERE success = 0")).isZero();
+            assertThat(one(c, "PRAGMA integrity_check")).isEqualTo("ok");
+            assertThat(n(c, "SELECT COUNT(*) FROM pragma_foreign_key_check")).isZero();
+        }
+        assertThat(backups()).as("a new checked backup for the successful run").isEqualTo(2);
+        assertThat(FailedV7AttemptRecovery.clearRolledBackAttempt(flyway())).as("nothing to clear after success").isFalse();
+    }
+
+    @Test
+    void preflightRefusal_isStillReportedEveryStart_untilTheDataIsFixed_neverCleared_whenV7ObjectsExist() throws Exception {
+        fillV6();
+        try (Connection c = open()) {
+            sql(c, "INSERT INTO payments (sale_id, payment_method, amount, payment_status, paid_at) "
+                    + "VALUES (1, 'CASH', 1, 'PAID', '2026-11-02T10:00:00')");
+        }
+        String before = contentAndSchema();
+        assertThatThrownBy(() -> flyway().migrate()).hasStackTraceContaining("more than one payment");
+        // next start: the record is cleared (no V7 change) and V7's own pre-flight refuses again, with its reason
+        Flyway f = flyway();
+        assertThat(FailedV7AttemptRecovery.clearRolledBackAttempt(f)).isTrue();
+        assertThatThrownBy(f::migrate).hasStackTraceContaining("more than one payment");
+        assertThat(contentAndSchema()).isEqualTo(before);
+        assertThat(backups()).as("refused before any backup").isZero();
+        // once the data is fixed, the upgrade goes through
+        try (Connection c = open()) { sql(c, "DELETE FROM payments WHERE amount = 1 AND paid_at = '2026-11-02T10:00:00'"); }
+        f = flyway();
+        assertThat(FailedV7AttemptRecovery.clearRolledBackAttempt(f)).isTrue();
+        f.migrate();
+        try (Connection c = open()) {
+            assertThat(one(c, "SELECT max(CAST(version AS INTEGER)) FROM flyway_schema_history WHERE success = 1")).isEqualTo("7");
+        }
+    }
+
+    @Test
+    void neverCleared_whenAV7TableIsAlreadyThere() throws Exception {
+        fillV6();
+        try (Connection c = open()) { sql(c, "CREATE TABLE cash_drawers (x INTEGER)"); }
+        assertThatThrownBy(() -> flyway().migrate()).hasStackTraceContaining("cash_drawers already exists");
+        assertThat(FailedV7AttemptRecovery.clearRolledBackAttempt(flyway())).as("a V7-named table exists: left for a person").isFalse();
+        try (Connection c = open()) {
+            assertThat(n(c, "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '7' AND success = 0")).isEqualTo(1);
+        }
+        assertThatThrownBy(() -> flyway().migrate()).hasStackTraceContaining("failed migration");
+    }
 
     @Test
     void preflight_twoPaymentsForOneSale_refusesBeforeAnyChange() throws Exception {
