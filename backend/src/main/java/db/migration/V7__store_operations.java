@@ -587,6 +587,10 @@ public class V7__store_operations extends BaseJavaMigration {
             CREATE TRIGGER trg_sale_closed_shift_frozen BEFORE UPDATE OF status, subtotal, discount, tax_rate, tax, total,
                 rounding_minor, shift_id, completed_at, store_id ON sales
             WHEN coalesce(%s OR %s, 0)
+            AND (NEW.status IS NOT OLD.status OR NEW.subtotal IS NOT OLD.subtotal OR NEW.discount IS NOT OLD.discount
+                OR NEW.tax_rate IS NOT OLD.tax_rate OR NEW.tax IS NOT OLD.tax OR NEW.total IS NOT OLD.total
+                OR NEW.rounding_minor IS NOT OLD.rounding_minor OR NEW.shift_id IS NOT OLD.shift_id
+                OR NEW.completed_at IS NOT OLD.completed_at OR NEW.store_id IS NOT OLD.store_id)
             BEGIN SELECT RAISE(ABORT, 'SHIFT_CLOSED_RECORD'); END""".formatted(CLOSED.formatted("OLD.shift_id"), CLOSED.formatted("NEW.shift_id")),
             """
             CREATE TRIGGER trg_sale_closed_shift_no_delete BEFORE DELETE ON sales
@@ -606,6 +610,8 @@ public class V7__store_operations extends BaseJavaMigration {
             CREATE TRIGGER trg_sale_item_closed_shift_update BEFORE UPDATE OF sale_id, quantity, unit_price, line_total,
                 unit_price_minor ON sale_items
             WHEN coalesce(%s, 0)
+            AND (NEW.sale_id IS NOT OLD.sale_id OR NEW.quantity IS NOT OLD.quantity OR NEW.unit_price IS NOT OLD.unit_price
+                OR NEW.line_total IS NOT OLD.line_total OR NEW.unit_price_minor IS NOT OLD.unit_price_minor)
             BEGIN SELECT RAISE(ABORT, 'SHIFT_CLOSED_RECORD'); END""".formatted(CLOSED.formatted("(SELECT shift_id FROM sales WHERE sale_id = OLD.sale_id)")),
             """
             CREATE TRIGGER trg_sale_item_closed_shift_delete BEFORE DELETE ON sale_items

@@ -70,6 +70,10 @@ public class Store {
     @Column(name = "guardian_enabled", nullable = false)
     private boolean guardianEnabled = false;
 
+    /** D2: when on, every sale and cash refund needs an open cash shift (default off). */
+    @Column(name = "require_cash_shift", nullable = false)
+    private boolean requireCashShift = false;
+
     /** Required by JPA. Use {@link #create(StoreRequest)}. */
     protected Store() {
     }
@@ -111,6 +115,7 @@ public class Store {
         this.phone = blankToNull(newPhone);
         this.taxRate = newTax;
         this.maxDiscountPercent = newMax;
+        if (r.requireCashShift() != null) this.requireCashShift = r.requireCashShift();
     }
 
     /**
@@ -191,5 +196,6 @@ public class Store {
     public LocalDateTime getCreatedAt() { return createdAt; }
     public double getTaxRate() { return taxRate; }
     public double getMaxDiscountPercent() { return maxDiscountPercent; }
+    public boolean isRequireCashShift() { return requireCashShift; }
     public boolean isGuardianEnabled() { return guardianEnabled; }
 }

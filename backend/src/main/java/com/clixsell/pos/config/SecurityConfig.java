@@ -94,6 +94,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/purchase-recommendations", "/api/purchase-recommendations/**",
                                 "/api/purchase-candidates", "/api/purchase-candidates/**",
                                 "/api/purchase-orders", "/api/purchase-orders/**").hasRole("STORE_ADMIN")
+                        // Cash drawers and shifts (V7): store users; admin-only actions are checked by ShiftService.
+                        .requestMatchers("/api/drawers", "/api/drawers/**", "/api/shifts", "/api/shifts/**")
+                        .hasAnyRole("STORE_ADMIN", "CASHIER")
                         .requestMatchers("/api/sales", "/api/sales/**", "/api/returns", "/api/returns/**")
                         .hasAnyRole("STORE_ADMIN", "CASHIER")
                         .anyRequest().authenticated())

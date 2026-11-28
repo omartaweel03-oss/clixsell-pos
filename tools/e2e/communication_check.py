@@ -48,9 +48,9 @@ def stores_without_counter():
 
 
 # ── A) schema ───────────────────────────────────────────────────────────────────────────────
-chk('A', 'Flyway V6 present, no V7', (one("select count(*) from flyway_schema_history where version='6' and success=1"),
-                                      one("select count(*) from flyway_schema_history where version='7'")), (1, 0))
-chk('A', 'the 20 V6 triggers, unchanged', one("select count(*) from sqlite_master where type='trigger' and name like 'trg_%'"), 20)
+chk('A', 'Flyway V6 and V7 applied', (one("select count(*) from flyway_schema_history where version='6' and success=1"),
+                                      one("select count(*) from flyway_schema_history where version='7' and success=1")), (1, 1))
+chk('A', 'the 20 V6 triggers still present', one("select count(*) from sqlite_master where type='trigger' and name in ('trg_po_actor_insert','trg_po_actor_update','trg_po_approve','trg_po_cancel_flag','trg_po_final','trg_po_identity','trg_po_insert','trg_po_message','trg_po_no_delete','trg_po_release','trg_po_set_once','trg_po_transition','trg_po_version','trg_poe_actor','trg_poe_no_delete','trg_poe_no_update','trg_poi_delete','trg_poi_insert','trg_poi_update','trg_suppliers_no_delete')"), 20)
 
 # ── B) setup through the real API (Shini + Neshan with the same names) ──────────────────────
 s, sp = call('/suppliers', SA, 'POST', {'name': 'E2E Dairy WA', 'whatsappNumber': '+970 59 977 7001'})

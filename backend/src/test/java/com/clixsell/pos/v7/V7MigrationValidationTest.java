@@ -903,6 +903,19 @@ public class V7MigrationValidationTest {
             assertThatThrownBy(() -> sql(c, "UPDATE sale_items SET line_total = 1 WHERE sale_item_id = 80")).hasMessageContaining("SHIFT_CLOSED_RECORD");
             assertThatThrownBy(() -> sql(c, "DELETE FROM sale_items WHERE sale_item_id = 80")).hasMessageContaining("SHIFT_CLOSED_RECORD");
             sql(c, "UPDATE sale_items SET returned_quantity = 2 WHERE sale_item_id = 80");
+            // what Hibernate writes: EVERY column in the SET list, frozen ones with their SAME values —
+            // allowed (SQLite's "UPDATE OF col" fires on the column list, so the triggers compare values)
+            sql(c, "UPDATE sale_items SET sale_id = sale_id, quantity = quantity, unit_price = unit_price, "
+                    + "line_total = line_total, unit_price_minor = unit_price_minor, returned_quantity = 1 WHERE sale_item_id = 80");
+            sql(c, "UPDATE sales SET status = status, subtotal = subtotal, discount = discount, tax_rate = tax_rate, tax = tax, "
+                    + "total = total, rounding_minor = rounding_minor, shift_id = shift_id, completed_at = completed_at, "
+                    + "store_id = store_id, updated_at = 'z' WHERE sale_id = 80");
+            // ... but one changed frozen value in such a full-row update is still refused
+            assertThatThrownBy(() -> sql(c, "UPDATE sale_items SET sale_id = sale_id, quantity = 3, unit_price = unit_price, "
+                    + "line_total = line_total WHERE sale_item_id = 80")).hasMessageContaining("SHIFT_CLOSED_RECORD");
+            assertThatThrownBy(() -> sql(c, "UPDATE sales SET status = status, total = total + 1, shift_id = shift_id "
+                    + "WHERE sale_id = 80")).hasMessageContaining("SHIFT_CLOSED_RECORD");
+            sql(c, "UPDATE sale_items SET returned_quantity = 2 WHERE sale_item_id = 80");
             // nothing changed the closed shift's balance; the record itself is frozen
             assertThat(one(c, EXPECTED.formatted(1))).isEqualTo(before);
             assertThat(one(c, "SELECT expected_cash_minor || '/' || counted_cash_minor || '/' || difference_minor FROM cash_shifts "

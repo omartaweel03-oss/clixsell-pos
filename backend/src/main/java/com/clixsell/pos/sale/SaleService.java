@@ -1,5 +1,6 @@
 package com.clixsell.pos.sale;
 
+import com.clixsell.pos.shift.ShiftService;
 import com.clixsell.pos.activity.ActivityEventType;
 import com.clixsell.pos.activity.ActivityLogService;
 import com.clixsell.pos.auth.CurrentUser;
@@ -42,14 +43,16 @@ public class SaleService {
     private final StoreRepository stores;
     private final UserRepository users;
     private final ActivityLogService activity;
+    private final ShiftService shifts;
 
     public SaleService(SaleRepository sales, ProductRepository products, StoreRepository stores,
-                       UserRepository users, ActivityLogService activity) {
+                       UserRepository users, ActivityLogService activity, ShiftService shifts) {
         this.sales = sales;
         this.products = products;
         this.stores = stores;
         this.users = users;
         this.activity = activity;
+        this.shifts = shifts;
     }
 
     /** Completes the current invoice (new or resumed): stock, payment and receipt. */
@@ -62,7 +65,9 @@ public class SaleService {
             // the new total first; V7 checks every payment against the invoice it pays.
             sales.saveAndFlush(sale);
         }
-        sale.completeSale(request.paymentMethod());
+        // the completing user's open cash shift (refused before any change when the store requires one)
+        Long shiftId = shifts.shiftForTill(user, true);
+        sale.completeSale(request.paymentMethod(), shiftId);
         Sale saved = sales.save(sale);
         if (saved.getDiscount() > 0) {
             // The discount is calculated again from THIS request (openSale → calculateTotal),

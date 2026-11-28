@@ -34,7 +34,9 @@ S, N = 1, 2
 
 # ── A) database V6 is in place and the demo data kept its suppliers ─────────────────────────────
 chk('A', 'Flyway V6 applied', one("select count(*) from flyway_schema_history where version='6' and success=1"), 1)
-chk('A', 'V6 triggers present', one("select count(*) from sqlite_master where type='trigger' and name like 'trg_%'"), 20)
+# since V7 the database has more triggers; every one of the 20 V6 triggers must still be there
+chk('A', 'all 20 V6 triggers present', one("select count(*) from sqlite_master where type='trigger' and name in ('trg_po_actor_insert','trg_po_actor_update','trg_po_approve','trg_po_cancel_flag','trg_po_final','trg_po_identity','trg_po_insert','trg_po_message','trg_po_no_delete','trg_po_release','trg_po_set_once','trg_po_transition','trg_po_version','trg_poe_actor','trg_poe_no_delete','trg_poe_no_update','trg_poi_delete','trg_poi_insert','trg_poi_update','trg_suppliers_no_delete')"), 20)
+chk('A', 'Flyway V7 applied', one("select count(*) from flyway_schema_history where version='7' and success=1"), 1)
 chk('A', 'every demo supplier active', one('select count(*) from suppliers where active<>1'), 0)
 chk('A', 'no purchase orders exist (Phase 1 has no order feature)', one('select count(*) from purchase_orders'), 0)
 try:

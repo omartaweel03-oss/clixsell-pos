@@ -8,6 +8,9 @@ package com.clixsell.pos.store;
  * <p>Only the values sent change: a missing (null) value keeps the current one
  * (the Taxes dialog sends only tax and discount, General only address and
  * phone). A blank address or phone clears it.
+ *
+ * <p>{@code requireCashShift} (D2): mandatory cash shifts for this store; null keeps the current value.
  */
-public record StoreSettingsRequest(String address, String phone, Double taxRate, Double maxDiscountPercent) {
+public record StoreSettingsRequest(String address, String phone, Double taxRate, Double maxDiscountPercent,
+                                   Boolean requireCashShift) {
 }

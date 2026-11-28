@@ -96,8 +96,23 @@ public class ApiExceptionHandler {
     /** A database constraint failed (for example two saves with the same barcode at once). */
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ApiError> constraint(DataIntegrityViolationException e) {
+        String rule = DatabaseRules.code(e);
+        if (rule != null) return error(HttpStatus.CONFLICT, rule, DatabaseRules.message(rule), Map.of());
         return error(HttpStatus.CONFLICT, "CONSTRAINT_VIOLATION",
                 "The data conflicts with existing records", Map.of());
+    }
+
+    /**
+     * A database rule (trigger) refused the change but the driver error reached us under another
+     * Spring type (Hibernate reports trigger aborts as JpaSystemException). Known rule → 409 with its
+     * code; anything else is a real server error and is passed on unchanged.
+     */
+    @ExceptionHandler({org.springframework.orm.jpa.JpaSystemException.class,
+            org.springframework.jdbc.UncategorizedSQLException.class})
+    public ResponseEntity<ApiError> databaseRule(RuntimeException e) {
+        String rule = DatabaseRules.code(e);
+        if (rule == null) throw e;
+        return error(HttpStatus.CONFLICT, rule, DatabaseRules.message(rule), Map.of());
     }
 
     @ExceptionHandler({HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class})

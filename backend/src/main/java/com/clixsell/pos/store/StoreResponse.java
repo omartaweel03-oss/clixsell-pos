@@ -15,11 +15,12 @@ public record StoreResponse(
         long adminCount,
         long cashierCount,
         double taxRate,
-        double maxDiscountPercent
+        double maxDiscountPercent,
+        boolean requireCashShift
 ) {
     public static StoreResponse from(Store s, long adminCount, long cashierCount) {
         return new StoreResponse(s.getStoreId(), s.getName(), s.getAddress(), s.getPhone(),
                 s.getStatus(), s.getCreatedAt(), adminCount, cashierCount,
-                s.getTaxRate(), s.getMaxDiscountPercent());
+                s.getTaxRate(), s.getMaxDiscountPercent(), s.isRequireCashShift());
     }
 }

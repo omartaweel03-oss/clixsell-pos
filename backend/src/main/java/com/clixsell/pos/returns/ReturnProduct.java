@@ -85,6 +85,14 @@ public class ReturnProduct {
     @Column(name = "refund_method", nullable = false)
     private PaymentMethod refundMethod;
 
+    /** V7: the open cash shift of the user who made the return (null = none). */
+    @Column(name = "shift_id")
+    private Long shiftId;
+
+    /** V7: the exact refund in agorot (= refund_amount × 100); null on returns made before V7. */
+    @Column(name = "refund_minor")
+    private Long refundMinor;
+
     @Column(name = "return_date", nullable = false)
     @Convert(converter = LocalDateTimeTextConverter.class)
     private LocalDateTime returnDate;
@@ -98,6 +106,17 @@ public class ReturnProduct {
      */
     public static ReturnProduct process(Sale sale, SaleItem item, Integer quantity, String reason,
                                         User cashier, LocalDateTime now, int maxDays) {
+        return process(sale, item, quantity, reason, cashier, now, maxDays, BigDecimal.ZERO, BigDecimal.ZERO, null);
+    }
+
+    /**
+     * As {@link #process(Sale, SaleItem, Integer, String, User, LocalDateTime, int)}, knowing what was
+     * already refunded for this line and for the whole invoice (so the refunds never add up to more
+     * than was paid), in the given cash shift.
+     */
+    public static ReturnProduct process(Sale sale, SaleItem item, Integer quantity, String reason,
+                                        User cashier, LocalDateTime now, int maxDays,
+                                        BigDecimal refundedForLine, BigDecimal refundedForSale, Long shiftId) {
         validateReturn(sale, item, quantity, reason, now, maxDays);
         ReturnProduct r = new ReturnProduct();
         r.store = sale.getStore();
@@ -107,7 +126,10 @@ public class ReturnProduct {
         r.cashier = cashier;
         r.quantity = quantity;
         r.reason = reason.trim();
-        r.refundAmount = calculateRefund(sale, item, quantity);
+        BigDecimal refund = calculateRefund(sale, item, quantity, refundedForLine, refundedForSale);
+        r.refundAmount = refund.doubleValue();
+        r.refundMinor = refund.movePointRight(2).longValueExact();
+        r.shiftId = shiftId;
         r.refundMethod = sale.getPaymentMethod();
         r.returnDate = now.withNano(0);
         r.restoreStock();
@@ -144,13 +166,31 @@ public class ReturnProduct {
      * invoice total (so discount and tax are included), per unit, × quantity.
      */
     static double calculateRefund(Sale sale, SaleItem item, int quantity) {
-        if (sale.getSubtotal() <= 0) return 0;
+        return calculateRefund(sale, item, quantity, BigDecimal.ZERO, BigDecimal.ZERO).doubleValue();
+    }
+
+    /**
+     * The refund, rounded to agorot, such that partial returns never add up to more than was paid:
+     * the return that completes a line refunds exactly what is left of the line's share (so
+     * 3 × 1 unit of a 10.01 line gives 3.34 + 3.34 + 3.33), and no return exceeds what is left of
+     * the invoice's payment.
+     */
+    static BigDecimal calculateRefund(Sale sale, SaleItem item, int quantity,
+                                      BigDecimal refundedForLine, BigDecimal refundedForSale) {
+        if (sale.getSubtotal() <= 0) return BigDecimal.ZERO.setScale(2);
         BigDecimal paidForLine = BigDecimal.valueOf(sale.getTotal())
                 .multiply(BigDecimal.valueOf(item.getLineTotal()))
                 .divide(BigDecimal.valueOf(sale.getSubtotal()), 10, RoundingMode.HALF_UP);
-        return paidForLine.multiply(BigDecimal.valueOf(quantity))
-                .divide(BigDecimal.valueOf(item.getQuantity()), 2, RoundingMode.HALF_UP)
-                .doubleValue();
+        BigDecimal refund;
+        if (quantity == item.getReturnableQuantity()) {
+            refund = paidForLine.setScale(2, RoundingMode.HALF_UP).subtract(refundedForLine);
+        } else {
+            refund = paidForLine.multiply(BigDecimal.valueOf(quantity))
+                    .divide(BigDecimal.valueOf(item.getQuantity()), 2, RoundingMode.HALF_UP);
+        }
+        BigDecimal leftOfPayment = BigDecimal.valueOf(sale.getTotal()).setScale(2, RoundingMode.HALF_UP)
+                .subtract(refundedForSale);
+        return refund.min(leftOfPayment).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
     }
 
     /** Puts the returned units back into stock and counts them on the sale line. */
@@ -167,4 +207,6 @@ public class ReturnProduct {
     public double getRefundAmount() { return refundAmount; }
     public PaymentMethod getRefundMethod() { return refundMethod; }
     public LocalDateTime getReturnDate() { return returnDate; }
+    public Long getShiftId() { return shiftId; }
+    public Long getRefundMinor() { return refundMinor; }
 }

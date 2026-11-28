@@ -42,8 +42,8 @@ FIN_SQL = ['select product_id, quantity, selling_price, cost_price, supplier_id 
            'select return_id, quantity, refund_amount from returns order by return_id']
 
 # ── A) start: V6 in place, no orders ────────────────────────────────────────────────────────
-chk('A', 'Flyway V6 present, no V7', (one("select count(*) from flyway_schema_history where version='6' and success=1"),
-                                      one("select count(*) from flyway_schema_history where version='7'")), (1, 0))
+chk('A', 'Flyway V6 and V7 applied', (one("select count(*) from flyway_schema_history where version='6' and success=1"),
+                                      one("select count(*) from flyway_schema_history where version='7' and success=1")), (1, 1))
 chk('A', 'no purchase orders yet', one('select count(*) from purchase_orders'), 0)
 
 # ── B) roles ────────────────────────────────────────────────────────────────────────────────
@@ -76,6 +76,9 @@ def sell(pid, units, days_ago):
                "created_at, updated_at, completed_at) values (1, ?, ?, 'COMPLETED', ?, 0, 0, 0, ?, ?, ?, ?)",
                (cashier, f'E2E-{inv[0]}', units * 5.0, units * 5.0, at, at, at))
     sid = one('select max(sale_id) from sales')
+    # as the application does: every completed sale has its payment (V7 checks refunds against it)
+    db.execute("insert into payments (sale_id, payment_method, amount, payment_status, paid_at) values (?, 'CASH', ?, 'PAID', ?)",
+               (sid, units * 5.0, at))
     db.execute("insert into sale_items (sale_id, product_id, product_name, barcode, quantity, unit_price, line_total, "
                "returned_quantity, unit_cost) select ?, product_id, name, barcode, ?, 5, ?, 0, cost_price from products "
                "where product_id=?", (sid, units, units * 5.0, pid))

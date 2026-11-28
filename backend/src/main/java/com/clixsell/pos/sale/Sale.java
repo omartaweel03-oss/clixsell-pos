@@ -98,6 +98,10 @@ public class Sale {
     @Convert(converter = LocalDateTimeTextConverter.class)
     private LocalDateTime completedAt;
 
+    /** V7: the cash shift a COMPLETED sale belongs to (null = no shift; never set on other states). */
+    @Column(name = "shift_id")
+    private Long shiftId;
+
     @OneToMany(mappedBy = "sale", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("saleItemId")
     private List<SaleItem> items = new ArrayList<>();
@@ -231,6 +235,16 @@ public class Sale {
      *
      * @throws InsufficientStockException listing the products that are short
      */
+    /** Completes the sale in a cash shift (see {@link #completeSale(PaymentMethod)}). */
+    public void completeSale(PaymentMethod method, Long shiftId) {
+        completeSale(method);
+        this.shiftId = shiftId;
+    }
+
+    public Long getShiftId() {
+        return shiftId;
+    }
+
     public void completeSale(PaymentMethod method) {
         requireOpen();
         requireItems();
