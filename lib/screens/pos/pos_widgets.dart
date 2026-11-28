@@ -666,11 +666,10 @@ class PosSummaryPanel extends StatelessWidget {
                   Formatters.currency(cart.discount),
                   key: const Key('summaryDiscount'),
                 ),
-                row(
-                  s.taxLabel(cart.taxRate),
-                  Formatters.currency(cart.tax),
-                  key: const Key('summaryTax'),
-                ),
+                // D5 (UI only): no tax row on the everyday checkout. The tax is
+                // still calculated by the server, included in the total and shown
+                // on the receipt and in the reports; the rate is a Store Admin
+                // setting.
                 const SizedBox(height: AppSpacing.sm),
                 Container(
                   padding: const EdgeInsets.symmetric(
@@ -702,6 +701,16 @@ class PosSummaryPanel extends StatelessWidget {
                         ),
                       ),
                     ],
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  CheckoutStrings.of(context).taxIncluded,
+                  key: const Key('summaryTaxIncluded'),
+                  textAlign: TextAlign.end,
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
                   ),
                 ),
               ],

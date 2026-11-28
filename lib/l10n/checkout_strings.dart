@@ -32,4 +32,5 @@ class CheckoutStrings {
   String get payWith => _t('Pay with', 'الدفع بـ');
   String get received => _t('Cash received', 'النقد المستلم');
   String get change => _t('Change given', 'الباقي المُعاد');
+  String get taxIncluded => _t('Includes tax', 'يشمل الضريبة');
 }

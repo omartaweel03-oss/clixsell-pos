@@ -50,7 +50,10 @@ void main() {
     expect(_text(tester, 'qty-1'), '2');
     expect(_text(tester, 'summaryItems'), '2');
     expect(_text(tester, 'summarySubtotal'), '₪ 12.00');
-    expect(_text(tester, 'summaryTax'), '₪ 1.92'); // 16%
+    // D5: no tax row on the checkout; the total still includes the 16% tax (1.92)
+    expect(find.byKey(const Key('summaryTax')), findsNothing);
+    expect(find.textContaining('Tax ('), findsNothing);
+    expect(_text(tester, 'summaryTaxIncluded'), 'Includes tax');
     expect(_text(tester, 'summaryTotal'), '₪ 13.92');
 
     await _tap(tester, 'inc-2');

@@ -207,6 +207,29 @@ void main() {
     });
   }
 
+  for (final locale in const [Locale('en'), Locale('ar')]) {
+    testWidgets('D5 [${locale.languageCode}]: no tax row on the checkout, tax still on the receipt', (tester) async {
+      final backend = _backend();
+      await _openPos(tester, backend, locale: locale);
+      await _tap(tester, 'posProduct-25');
+      final ar = locale.languageCode == 'ar';
+      // the summary: no tax row, a note that the total includes tax, the same total
+      expect(_k('summaryTax'), findsNothing);
+      expect(find.textContaining(ar ? 'الضريبة (' : 'Tax ('), findsNothing);
+      expect(_text(tester, 'summaryTaxIncluded'), ar ? 'يشمل الضريبة' : 'Includes tax');
+      expect(_text(tester, 'summaryTotal'), '₪ 37.00'); // 31.90 + 16 % tax, unchanged
+      await _tap(tester, 'completeSaleButton');
+      await _tap(tester, 'cashQuick-3700');
+      await _tap(tester, 'cashConfirm');
+      // the receipt keeps the tax line and amount; the saved sale keeps its tax
+      expect(_k('receiptDialog'), findsOneWidget);
+      expect(find.textContaining(ar ? 'الضريبة (' : 'Tax ('), findsOneWidget);
+      expect(find.text('₪ 5.10'), findsOneWidget);
+      expect(backend.sales.single['tax'], 5.1);
+      expect(backend.sales.single['total'], 37.0);
+    });
+  }
+
   testWidgets('empty invoice: Complete Sale disabled', (tester) async {
     await _openPos(tester, _backend());
     expect(tester.widget<FilledButton>(_k('completeSaleButton')).onPressed, isNull);
