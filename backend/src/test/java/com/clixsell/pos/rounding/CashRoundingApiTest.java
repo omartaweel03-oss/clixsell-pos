@@ -79,6 +79,25 @@ class CashRoundingApiTest extends ApiTestBase {
     }
 
     @Test
+    void everyNonCashMethodIsNeverRounded_amountDueEqualsTheTotal() throws Exception {
+        step(10);
+        String cheque = ",\"cheque\":{\"number\":\"R-1\",\"bank\":\"Bank of Palestine\",\"dueDate\":\""
+                + LocalDate.now().plusDays(5) + "\"}";
+        for (String m : new String[]{"CARD", "WALLET", "BANK_TRANSFER", "CHEQUE"}) {
+            MvcResult r = as(shop.cashierToken(), post("/api/sales"), "{\"items\":[{\"productId\":" + item
+                    + ",\"quantity\":1}],\"paymentMethod\":\"" + m + "\"" + (m.equals("CHEQUE") ? cheque : "") + "}")
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.amountDue").value(19.97))
+                    .andExpect(jsonPath("$.roundingAdjustment").value(0.0)).andReturn();
+            long sale = jsonLong(r, "saleId");
+            assertThat(db.queryForObject("SELECT amount FROM payments WHERE sale_id = ?", Double.class, sale)).as(m).isEqualTo(19.97);
+            assertThat(db.queryForObject("SELECT rounding_minor FROM sales WHERE sale_id = ?", Long.class, sale)).as(m).isZero();
+        }
+        // and CASH in the same store is rounded: 20.00 (what the POS footer shows)
+        sell(item, 1, "CASH", null).andExpect(jsonPath("$.amountDue").value(20.0));
+    }
+
+    @Test
     void roundingRule_nearestStep_midpointUp_everyAllowedStep_othersRefused() throws Exception {
         assertThat(Sale.cashRounding(1995, 10)).isEqualTo(5);   // 19.95 → 20.00
         assertThat(Sale.cashRounding(1994, 10)).isEqualTo(-4);  // 19.94 → 19.90

@@ -796,12 +796,15 @@ class PosCheckoutFooter extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    s.totalLabel,
+                    // cash with rounding: the footer shows what the customer pays (= what the
+                    // backend requires); the invoice total and the rounding stay in the summary
+                    cart.roundingCents != 0 ? t.amountDue : s.totalLabel,
+                    key: const Key('footerLabel'),
                     style: const TextStyle(fontWeight: FontWeight.w800),
                   ),
                 ),
                 Text(
-                  Formatters.currency(cart.total),
+                  Formatters.currency(cart.amountDueCents / 100),
                   key: const Key('footerTotal'),
                   style: const TextStyle(
                     fontSize: 20,
@@ -811,6 +814,13 @@ class PosCheckoutFooter extends StatelessWidget {
                 ),
               ],
             ),
+            if (cart.roundingCents != 0)
+              Text(
+                '${s.totalLabel} ${Formatters.currency(cart.total)} · ${t.cashRounding} '
+                '\u2066${cart.roundingCents > 0 ? '+' : '−'}${Formatters.currency(cart.roundingCents.abs() / 100)}\u2069',
+                key: const Key('footerRoundingNote'),
+                style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+              ),
             const SizedBox(height: 2),
             Text(
               '${t.payWith}: ${paymentLabel(cart.paymentMethod, s)}',

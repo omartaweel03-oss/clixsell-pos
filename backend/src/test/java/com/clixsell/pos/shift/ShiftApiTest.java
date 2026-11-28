@@ -327,6 +327,29 @@ class ShiftApiTest extends ApiTestBase {
         assertThat(db.queryForObject("SELECT sum(refund_minor) FROM returns WHERE sale_id = ?", Long.class, sale)).isEqualTo(1001);
     }
 
+    /**
+     * CURRENT POLICY (documented for the pre-merge review, NOT a decision): a cash refund is accepted
+     * even when the drawer's expected cash cannot cover it; a cashier can do it alone (no Store Admin
+     * approval); the shift's expected cash goes negative and the closing then needs a note. A cash
+     * OUT of the same size is refused. Any change of this policy needs management approval.
+     */
+    @Test
+    void currentPolicy_cashRefundBeyondTheDrawer_isAccepted_byTheCashierAlone_expectedGoesNegative() throws Exception {
+        long earlier = jsonLong(sell(shop.cashierToken(), "CASH", 1).andReturn(), "saleId"); // 37.00, no shift
+        long shift = openShift(shop.cashierToken(), "0");
+        returnOne(shop.cashierToken(), earlier).andExpect(status().isCreated()).andExpect(jsonPath("$.refundAmount").value(37.0));
+        assertThat(db.queryForObject("SELECT shift_id FROM returns WHERE sale_id = ?", Long.class, earlier)).isEqualTo(shift);
+        as(shop.cashierToken(), get("/api/shifts/current"), null).andExpect(jsonPath("$.shift.expectedCash").value(-37.0));
+        // the same amount as a cash OUT is refused (it is not in the drawer)
+        movement(shop.adminToken(), shift, "CASH_OUT", "37", "req-cmp-0001").andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CASH_OUT_TOO_LARGE"));
+        // closing with the 0.00 actually counted shows the 37.00 difference and needs a note
+        as(shop.cashierToken(), post("/api/shifts/" + shift + "/close"), "{\"countedCash\":0}").andExpect(status().isBadRequest());
+        as(shop.cashierToken(), post("/api/shifts/" + shift + "/close"), "{\"countedCash\":0,\"note\":\"Refund paid from my pocket\"}")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.difference").value(37.0))
+                .andExpect(jsonPath("$.expectedCash").value(-37.0));
+    }
+
     @Test
     void databaseRuleCodesBecomeClearMessages() {
         RuntimeException e = new RuntimeException("could not execute statement",

@@ -55,6 +55,10 @@ class FakeProductBackend {
 
   /// Every cash amount received sent with a completed sale.
   final List<double> cashReceivedLog = [];
+
+  /// Store upgrade: the store's cash rounding step (agorot) and the POS favorites (product ids).
+  int cashRoundingMinor = 0;
+  List<int> favoriteIds = [];
   final List<Map<String, dynamic>> returns = [];
 
   /// saleItemId → purchase cost copied when the sale was completed (server side only).
@@ -382,7 +386,17 @@ class FakeProductBackend {
     // Own store settings
     if (path == '/api/store' && method == 'GET') {
       if (role == 'SYSTEM_ADMIN') return _forbidden();
-      return _json(200, _storeJson(_find(stores, 'storeId', storeId!)!));
+      return _json(200, {
+        ..._storeJson(_find(stores, 'storeId', storeId!)!),
+        'cashRoundingMinor': cashRoundingMinor,
+      });
+    }
+    if (path == '/api/favorites' && method == 'GET') {
+      if (role == 'SYSTEM_ADMIN') return _forbidden();
+      return _json(200, [
+        for (var i = 0; i < favoriteIds.length; i++)
+          {'productId': favoriteIds[i], 'name': 'p${favoriteIds[i]}', 'position': i},
+      ]);
     }
     // POS: sales and returns (Store Admin and Cashier, own store)
     if (path.startsWith('/api/sales') || path.startsWith('/api/returns')) {

@@ -234,4 +234,56 @@ void main() {
     await _openPos(tester, _backend());
     expect(tester.widget<FilledButton>(_k('completeSaleButton')).onPressed, isNull);
   });
+
+  // ── pre-merge review: checkout usability with rounding, five methods and many favorites ──
+  for (final (size, locale) in const [
+    (Size(1440, 900), Locale('en')),
+    (Size(1366, 768), Locale('ar')),
+    (Size(1280, 640), Locale('en')),
+    (Size(1024, 600), Locale('ar')),
+  ]) {
+    testWidgets('at $size ${locale.languageCode}: Cheque reachable, footer + Complete always visible, '
+        '40 favorites reachable, cash footer = rounded amount due', (tester) async {
+      final backend = _backend()..cashRoundingMinor = 10;
+      for (var i = 0; i < 15; i++) {
+        backend.seed(name: 'Fav $i', barcode: '3${'$i'.padLeft(7, '0')}', price: 2, quantity: 50, minStock: 1);
+      }
+      backend.favoriteIds = [for (var i = 1; i <= 40; i++) i]; // 40 distinct products (the maximum)
+      await _openPos(tester, backend, size: size, locale: locale);
+      // one item at 1.00 + 16 % = 1.16 → cash at 0.10 → 1.20
+      await tester.enterText(_k('posSearchField'), '20000000');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      // the footer shows what the customer pays in cash
+      expect(_text(tester, 'footerTotal'), contains('1.20'));
+      expect(_k('footerRoundingNote'), findsOneWidget);
+      // the Cheque tile is reachable by scrolling ONLY the summary column; the footer never moves
+      final footerBefore = tester.getRect(_k('completeSaleButton'));
+      await tester.ensureVisible(_k('pay-cheque'));
+      await tester.pumpAndSettle();
+      expect(_k('pay-cheque').hitTestable(), findsOneWidget);
+      // the footer did not move vertically: only the summary column scrolled
+      expect(tester.getRect(_k('completeSaleButton')).top, footerBefore.top);
+      expect(tester.getRect(_k('completeSaleButton')).bottom, footerBefore.bottom);
+      await tester.tap(_k('pay-cheque'));
+      await tester.pumpAndSettle();
+      // a cheque is never rounded: the footer shows the total
+      expect(_text(tester, 'footerTotal'), contains('1.16'));
+      expect(_k('footerRoundingNote'), findsNothing);
+      final b = tester.getRect(_k('completeSaleButton'));
+      expect(b.top, greaterThanOrEqualTo(0));
+      expect(b.bottom, lessThanOrEqualTo(size.height));
+      expect(b.left, greaterThanOrEqualTo(0));
+      expect(b.right, lessThanOrEqualTo(size.width));
+      expect(_k('completeSaleButton').hitTestable(), findsOneWidget);
+      // the favorites strip scrolls on its own: the last favorite can be reached and tapped
+      expect(_k('posFavorites'), findsOneWidget);
+      final last = _k('posFavorite-${backend.favoriteIds.last}');
+      await tester.dragUntilVisible(last, _k('posFavorites'), Offset(locale.languageCode == 'ar' ? 300 : -300, 0));
+      await tester.pumpAndSettle();
+      expect(last.hitTestable(), findsWidgets);
+      expect(tester.takeException(), isNull);
+    });
+  }
 }
