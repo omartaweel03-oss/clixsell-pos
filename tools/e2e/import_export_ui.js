@@ -342,9 +342,10 @@ function checkStock(area, keys, why) {
     await field(p, 'Discount', 10); await click(p, 'Apply', 1200);
     const exp = expectSale([['IX1', 2], ['IX3', 3]], 10);
     t = await txt(p);
-    rec('POS', 'invoice totals before paying', [exp.sub, exp.disc, exp.tax, exp.total].map(money).join(', '),
-      [exp.sub, exp.disc, exp.tax, exp.total].map(v => t.includes(money(v)) ? money(v) : 'missing').join(', '),
-      [exp.sub, exp.disc, exp.tax, exp.total].every(v => t.includes(money(v))), await shot(p, 'en_pos_imported_products'));
+    // D5: no tax row on the checkout (tax included in the total, kept in the database — checked below)
+    rec('POS', 'invoice totals before paying (total incl. tax)', [exp.sub, exp.disc, exp.total].map(money).join(', '),
+      [exp.sub, exp.disc, exp.total].map(v => t.includes(money(v)) ? money(v) : 'missing').join(', '),
+      [exp.sub, exp.disc, exp.total].every(v => t.includes(money(v))), await shot(p, 'en_pos_imported_products'));
     await click(p, 'Cash', 600); await click(p, 'Complete Sale', 2500);
     const row = lastSale(); checkSale('POS', 'S1 cash', exp, row); sales.push({ key: 'S1', row, exp });
     stock.IX1 -= 2; stock.IX3 -= 3; checkStock('POS', ['IX1', 'IX3', 'IX5'], 'after S1');

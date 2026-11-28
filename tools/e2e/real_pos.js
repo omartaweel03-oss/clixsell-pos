@@ -280,9 +280,14 @@ function checkSaleRow(area, exp, row) {
     await field(p, 'Discount', 10); await click(p, 'Apply', 1200);
     const exp = expectSale([['P01', 2], ['P03', 3], ['P04', 1]], 10, 'CASH');
     t = await txt(p);
-    rec('POS', 'UI', 'invoice summary before paying (subtotal, discount, tax 16 %, total)', `${money(exp.sub)}, ${money(exp.disc)}, ${money(exp.tax)}, ${money(exp.total)}`,
-      [exp.sub, exp.disc, exp.tax, exp.total].map(v => t.includes(money(v)) ? money(v) : 'missing ' + money(v)).join(', '),
-      [exp.sub, exp.disc, exp.tax, exp.total].every(v => t.includes(money(v))), await shot(p, 'en_pos_invoice_t1'));
+    // D5: the checkout shows subtotal, discount and the total (tax included) — no tax row; the
+    // tax stays in the total, on the receipt and in the database (checked below).
+    rec('POS', 'UI', 'invoice summary before paying (subtotal, discount, total incl. 16 % tax)', `${money(exp.sub)}, ${money(exp.disc)}, ${money(exp.total)}`,
+      [exp.sub, exp.disc, exp.total].map(v => t.includes(money(v)) ? money(v) : 'missing ' + money(v)).join(', '),
+      [exp.sub, exp.disc, exp.total].every(v => t.includes(money(v))), await shot(p, 'en_pos_invoice_t1'));
+    rec('POS', 'UI', 'D5: no tax row on the checkout; "Includes tax" note', 'no "Tax (16%)", note shown',
+      `${t.includes('Tax (16%)') ? 'tax row shown' : 'no tax row'}, ${t.includes('Includes tax') ? 'note shown' : 'no note'}`,
+      !t.includes('Tax (16%)') && t.includes('Includes tax'));
     await click(p, 'Cash', 600); await click(p, 'Complete Sale', 2500);
     const row = lastSale(); checkSaleRow('POS', exp, row);
     const sid = row[0], inv = row[1];
@@ -295,6 +300,9 @@ function checkSaleRow(area, exp, row) {
     const apiSale = api('GET', `/sales/${sid}`, SC).json;
     rec('POS', 'API+DB', `receipt code returned to the app = the saved QR value (the dialog shows it as selectable text, not readable by automation; see ${rshot})`,
       qr, apiSale && apiSale.receiptCode, apiSale && apiSale.receiptCode === qr);
+    rec('POS', 'UI', `${inv}: the receipt still shows the tax line and amount (D5 is display only)`, `Tax (16%) ${money(exp.tax)}`,
+      `${t.includes('Tax (16%)') ? 'Tax (16%)' : 'no tax label'} ${t.includes(money(exp.tax)) ? money(exp.tax) : 'no amount'}`,
+      t.includes('Tax (16%)') && t.includes(money(exp.tax)));
     rec('POS', 'DB', `${inv}: payment method`, 'CASH', one(`select payment_method from payments where sale_id=${sid}`), one(`select payment_method from payments where sale_id=${sid}`) === 'CASH');
     // Store upgrade, feature 3: the cash dialog (exact amount) — receipt shows cash received and change;
     // the payment is recorded at the invoice total, one row only.
@@ -428,8 +436,9 @@ function checkSaleRow(area, exp, row) {
     await click(p, 'العربية', 2500);
     await tile(p, 'RW Pita Bread 10pcs');
     t = await txt(p);
-    rec('Arabic', 'UI', 'POS in Arabic (labels)', 'إتمام البيع, دفع نقدي, الضريبة (16%)', ['إتمام البيع', 'دفع نقدي', 'الضريبة (16%)'].filter(w => t.includes(w)).join(', '),
-      ['إتمام البيع', 'دفع نقدي', 'الضريبة (16%)'].every(w => t.includes(w)), await shot(p, 'ar_pos'));
+    rec('Arabic', 'UI', 'POS in Arabic (labels; D5: no tax row, "يشمل الضريبة")', 'إتمام البيع, دفع نقدي, يشمل الضريبة; no الضريبة (16%)',
+      ['إتمام البيع', 'دفع نقدي', 'يشمل الضريبة'].filter(w => t.includes(w)).join(', ') + (t.includes('الضريبة (16%)') ? '; tax row shown' : '; no tax row'),
+      ['إتمام البيع', 'دفع نقدي', 'يشمل الضريبة'].every(w => t.includes(w)) && !t.includes('الضريبة (16%)'), await shot(p, 'ar_pos'));
     await click(p, 'دفع نقدي', 600); await click(p, 'إتمام البيع', 2500);
     const exp = expectSale([['P03', 1]], 0, 'CASH'); const row = lastSale(); checkSaleRow('Arabic', exp, row);
     rec('Arabic', 'UI', 'receipt in Arabic shows the invoice number', row[1], (await txt(p)).includes(row[1]) ? row[1] : 'missing', (await txt(p)).includes(row[1]), await shot(p, 'ar_receipt'));

@@ -211,9 +211,14 @@ const section = async (name, fn) => { console.log(`\n=== ${name}`); try { await 
   await section('New sale uses new tax; old sales unchanged', async () => {
     const before = q("select sale_id,tax_rate,total from sales where status='COMPLETED' and store_id=1 order by sale_id");
     const { ctx, p } = await session('shini.cashier', 'Cashier-Pass-1');
-    let t = await txt(p); ok('cashier POS shows Tax (10%)', t.includes('Tax (10%)'));
+    // D5: the checkout has no tax row any more; the new 10 % shows in the total (2.50 + 10 % = 2.75)
+    // and on the receipt.
     await p.getByRole('button').filter({ hasText: 'Mineral Water' }).first().click(); await p.waitForTimeout(700);
+    let t = await txt(p);
+    ok('cashier POS total uses the new tax (₪ 2.75), no tax row on the checkout', t.includes('2.75') && !t.includes('Tax ('),
+      `${t.includes('2.75') ? 'total 2.75' : 'no 2.75'}, ${t.includes('Tax (') ? 'tax row shown' : 'no tax row'}`);
     await click(p, 'Complete Sale', 2000);
+    t = await txt(p); ok('receipt shows Tax (10%)', t.includes('Tax (10%)'));
     ok('new sale saved with 10%', q("select tax_rate,total from sales where store_id=1 order by sale_id desc limit 1") === '(10.0, 2.75)', q("select tax_rate,total from sales where store_id=1 order by sale_id desc limit 1"));
     const lastBefore = before.split(' | ').slice(-1)[0].replace(/[()]/g, '').split(',')[0];
     ok('earlier completed sales unchanged', q(`select sale_id,tax_rate,total from sales where status='COMPLETED' and store_id=1 and sale_id<=${lastBefore} order by sale_id`) === before);
