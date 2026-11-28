@@ -6,6 +6,7 @@ import 'package:clixsell_pos/models/product_package.dart';
 import 'package:clixsell_pos/models/sale.dart';
 import 'package:clixsell_pos/screens/inventory/product_packages_card.dart';
 import 'package:clixsell_pos/screens/pos/package_choice_dialog.dart';
+import 'package:clixsell_pos/screens/pos/pos_dialogs.dart';
 import 'package:clixsell_pos/services/api_http.dart';
 import 'package:clixsell_pos/services/package_api_client.dart';
 import 'package:clixsell_pos/state/pos_cart.dart';
@@ -68,6 +69,13 @@ void main() {
       expect(cart.increment('7@3'), AddResult.stockLimit); // +24
       expect(cart.totalCents, 4000 + 6 * 200);
       expect(cart.lines.first.displayName, 'Water · Carton 24');
+    });
+
+    test('a carton line is priced per carton (unit price shown = 40.00, not the piece price)', () {
+      final cart = PosCart();
+      cart.add(_water(), package: _carton);
+      expect(cart.lines.single.unitCents, 4000);
+      expect(cart.lines.single.lineCents, 4000);
     });
 
     test('the draft sends packageId only for package lines', () {
@@ -134,6 +142,20 @@ void main() {
       cart.cashRoundingMinor = 5;
       expect(cart.amountDueCents, 1995);
     });
+  });
+
+  testWidgets('the receipt names the carton (not "Water × 1" at 40.00)', (tester) async {
+    final sale = Sale.fromJson({
+      'saleId': 5, 'invoiceNumber': 'INV-5', 'status': 'COMPLETED', 'cashierName': 'A', 'itemCount': 1,
+      'subtotal': 40, 'discount': 0, 'taxRate': 0, 'tax': 0, 'total': 40, 'createdAt': '2026-11-28T10:00:00',
+      'completedAt': '2026-11-28T10:00:00', 'paymentMethod': 'CARD', 'receiptCode': 'CLIXSELL-X',
+      'items': [
+        {'saleItemId': 1, 'productId': 7, 'productName': 'Water', 'quantity': 1, 'unitPrice': 40, 'lineTotal': 40,
+         'returnedQuantity': 0, 'returnableQuantity': 1, 'packageId': 3, 'packageName': 'Carton 24', 'unitsPerPackage': 24},
+      ],
+    });
+    await _pump(tester, ReceiptDialog(sale: sale));
+    expect(find.text('Water · Carton 24 × 1'), findsOneWidget);
   });
 
   testWidgets('POS: "piece or carton?" with both prices', (tester) async {

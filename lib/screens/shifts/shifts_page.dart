@@ -181,7 +181,7 @@ class _ShiftsPageState extends State<ShiftsPage> {
               },
             ),
           ],
-          FilledButton(onPressed: () => Navigator.pop(ctx), child: Text(t.cancel)),
+          FilledButton(onPressed: () => Navigator.pop(ctx), child: Text(t.close)),
         ],
       ),
     );

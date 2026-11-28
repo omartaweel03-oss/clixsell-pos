@@ -90,6 +90,7 @@ class ShiftStrings {
   String get inactive => _t('Not in use', 'غير مستخدم');
   String get save => _t('Save', 'حفظ');
   String get cancel => _t('Cancel', 'إلغاء');
+  String get close => _t('Close', 'إغلاق');
   String get shifts => _t('Shifts', 'الورديات');
   String get all => _t('All', 'الكل');
   String get statusOpen => _t('Open', 'مفتوحة');

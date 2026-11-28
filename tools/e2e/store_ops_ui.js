@@ -42,6 +42,10 @@ const click = async (p, name, wait = 1300, nth = 0) => {
   // exact names: 'Close' must not match 'Close shift', 'Open' not 'Open shift'
   await p.getByRole('button', { name, exact: true }).nth(nth).click({ timeout: 8000 }); await p.waitForTimeout(wait);
 };
+// the receipt dialog is drawn last: its "New Invoice" is the last button with that name
+const closeReceipt = async p => {
+  await p.getByRole('button', { name: 'New Invoice', exact: true }).last().click({ timeout: 8000 }); await p.waitForTimeout(1200);
+};
 const tile = async (p, text, wait = 900) => {
   const box = p.locator('flt-semantics-host input').first();
   await box.click({ timeout: 8000 }); await p.keyboard.press('Control+A'); await p.keyboard.press('Backspace');
@@ -108,9 +112,9 @@ async function step(area, action, fn) {
       t2.includes('SO Water 0.5L · Carton 24'), await shot(p, 'invoice_carton_line'));
   });
   await step('Carton', 'pay the carton (card)', async () => {
-    await click(p, 'Card', 600);
+    await click(p, 'Credit card', 600);
     await click(p, 'Complete Sale', 2500);
-    await click(p, 'Close', 1200).catch(() => {});
+    await closeReceipt(p);
     const stock = one(`select quantity from products where product_id = ${water}`);
     rec('Carton', 'stock 200 − 24 = 176 pieces', 176, stock, stock === 176);
   });
@@ -133,7 +137,7 @@ async function step(area, action, fn) {
       await shot(p, 'receipt_rounding'));
     rec('Rounding', 'receipt shows rounding and amount paid', 'Cash rounding + Amount paid', t2.includes('Amount paid'),
       t2.includes('Cash rounding') && t2.includes('Amount paid'));
-    await click(p, 'Close', 1200).catch(() => {});
+    await closeReceipt(p);
   });
   await step('Cheque', 'cheque payment dialog', async () => {
     await tile(p, 'SO Television', 900);
@@ -147,7 +151,7 @@ async function step(area, action, fn) {
     await click(p, 'Complete payment', 2500);
     const c = one("select status || '/' || amount_minor from cheques where cheque_number = 'SO-100245'");
     rec('Cheque', 'cheque RECEIVED for 1,000.00', 'RECEIVED/100000', c, c === 'RECEIVED/100000', f);
-    await click(p, 'Close', 1200).catch(() => {});
+    await closeReceipt(p);
   });
   await step('Shift', 'close the shift with a difference', async () => {
     await click(p, 'Close shift', 1500);
@@ -172,9 +176,8 @@ async function step(area, action, fn) {
     const t = await txt(p);
     rec('Admin', 'page: rounding step, drawers, shifts', 'Cash rounding + Till 1 + Shifts', t.includes('Till 1'),
       t.includes('Cash rounding') && t.includes('Till 1') && t.includes('Shifts'), await shot(p, 'admin_cash_shifts'));
-    await p.getByRole('button').filter({ hasText: 'Ahmad' }).first().click({ timeout: 8000 }).catch(async () => {
-      await p.getByRole('button').filter({ hasText: '#' }).first().click({ timeout: 8000 });
-    });
+    // the tappable shift row: its text is in the semantics node's aria-label
+    await p.locator('flt-semantics-host [aria-label*="Lina Saleh · Till 1"]').first().click({ timeout: 8000 });
     await p.waitForTimeout(1500);
     const t2 = await txt(p);
     rec('Admin', 'shift details: expected, counted, difference, sales', 'Shift details', t2.includes('Shift details'),

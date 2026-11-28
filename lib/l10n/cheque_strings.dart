@@ -42,7 +42,7 @@ class ChequeStrings {
     'RECEIVED' => _t('Received', 'مستلم'),
     'DEPOSITED' => _t('Deposited', 'مودع'),
     'CLEARED' => _t('Cleared', 'محصّل'),
-    'BOUNCED' => _t('Bounced', 'مرتجع'),
+    'BOUNCED' => _t('Bounced', 'مرتد'),
     'CANCELLED' => _t('Cancelled', 'ملغى'),
     'PENDING' => _t('Pending', 'معلّق'),
     'PAID' => _t('Paid', 'مدفوع'),
@@ -67,6 +67,8 @@ class ChequeStrings {
     'يُدفع المستحق فقط بعد تحصيل الشيك؛ والدفع النقدي يكون من ورديتك المفتوحة.',
   );
   String get save => _t('Save', 'حفظ');
+  String get statusLabel => _t('Status', 'الحالة');
+  String get close => _t('Close', 'إغلاق');
 
   String? forCode(String? code) => switch (code) {
     'CHEQUE_DUPLICATE' => _t('This cheque (number and bank) is already recorded.', 'هذا الشيك (الرقم والبنك) مسجّل مسبقاً.'),

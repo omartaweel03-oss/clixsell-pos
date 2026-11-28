@@ -544,7 +544,7 @@ class _InvoiceLine extends StatelessWidget {
           Expanded(
             flex: 2,
             child: _Money(
-              Formatters.currency(line.product.price),
+              Formatters.currency(line.unitCents / 100), // a carton line shows the carton price
               style: const TextStyle(
                 fontSize: 13,
                 color: AppColors.textSecondary,

@@ -35,8 +35,9 @@ String shiftError(BuildContext context, Object e) {
   return e.message;
 }
 
+/// A signed amount, isolated as left-to-right text so "-1.00" never shows as "1.00-" in Arabic.
 String signedMoney(double v) =>
-    v > 0 ? '+${Formatters.currency(v)}' : Formatters.currency(v);
+    '\u2066${v > 0 ? '+${Formatters.currency(v)}' : Formatters.currency(v)}\u2069';
 
 /// Opening, cash sales, refunds, in / out, expected — as calculated by the backend.
 class ShiftSummary extends StatelessWidget {

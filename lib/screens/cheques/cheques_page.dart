@@ -136,7 +136,7 @@ class _ChequesPageState extends State<ChequesPage> {
                   kv(t.amount, Formatters.currency(_num(c['amount']))),
                   kv(t.dueDate, '${c['dueDate']}'),
                   kv(t.invoice, '${c['invoiceNumber']}'),
-                  kv(t.status(status), '', key: 'chequeStatus-$status'),
+                  kv(t.statusLabel, t.status(status), key: 'chequeStatus-$status'),
                   if (c['notes'] != null) kv(t.notes, '${c['notes']}'),
                   Wrap(spacing: AppSpacing.sm, children: [
                     for (final to in _next[status] ?? const <String>[])
@@ -195,7 +195,7 @@ class _ChequesPageState extends State<ChequesPage> {
               ),
             ),
           ),
-          actions: [FilledButton(onPressed: () => Navigator.pop(ctx), child: Text(t.cancel))],
+          actions: [FilledButton(onPressed: () => Navigator.pop(ctx), child: Text(t.close))],
         );
       }),
     );

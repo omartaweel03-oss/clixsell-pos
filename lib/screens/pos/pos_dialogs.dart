@@ -528,7 +528,7 @@ class _ReturnDialogState extends State<ReturnDialog> {
                       dense: true,
                       contentPadding: EdgeInsets.zero,
                       title: Text(
-                        l.productName,
+                        l.displayName,
                         style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
                       subtitle: Text(
@@ -678,7 +678,7 @@ class ReceiptDialog extends StatelessWidget {
               const Divider(),
               for (final l in sale.items)
                 row(
-                  '${l.productName} × ${l.quantity}',
+                  '${l.displayName} × ${l.quantity}',
                   Formatters.currency(l.lineTotal),
                 ),
               const Divider(),
