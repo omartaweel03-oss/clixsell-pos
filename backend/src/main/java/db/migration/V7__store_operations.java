@@ -329,6 +329,10 @@ public class V7__store_operations extends BaseJavaMigration {
             "ALTER TABLE returns ADD COLUMN rounding_minor INTEGER NOT NULL DEFAULT 0 "
                     + "CHECK (typeof(rounding_minor) = 'integer' AND rounding_minor BETWEEN -50 AND 50)",
             "CREATE INDEX ix_returns_shift ON returns (shift_id)",
+            // the same refund request sent twice (double tap, network retry) is recorded once
+            "ALTER TABLE returns ADD COLUMN request_key TEXT "
+                    + "CHECK (request_key IS NULL OR (typeof(request_key) = 'text' AND length(request_key) BETWEEN 8 AND 100))",
+            "CREATE UNIQUE INDEX ux_returns_request_key ON returns (store_id, request_key) WHERE request_key IS NOT NULL",
             // composite key: a cheque refund can only name a return together with ITS sale and store
             "CREATE UNIQUE INDEX ux_returns_id_sale_store ON returns (return_id, sale_id, store_id)",
             // a refund out of a drawer: an OPEN shift of this store, the returning user's own shift
@@ -573,6 +577,25 @@ public class V7__store_operations extends BaseJavaMigration {
             "CREATE TRIGGER trg_cash_movement_no_delete BEFORE DELETE ON cash_movements "
                     + "BEGIN SELECT RAISE(ABORT, 'CASH_MOVEMENTS_APPEND_ONLY'); END",
 
+            // ── approved cash refund policy: never pay out more cash than the drawer holds ─
+            // (the service checks first, in the same transaction; this is the last line of defence,
+            // e.g. against direct SQL). The drawer's cash = the closing formula above, at this moment.
+            """
+            CREATE TRIGGER trg_return_cash_within_drawer BEFORE INSERT ON returns
+            WHEN NEW.refund_method = 'CASH' AND NEW.shift_id IS NOT NULL
+            AND coalesce(NEW.refund_minor, CAST(round(NEW.refund_amount * 100) AS INTEGER)) > (
+                (SELECT opening_cash_minor FROM cash_shifts WHERE shift_id = NEW.shift_id)
+                + coalesce((SELECT sum(CAST(round(p.amount * 100) AS INTEGER)) FROM payments p
+                            JOIN sales s ON s.sale_id = p.sale_id
+                            WHERE s.shift_id = NEW.shift_id AND p.payment_method = 'CASH'), 0)
+                - coalesce((SELECT sum(coalesce(r.refund_minor, CAST(round(r.refund_amount * 100) AS INTEGER)))
+                            FROM returns r WHERE r.shift_id = NEW.shift_id AND r.refund_method = 'CASH'), 0)
+                + coalesce((SELECT sum(amount_minor) FROM cash_movements
+                            WHERE shift_id = NEW.shift_id AND type = 'CASH_IN'), 0)
+                - coalesce((SELECT sum(amount_minor) FROM cash_movements
+                            WHERE shift_id = NEW.shift_id AND type IN ('CASH_OUT', 'CHEQUE_REFUND_OUT')), 0))
+            BEGIN SELECT RAISE(ABORT, 'DRAWER_INSUFFICIENT'); END""",
+
             // ── a closed shift's financial history is frozen (problems A–D) ─────────────
             // only a COMPLETED sale carries a shift (a suspended sale belongs to none)
             """
@@ -803,7 +826,8 @@ public class V7__store_operations extends BaseJavaMigration {
         if (count(c, "SELECT COUNT(*) FROM stores WHERE require_cash_shift IS NOT 0 OR cash_rounding_minor IS NOT 0") != 0
                 || count(c, "SELECT COUNT(*) FROM sales WHERE rounding_minor IS NOT 0 OR shift_id IS NOT NULL") != 0
                 || count(c, "SELECT COUNT(*) FROM sale_items WHERE units_per_package IS NOT 1 OR package_id IS NOT NULL") != 0
-                || count(c, "SELECT COUNT(*) FROM payments WHERE tendered_minor IS NOT NULL") != 0) {
+                || count(c, "SELECT COUNT(*) FROM payments WHERE tendered_minor IS NOT NULL") != 0
+                || count(c, "SELECT COUNT(*) FROM returns WHERE request_key IS NOT NULL") != 0) {
             throw new IllegalStateException("New columns did not get their neutral defaults; rolled back");
         }
         if (count(c, "SELECT COUNT(*) FROM pragma_foreign_key_check") > 0) {

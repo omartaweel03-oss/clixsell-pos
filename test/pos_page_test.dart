@@ -255,6 +255,37 @@ void main() {
     expect(find.text('23 left'), findsOneWidget);
   });
 
+  for (final locale in const [Locale('en'), Locale('ar')]) {
+    testWidgets('approved cash refund policy [${locale.languageCode}]: drawer too low → clear message with both '
+        'amounts, nothing refunded; the retry keeps the same request key and succeeds after a cash-in', (tester) async {
+      final backend = _backend();
+      await _openPos(tester, backend, locale: locale);
+      await _tap(tester, 'posProduct-1');
+      await completeSaleLikeACashier(tester);
+      await _tap(tester, 'receiptCloseButton');
+      backend.refuseCashRefund = (available: '20.00', required: '5.80');
+      await _tap(tester, 'returnButton');
+      await tester.enterText(find.byKey(const Key('returnCodeField')), 'INV-000001');
+      await _tap(tester, 'returnFindButton');
+      await tester.enterText(find.byKey(const Key('returnReasonField')), 'Damaged');
+      await _tap(tester, 'confirmReturnButton');
+      final ar = locale.languageCode == 'ar';
+      expect(find.textContaining(ar ? 'لا يوجد نقد كافٍ في الدرج' : 'Not enough cash in the drawer'), findsOneWidget);
+      expect(find.textContaining('20.00'), findsWidgets);
+      expect(find.textContaining('5.80'), findsWidgets);
+      expect(find.textContaining(ar ? 'مدير المتجر' : 'Store Admin'), findsOneWidget);
+      expect(backend.returns, isEmpty);
+      // the Store Admin records a cash-in; the cashier presses again: the SAME request key is sent
+      backend.refuseCashRefund = null;
+      await _tap(tester, 'confirmReturnButton');
+      expect(backend.returns, hasLength(1));
+      expect(backend.returnRequestKeys, hasLength(2));
+      expect(backend.returnRequestKeys.first, isNotNull);
+      expect(backend.returnRequestKeys.first, backend.returnRequestKeys.last);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('return from an invoice with several products: the chosen (second) product is returned', (tester) async {
     final backend = _backend();
     await _openPos(tester, backend);

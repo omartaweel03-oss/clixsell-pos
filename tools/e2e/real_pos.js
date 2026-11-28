@@ -251,6 +251,10 @@ function checkSaleRow(area, exp, row) {
     /Settings|Reports|Stock Alerts|Cashiers|Add Product|Guardian Mode/.test(t) ? 'restricted item visible' : 'none visible',
     t.includes('Point of Sale') && !/Settings|Reports|Stock Alerts|Cashiers|Add Product|Guardian Mode/.test(t), await shot(p, 'en_cashier_pos'));
   const SC = token('shini.cashier', 'Cashier-Pass-1');
+  // approved cash refund policy: the cashier refunds cash from an open drawer (counted opening cash)
+  { const d = api('POST', '/drawers', SA, { name: 'RW Till' }).json.drawerId;
+    const sh = api('POST', '/shifts', SC, { drawerId: d, openingCash: 1000 });
+    rec('Setup', 'API', 'cashier opens a cash shift (1,000.00 counted)', 201, sh.status, sh.status === 201); }
   for (const [m, url, body] of [['GET', '/reports/summary?from=2026-01-01&to=2026-01-31'], ['GET', '/guardian/dashboard'],
     ['POST', '/products', { name: 'X', barcode: '72988800009', category: 'other', sellingPrice: 1, quantity: 1, minStock: 0, supplierName: 'X' }],
     ['PUT', '/store/settings', { taxRate: 0 }], ['GET', '/store/cashiers'], ['GET', '/admin/stores'], ['POST', '/admin/backups']]) {

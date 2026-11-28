@@ -14,4 +14,7 @@ public interface ReturnRepository extends JpaRepository<ReturnProduct, Long> {
     /** What was already paid back for a whole invoice (0 when nothing). */
     @Query("SELECT coalesce(sum(r.refundAmount), 0) FROM ReturnProduct r WHERE r.sale.saleId = :saleId")
     double refundedForSale(long saleId);
+
+    /** An earlier return of this store with this request key (a repeated request). */
+    java.util.Optional<ReturnProduct> findByStore_StoreIdAndRequestKey(long storeId, String requestKey);
 }

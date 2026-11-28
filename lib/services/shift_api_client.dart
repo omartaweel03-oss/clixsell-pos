@@ -2,6 +2,7 @@ import 'dart:math';
 
 import '../models/cash_shift.dart';
 import 'api_http.dart';
+import 'purchase_api_client.dart' show newClientId;
 
 /// Cash drawers and shifts → backend (/api/drawers, /api/shifts). The backend
 /// decides who may do what and calculates every amount.
@@ -17,21 +18,24 @@ class ShiftApiClient {
   static final _random = Random.secure();
 
   /// A new key per cash movement, so a retried request is not recorded twice.
-  static String newRequestKey() =>
-      'mv-${DateTime.now().microsecondsSinceEpoch}-${_random.nextInt(1 << 32)}';
+  /// Built from 16 random bytes (a UUID), the same on the VM and on the web:
+  /// an integer bound like 1 << 32 is not valid in a web build.
+  static String newRequestKey() => 'mv-${newClientId(_random)}';
 
   Future<CurrentShift> current() async => CurrentShift.fromJson(
     await _http.get('/shifts/current') as Map<String, dynamic>,
   );
 
-  Future<CashShift> open({required int drawerId, required int openingCents}) async =>
-      CashShift.fromJson(
-        await _http.post('/shifts', {
-              'drawerId': drawerId,
-              'openingCash': num.parse(amount(openingCents)),
-            })
-            as Map<String, dynamic>,
-      );
+  Future<CashShift> open({
+    required int drawerId,
+    required int openingCents,
+  }) async => CashShift.fromJson(
+    await _http.post('/shifts', {
+          'drawerId': drawerId,
+          'openingCash': num.parse(amount(openingCents)),
+        })
+        as Map<String, dynamic>,
+  );
 
   Future<CashShift> close(
     CashShift shift, {
@@ -65,7 +69,9 @@ class ShiftApiClient {
     final body =
         await _http.get('/shifts${status == null ? '' : '?status=$status'}')
             as List;
-    return [for (final s in body) CashShift.fromJson(s as Map<String, dynamic>)];
+    return [
+      for (final s in body) CashShift.fromJson(s as Map<String, dynamic>),
+    ];
   }
 
   Future<ShiftDetails> details(int shiftId) async => ShiftDetails.fromJson(
@@ -90,7 +96,9 @@ class ShiftApiClient {
 
   Future<List<CashDrawer>> drawers() async {
     final body = await _http.get('/drawers') as List;
-    return [for (final d in body) CashDrawer.fromJson(d as Map<String, dynamic>)];
+    return [
+      for (final d in body) CashDrawer.fromJson(d as Map<String, dynamic>),
+    ];
   }
 
   Future<CashDrawer> addDrawer(String name) async => CashDrawer.fromJson(
@@ -119,7 +127,8 @@ class ShiftApiClient {
 
   Future<int> setCashRoundingMinor(int step) async {
     final body =
-        await _http.put('/store/settings', {'cashRoundingMinor': step}) as Map<String, dynamic>;
+        await _http.put('/store/settings', {'cashRoundingMinor': step})
+            as Map<String, dynamic>;
     return (body['cashRoundingMinor'] as num?)?.toInt() ?? 0;
   }
 }

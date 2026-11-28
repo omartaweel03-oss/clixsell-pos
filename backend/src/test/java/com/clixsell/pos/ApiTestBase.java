@@ -171,6 +171,24 @@ public abstract class ApiTestBase {
         return new StoreSetup(storeId, admin, adminToken, cashier, login(cashier, CASHIER_PASSWORD));
     }
 
+    /**
+     * Approved cash refund policy: a cash refund is paid from an open drawer that holds the cash. Tests
+     * that refund cash first open a shift — as a real store must — for the cashier and the Store Admin,
+     * each on its own drawer with a counted opening cash of 1,000.00.
+     */
+    protected void openCashShifts(StoreSetup s) throws Exception {
+        String[][] users = {{s.cashierToken(), "Till C"}, {s.adminToken(), "Till A"}};
+        for (String[] u : users) {
+            MvcResult d = mvc.perform(post("/api/drawers").header("Authorization", bearer(s.adminToken()))
+                            .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"" + u[1] + "\"}"))
+                    .andExpect(status().isCreated()).andReturn();
+            mvc.perform(post("/api/shifts").header("Authorization", bearer(u[0]))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"drawerId\":" + jsonLong(d, "drawerId") + ",\"openingCash\":1000}"))
+                    .andExpect(status().isCreated());
+        }
+    }
+
     /** Creates a product in the Store Admin's store and returns its id. */
     protected long createProduct(String adminToken, String name, String barcode, double price, int quantity)
             throws Exception {

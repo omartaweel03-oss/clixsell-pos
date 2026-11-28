@@ -93,6 +93,13 @@ public class ReturnProduct {
     @Column(name = "refund_minor")
     private Long refundMinor;
 
+    /** The client's key for this refund request: the same request sent twice is recorded once. */
+    @Column(name = "request_key")
+    private String requestKey;
+
+    public void setRequestKey(String requestKey) { this.requestKey = requestKey; }
+    public String getRequestKey() { return requestKey; }
+
     /** V7, D4: the cash rounding INCLUDED in this refund (refund − exact share), agorot; 0 otherwise. */
     @Column(name = "rounding_minor", nullable = false)
     private long roundingMinor = 0;

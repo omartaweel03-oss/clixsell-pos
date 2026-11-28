@@ -126,12 +126,14 @@ class SalesApiClient {
     required int saleItemId,
     required int quantity,
     required String reason,
+    String? requestKey,
   }) async => ReturnResult.fromJson(
     await _http.post('/returns', {
           'saleId': saleId,
           'saleItemId': saleItemId,
           'quantity': quantity,
           'reason': reason.trim(),
+          'requestKey': ?requestKey,
         })
         as Map<String, dynamic>,
   );

@@ -247,6 +247,25 @@ public class ShiftService {
         return null;
     }
 
+    /**
+     * Approved cash refund policy: a CASH refund is paid from the user's open drawer and only when the
+     * drawer holds enough recorded cash. Takes the write lock first (same transaction as the refund),
+     * so two refunds can never spend the same cash. Returns the shift to record the refund in.
+     * No open shift = unknown balance = refused (also in stores where shifts are optional).
+     */
+    public long shiftForCashRefund(CurrentUser user) {
+        long storeId = user.requireStoreId();
+        q.takeWriteLock();
+        return q.openShiftOf(storeId, user.userId()).map(Shift::shiftId).orElseThrow(() -> new ConflictException(
+                "CASH_REFUND_NEEDS_SHIFT", null,
+                "A cash refund is paid from your cash drawer: open your cash shift first"));
+    }
+
+    /** The recorded cash the shift's drawer should hold now (the closing formula), in agorot. */
+    public long drawerCashMinor(long shiftId) {
+        return q.cashParts(shiftId).expectedMinor();
+    }
+
     // ── views ───────────────────────────────────────────────────────────────────────
 
     public record ShiftView(long shiftId, long drawerId, String drawerName, long cashierId, String cashierName,

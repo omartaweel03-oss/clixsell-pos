@@ -84,11 +84,14 @@ class ShiftApiTest extends ApiTestBase {
     // ── D2: optional by default ─────────────────────────────────────────────────────
 
     @Test
-    void shiftsAreOptionalByDefault_salesWithoutAShiftWorkAsBefore() throws Exception {
+    void shiftsAreOptionalByDefault_salesWithoutAShiftWork_butACashRefundNeedsAnOpenDrawer() throws Exception {
         as(shop.adminToken(), get("/api/store"), null).andExpect(jsonPath("$.requireCashShift").value(false));
         long sale = jsonLong(sell(shop.cashierToken(), "CASH", 1).andExpect(status().isCreated()).andReturn(), "saleId");
         assertThat(db.queryForObject("SELECT shift_id FROM sales WHERE sale_id = ?", Long.class, sale)).isNull();
-        returnOne(shop.cashierToken(), sale).andExpect(status().isCreated());
+        // approved cash refund policy: without an open drawer its cash is unknown, so no cash is paid out
+        returnOne(shop.cashierToken(), sale).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CASH_REFUND_NEEDS_SHIFT"));
+        assertThat(count("returns")).isZero();
         as(shop.cashierToken(), get("/api/shifts/current"), null).andExpect(status().isOk())
                 .andExpect(jsonPath("$.shift").doesNotExist())
                 .andExpect(jsonPath("$.requireCashShift").value(false))
@@ -103,7 +106,7 @@ class ShiftApiTest extends ApiTestBase {
         int stock = db.queryForObject("SELECT quantity FROM products WHERE product_id = ?", Integer.class, water);
         sell(shop.cashierToken(), "CASH", 1).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("SHIFT_REQUIRED"));
         sell(shop.cashierToken(), "CARD", 1).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("SHIFT_REQUIRED"));
-        returnOne(shop.cashierToken(), earlier).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("SHIFT_REQUIRED"));
+        returnOne(shop.cashierToken(), earlier).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("CASH_REFUND_NEEDS_SHIFT"));
         assertThat(List.of(count("sales"), count("payments"), count("returns"))).containsExactly(sales, payments, returns);
         assertThat(db.queryForObject("SELECT quantity FROM products WHERE product_id = ?", Integer.class, water)).isEqualTo(stock);
 
@@ -313,6 +316,7 @@ class ShiftApiTest extends ApiTestBase {
     @Test
     void partialReturns_lastReturnPaysTheRemainder_neverMoreThanPaid() throws Exception {
         as(shop.adminToken(), put("/api/store/settings"), "{\"taxRate\":0}").andExpect(status().isOk());
+        openShift(shop.cashierToken(), "100"); // cash refunds are paid from an open drawer
         long p = createProduct(shop.adminToken(), "Juice", "5012345678900", 3.34, 10);
         // 3 × 3.34 = 10.02 − 0.01 = 10.01: one unit is 3.3367
         long sale = jsonLong(as(shop.cashierToken(), post("/api/sales"), "{\"items\":[{\"productId\":" + p
@@ -325,29 +329,6 @@ class ShiftApiTest extends ApiTestBase {
         }
         assertThat(refunds).containsExactly(3.34, 3.34, 3.33);
         assertThat(db.queryForObject("SELECT sum(refund_minor) FROM returns WHERE sale_id = ?", Long.class, sale)).isEqualTo(1001);
-    }
-
-    /**
-     * CURRENT POLICY (documented for the pre-merge review, NOT a decision): a cash refund is accepted
-     * even when the drawer's expected cash cannot cover it; a cashier can do it alone (no Store Admin
-     * approval); the shift's expected cash goes negative and the closing then needs a note. A cash
-     * OUT of the same size is refused. Any change of this policy needs management approval.
-     */
-    @Test
-    void currentPolicy_cashRefundBeyondTheDrawer_isAccepted_byTheCashierAlone_expectedGoesNegative() throws Exception {
-        long earlier = jsonLong(sell(shop.cashierToken(), "CASH", 1).andReturn(), "saleId"); // 37.00, no shift
-        long shift = openShift(shop.cashierToken(), "0");
-        returnOne(shop.cashierToken(), earlier).andExpect(status().isCreated()).andExpect(jsonPath("$.refundAmount").value(37.0));
-        assertThat(db.queryForObject("SELECT shift_id FROM returns WHERE sale_id = ?", Long.class, earlier)).isEqualTo(shift);
-        as(shop.cashierToken(), get("/api/shifts/current"), null).andExpect(jsonPath("$.shift.expectedCash").value(-37.0));
-        // the same amount as a cash OUT is refused (it is not in the drawer)
-        movement(shop.adminToken(), shift, "CASH_OUT", "37", "req-cmp-0001").andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("CASH_OUT_TOO_LARGE"));
-        // closing with the 0.00 actually counted shows the 37.00 difference and needs a note
-        as(shop.cashierToken(), post("/api/shifts/" + shift + "/close"), "{\"countedCash\":0}").andExpect(status().isBadRequest());
-        as(shop.cashierToken(), post("/api/shifts/" + shift + "/close"), "{\"countedCash\":0,\"note\":\"Refund paid from my pocket\"}")
-                .andExpect(status().isOk()).andExpect(jsonPath("$.difference").value(37.0))
-                .andExpect(jsonPath("$.expectedCash").value(-37.0));
     }
 
     @Test

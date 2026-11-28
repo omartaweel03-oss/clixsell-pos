@@ -63,6 +63,25 @@ async function step(area, action, fn) {
   }
 }
 
+// Click the shift row for this shift number (its text, "#N · Cashier · Drawer", is in the
+// semantics node's aria-label or its text content, depending on the node).
+async function clickShiftRow(p, n) {
+  const handle = await p.evaluateHandle(n => {
+    const re = new RegExp('#' + n + '(?!\\d)[^\\n]*Lina Saleh');
+    const all = [...document.querySelectorAll('flt-semantics-host *')];
+    const hits = all.filter(e => re.test(e.getAttribute('aria-label') || '') || re.test(e.textContent || ''));
+    // the innermost match is the row itself
+    return hits.find(e => !hits.some(o => o !== e && e.contains(o))) || null;
+  }, n);
+  const el = handle.asElement();
+  if (!el) {
+    const seen = await p.evaluate(() => [...document.querySelectorAll('flt-semantics-host *')]
+      .map(e => e.getAttribute('aria-label') || '').filter(l => l.includes('Lina')).join(' | '));
+    throw new Error('no row for shift #' + n + '; labels with Lina: ' + seen.slice(0, 300));
+  }
+  await el.click({ timeout: 8000 });
+}
+
 (async () => {
   // ── data through the real API (Shini Supermarket of the demo profile) ──
   const AD = token('shini.admin', 'Admin-Pass-1');
@@ -166,7 +185,29 @@ async function step(area, action, fn) {
     rec('Shift', 'DB: CLOSED, expected 12000, difference -100', 'CLOSED/12000/-100', r, r === 'CLOSED/12000/-100');
     void exp;
   });
-  rec('Browser', 'no page errors / no 5xx (cashier)', '0 / 0', `${st.errors.length} / ${st.bad.length}`, st.errors.length === 0 && st.bad.length === 0);
+  // ── approved cash refund policy: a refund larger than the drawer's cash is blocked ──
+  const oilInv = one("select invoice_number from sales where rounding_minor = 3 order by sale_id desc limit 1");
+  const CA = token('shini.cashier', 'Cashier-Pass-1');
+  const shift2 = api('POST', '/shifts', CA, { drawerId: drawer, openingCash: 0 }).json.shiftId;
+  async function returnOil(name, expectOk) {
+    await click(p, 'Return', 1300);
+    await field(p, 'Invoice number or receipt code', oilInv); await click(p, 'Find', 1600);
+    await field(p, 'Reason', 'Customer changed mind');
+    await click(p, 'Confirm Return', 2200);
+    const t = await txt(p);
+    const n = one("select count(*) from returns");
+    const f = await shot(p, name);
+    return { t, n, f };
+  }
+  await step('Refund policy', 'cash refund 20.00 from a drawer holding 0.00 is blocked', async () => {
+    const before = one("select count(*) from returns");
+    const r = await returnOil('refund_blocked_insufficient_drawer', false);
+    rec('Refund policy', 'clear message with both amounts; nothing refunded',
+      'Not enough cash in the drawer … 0.00 … 20.00', r.t.includes('Not enough cash in the drawer'),
+      r.t.includes('Not enough cash in the drawer') && r.t.includes('0.00') && r.t.includes('20.00') && r.n === before, r.f);
+    await p.keyboard.press('Escape'); await p.waitForTimeout(800);
+  });
+  rec('Browser', 'no page errors / no 5xx (cashier)', '0 / 0', `${st.errors.length} / ${st.bad.length} ${st.errors.join(' | ').slice(0, 300)}`, st.errors.length === 0 && st.bad.length === 0);
   await ctx.close();
 
   ({ ctx, p, st } = await newPage());
@@ -177,11 +218,25 @@ async function step(area, action, fn) {
     rec('Admin', 'page: rounding step, drawers, shifts', 'Cash rounding + Till 1 + Shifts', t.includes('Till 1'),
       t.includes('Cash rounding') && t.includes('Till 1') && t.includes('Shifts'), await shot(p, 'admin_cash_shifts'));
     // the tappable shift row: its text is in the semantics node's aria-label
-    await p.locator('flt-semantics-host [aria-label*="Lina Saleh · Till 1"]').first().click({ timeout: 8000 });
+    await clickShiftRow(p, 1);
     await p.waitForTimeout(1500);
     const t2 = await txt(p);
     rec('Admin', 'shift details: expected, counted, difference, sales', 'Shift details', t2.includes('Shift details'),
       t2.includes('Shift details') && t2.includes('-1.00'), await shot(p, 'admin_shift_details'));
+    await p.keyboard.press('Escape'); await p.waitForTimeout(800);
+  });
+  await step('Refund policy', 'Store Admin records a real cash-in of 20.00 on the cashier\'s open drawer', async () => {
+    await click(p, 'Cash shifts', 2500);
+    await clickShiftRow(p, shift2);
+    await p.waitForTimeout(1500);
+    await click(p, 'Cash in', 1200);
+    await field(p, 'Amount', '20');
+    await field(p, 'Reason', 'Change from the safe for a refund');
+    const f = await shot(p, 'admin_cash_in_for_refund');
+    await click(p, 'Save', 2000);
+    const m = one(`select type || '/' || amount_minor || '/' || reason from cash_movements where shift_id = ${shift2}`);
+    rec('Refund policy', 'cash-in recorded with amount, reason and the admin', 'CASH_IN/2000/Change from the safe for a refund', m,
+      m === 'CASH_IN/2000/Change from the safe for a refund', f);
     await p.keyboard.press('Escape'); await p.waitForTimeout(800);
   });
   await step('Admin', 'cheques page and history', async () => {
@@ -227,6 +282,19 @@ async function step(area, action, fn) {
       t2.includes('تقريب الدفع النقدي'), await shot(p, 'ar_cash_shifts'));
   });
   rec('Browser', 'no page errors / no 5xx (admin)', '0 / 0', `${st.errors.length} / ${st.bad.length}`, st.errors.length === 0 && st.bad.length === 0);
+  await ctx.close();
+  ({ ctx, p, st } = await newPage());
+  await login(p, 'shini.cashier', 'Cashier-Pass-1');
+  await step('Refund policy', 'after the cash-in the same refund goes through', async () => {
+    const before = one("select count(*) from returns");
+    const r = await returnOil('refund_after_cash_in', true);
+    const exp = one(`select opening_cash_minor from cash_shifts where shift_id = ${shift2}`);
+    rec('Refund policy', 'refund recorded in shift 2; the drawer is back to 0.00', 'Return completed, 1 more return',
+      r.t.includes('Return completed'), r.t.includes('Return completed') && r.n === before + 1
+        && one(`select shift_id from returns order by return_id desc limit 1`) === shift2 && exp === 0, r.f);
+    await click(p, 'Done', 1000).catch(() => {});
+  });
+  rec('Browser', 'no page errors / no 5xx (cashier, refund)', '0 / 0', `${st.errors.length} / ${st.bad.length}`, st.errors.length === 0 && st.bad.length === 0);
   await ctx.close();
   await browser.close();
   api('PUT', '/store/settings', AD, { taxRate: 16, cashRoundingMinor: 0 });

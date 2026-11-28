@@ -100,6 +100,7 @@ class PackageApiTest extends ApiTestBase {
 
     @Test
     void returns_wholeCartonsOnly_atThePricePaid_piecesBackIntoStock() throws Exception {
+        openCashShifts(shop); // the carton is refunded in cash from the cashier's open drawer
         long sale = jsonLong(sell(shop.cashierToken(), cartons(2)).andReturn(), "saleId");
         long line = db.queryForObject("SELECT sale_item_id FROM sale_items WHERE sale_id = ?", Long.class, sale);
         as(shop.adminToken(), patch("/api/packages/" + carton), "{\"price\":50}").andExpect(status().isOk());

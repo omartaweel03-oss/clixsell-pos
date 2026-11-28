@@ -59,6 +59,8 @@ class ReportMidnightApiTest extends GuardianApiTestBase {
     void data() throws Exception {
         shini = setupStore("Shini Supermarket", "shini");
         neshan = setupStore("Neshan Market", "neshan");
+        openCashShifts(shini);
+        openCashShifts(neshan);
         milk = product(shini.adminToken(), "Milk", "11111111", "dairy", 10, 6.0, 100, 1);
         long a = sell(shini.cashierToken(), Map.of(milk, 1), null, null);
         returnOne(shini.cashierToken(), a, milk); // made now, dated below

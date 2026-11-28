@@ -88,6 +88,8 @@ class ProfitReportApiTest extends ApiTestBase {
     void history() throws Exception {
         shini = setupStore("Shini Supermarket", "shini");
         neshan = setupStore("Neshan Market", "neshan");
+        openCashShifts(shini);
+        openCashShifts(neshan);
         milk = product(shini.adminToken(), "Milk", "11111111", 5.00, 20, 3.00);
         bread = product(shini.adminToken(), "Bread", "22222222", 2.00, 10, 1.20);
         juice = product(shini.adminToken(), "Juice", "33333333", 8.00, 10, null);

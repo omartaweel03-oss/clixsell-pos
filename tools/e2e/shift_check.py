@@ -109,8 +109,17 @@ except sqlite3.IntegrityError as e:
     chk('direct SQL cannot change its sale', 'SHIFT_CLOSED_RECORD' in str(e), True)
 s, sh2 = call('/shifts', T['shini.cashier'], 'POST', {'drawerId': drawer, 'openingCash': 0})
 first = one('select min(sale_id) from sales where shift_id=?', shift)
+# approved cash refund policy: the new drawer holds 0.00 → the cash refund is blocked, nothing saved
+before_returns = one('select count(*) from returns')
 s, r = ret(T['shini.cashier'], first)
-chk('refund of an old sale after closing -> 201, into the NEW shift', (s, one('select shift_id from returns where sale_id=? order by return_id desc limit 1', first)), (201, sh2['shiftId']))
+chk('refund from an empty drawer -> 409 DRAWER_INSUFFICIENT with both amounts',
+    (s, r['code'], r['fieldErrors']['available'], r['fieldErrors']['required']), (409, 'DRAWER_INSUFFICIENT', '0.00', f'{unit_total:.2f}'))
+chk('nothing was refunded', one('select count(*) from returns'), before_returns)
+# the Store Admin puts real cash in the drawer and records it (audited), then the refund goes through
+chk('Store Admin cash-in', call(f'/shifts/{sh2["shiftId"]}/movements', T['shini.admin'], 'POST',
+    {'type': 'CASH_IN', 'amount': unit_total, 'reason': 'Change from the safe', 'requestKey': 'e2e-' + uuid.uuid4().hex})[0], 201)
+s, r = ret(T['shini.cashier'], first)
+chk('refund of an old sale after the cash-in -> 201, into the NEW shift', (s, one('select shift_id from returns where sale_id=? order by return_id desc limit 1', first)), (201, sh2['shiftId']))
 chk('the closed shift record did not change', db.execute('select * from cash_shifts where shift_id=?', (shift,)).fetchone(), frozen)
 
 print('--- 5. Store isolation and the Store Admin exception')
@@ -118,9 +127,9 @@ chk('another store cannot see the shift (404)', call(f'/shifts/{shift}', T['nesh
 chk('another store cannot close it (404)', call(f'/shifts/{sh2["shiftId"]}/admin-close', T['neshan.admin'], 'POST', {'countedCash': 0, 'reason': 'Not mine'})[0], 404)
 chk('admin close without a reason -> 400', call(f'/shifts/{sh2["shiftId"]}/admin-close', T['shini.admin'], 'POST', {'countedCash': 0})[0], 400)
 cur = call('/shifts/current', T['shini.cashier'])[1]['shift']
-chk('a refund from a drawer opened with 0.00 leaves a negative expected cash (reported, not blocked)', cur['expectedCash'] < 0, True)
+chk('the drawer is never negative: expected 0.00 after cash-in and refund', cur['expectedCash'], 0.0)
 s, b = call(f'/shifts/{sh2["shiftId"]}/admin-close', T['shini.admin'], 'POST',
-            {'countedCash': 0, 'note': 'Refund paid from the safe', 'reason': 'End of day, cashier left'})
+            {'countedCash': 0, 'reason': 'End of day, cashier left'})
 chk('Store Admin exceptional close -> ADMIN_EXCEPTION', (s, b['closeKind']), (200, 'ADMIN_EXCEPTION'))
 lst = call('/shifts', T['shini.admin'])[1]
 chk('Store Admin list shows both shifts', sorted(x['shiftId'] for x in lst if x['drawerId'] == drawer), sorted([shift, sh2['shiftId']]))

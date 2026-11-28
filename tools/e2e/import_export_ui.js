@@ -142,6 +142,11 @@ function checkStock(area, keys, why) {
   const SC = await token('shini.cashier', 'Cashier-Pass-1');
   const NA = await token('neshan.admin', 'Admin-Pass-1');
   const NC = await token('neshan.cashier', 'Cashier-Pass-1');
+  // approved cash refund policy: the Store Admin (who makes the returns below) refunds cash from an
+  // open drawer with a counted opening cash
+  { const d = (await api('POST', '/drawers', SA, { name: 'IX Office Till' })).json.drawerId;
+    const sh = await api('POST', '/shifts', SA, { drawerId: d, openingCash: 1000 });
+    rec('Setup', 'Store Admin opens a cash shift (1,000.00 counted)', 201, sh.status, sh.status === 201); }
   const storeInfo = (await api('GET', '/store', SA)).json; TAX = storeInfo.taxRate;
   await api('PUT', '/guardian/status', SA, { enabled: true });
   const NESHAN = one("select store_id from users where username='neshan.admin'");

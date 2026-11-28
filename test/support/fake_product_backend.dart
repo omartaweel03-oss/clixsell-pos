@@ -61,6 +61,13 @@ class FakeProductBackend {
   List<int> favoriteIds = [];
   final List<Map<String, dynamic>> returns = [];
 
+  /// Approved cash refund policy: when set, a return is refused as the real backend does when the
+  /// drawer lacks cash (409 DRAWER_INSUFFICIENT with the two amounts).
+  ({String available, String required})? refuseCashRefund;
+
+  /// Every requestKey sent with POST /api/returns (null when none).
+  final List<String?> returnRequestKeys = [];
+
   /// saleItemId → purchase cost copied when the sale was completed (server side only).
   final Map<int, double?> unitCosts = {};
   int _nextSaleId = 1;
@@ -871,7 +878,18 @@ class FakeProductBackend {
       );
     }
     if (path == '/api/returns' && method == 'POST') {
-      return _return(user, storeId, body());
+      final b = body();
+      returnRequestKeys.add(b['requestKey'] as String?);
+      final refuse = refuseCashRefund;
+      if (refuse != null) {
+        return _json(409, {
+          'status': 409,
+          'code': 'DRAWER_INSUFFICIENT',
+          'message': 'The drawer does not have enough cash for this refund',
+          'fieldErrors': {'available': refuse.available, 'required': refuse.required},
+        });
+      }
+      return _return(user, storeId, b);
     }
 
     final suspendedId = RegExp(

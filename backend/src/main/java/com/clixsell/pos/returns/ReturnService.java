@@ -1,6 +1,7 @@
 package com.clixsell.pos.returns;
 
 import com.clixsell.pos.auth.CurrentUser;
+import com.clixsell.pos.common.ConflictException;
 import com.clixsell.pos.common.NotFoundException;
 import com.clixsell.pos.common.ValidationException;
 import com.clixsell.pos.sale.PaymentMethod;
@@ -46,10 +47,27 @@ public class ReturnService {
         this.cheques = cheques;
     }
 
+    private static final java.util.regex.Pattern REQUEST_KEY = java.util.regex.Pattern.compile("[A-Za-z0-9_-]{8,100}");
+
     public ReturnResponse processReturn(CurrentUser user, ReturnRequest request) {
         long storeId = user.requireStoreId();
         if (request == null || request.saleId() == null || request.saleItemId() == null) {
             throw new ValidationException(Map.of("saleItemId", "Choose the product to return"));
+        }
+        String key = request.requestKey();
+        if (key != null) {
+            if (!REQUEST_KEY.matcher(key).matches()) {
+                throw new ValidationException(Map.of("requestKey", "A request key has 8–100 letters, digits, - or _"));
+            }
+            java.util.Optional<ReturnProduct> again = returns.findByStore_StoreIdAndRequestKey(storeId, key);
+            if (again.isPresent()) {
+                ReturnProduct r = again.get();
+                if (!r.getSale().getSaleId().equals(request.saleId()) || !r.getSaleItem().getSaleItemId().equals(request.saleItemId())
+                        || !java.util.Objects.equals(r.getQuantity(), request.quantity())) {
+                    throw new ConflictException("REQUEST_KEY_USED", "requestKey", "This request key was used for another return");
+                }
+                return ReturnResponse.from(r); // the same request again: nothing new is refunded
+            }
         }
         Sale sale = sales.findBySaleIdAndStore_StoreId(request.saleId(), storeId)
                 .orElseThrow(() -> new NotFoundException("SALE_NOT_FOUND", "Invoice " + request.saleId() + " was not found"));
@@ -63,15 +81,31 @@ public class ReturnService {
         boolean chequeSale = sale.getPaymentMethod() == PaymentMethod.CHEQUE;
         if (chequeSale) cheques.requireReturnAllowed(user, sale.getSaleId()); // D6, before any change
         boolean cash = sale.getPaymentMethod() == PaymentMethod.CASH;
-        Long shiftId = shifts.shiftForTill(user, cash);
+        // approved policy: a cash refund needs the user's open drawer (lock taken here, same transaction)
+        // (an explicit if: a conditional expression would unbox shiftForTill's null)
+        Long shiftId;
+        if (cash) {
+            shiftId = shifts.shiftForCashRefund(user);
+        } else {
+            shiftId = shifts.shiftForTill(user, false);
+        }
         BigDecimal forLine = BigDecimal.valueOf(returns.refundedForLine(item.getSaleItemId())).setScale(2, RoundingMode.HALF_UP);
         BigDecimal forSale = BigDecimal.valueOf(returns.refundedForSale(sale.getSaleId())).setScale(2, RoundingMode.HALF_UP);
         int q = request.quantity() == null ? 0 : request.quantity();
         boolean lastReturn = sale.getItems().stream()
                 .allMatch(i -> i == item ? i.getReturnableQuantity() == q : i.getReturnableQuantity() == 0);
-        ReturnProduct saved = returns.save(ReturnProduct.process(sale, item, request.quantity(),
+        ReturnProduct created = ReturnProduct.process(sale, item, request.quantity(),
                 request.reason(), cashier, LocalDateTime.now(), maxDays, forLine, forSale, shiftId,
-                sale.getStore().getCashRoundingMinor(), lastReturn));
+                sale.getStore().getCashRoundingMinor(), lastReturn);
+        if (cash) {
+            long available = shifts.drawerCashMinor(shiftId);
+            if (created.getRefundMinor() > available) {
+                // nothing is saved: the transaction rolls back (stock and the line's returned count too)
+                throw new DrawerInsufficientException(available, created.getRefundMinor());
+            }
+        }
+        created.setRequestKey(key);
+        ReturnProduct saved = returns.save(created);
         if (chequeSale) {
             // D6: never automatic cash — what is owed back waits for the Store Admin's decision
             returns.flush();

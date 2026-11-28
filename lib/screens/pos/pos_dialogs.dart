@@ -9,6 +9,7 @@ import '../../l10n/cheque_strings.dart';
 import '../../models/sale.dart';
 import '../../services/api_http.dart';
 import '../../services/sales_api_client.dart';
+import '../../services/shift_api_client.dart';
 import '../../state/pos_cart.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/formatters.dart';
@@ -333,6 +334,9 @@ class _ReturnDialogState extends State<ReturnDialog> {
   Sale? _sale;
   SaleLine? _line;
   int _quantity = 1;
+
+  /// One key per chosen sale / line / quantity: a double tap or a retry refunds once (server checks).
+  String? _requestKey;
   ReturnResult? _result;
   bool _busy = false;
   String? _error;
@@ -357,6 +361,7 @@ class _ReturnDialogState extends State<ReturnDialog> {
         _sale = sale;
         _line = sale.items.where((l) => l.returnableQuantity > 0).firstOrNull;
         _quantity = 1;
+        _requestKey = null;
         _busy = false;
       });
     } on ApiException catch (e) {
@@ -382,11 +387,13 @@ class _ReturnDialogState extends State<ReturnDialog> {
       _error = null;
     });
     try {
+      _requestKey ??= ShiftApiClient.newRequestKey();
       final result = await widget.api.returnProduct(
         saleId: sale.saleId,
         saleItemId: line.saleItemId,
         quantity: _quantity,
         reason: _reason.text,
+        requestKey: _requestKey,
       );
       if (mounted) {
         setState(() {
@@ -398,7 +405,15 @@ class _ReturnDialogState extends State<ReturnDialog> {
       if (mounted) {
         setState(() {
           _busy = false;
-          _error = e.fieldErrors.values.firstOrNull ?? describeApiError(e, s);
+          // approved cash refund policy: a clear message with the drawer's cash and the refund
+          _error = e.code == 'DRAWER_INSUFFICIENT'
+              ? ShiftStrings.forLanguage(arabic: s.isArabic).drawerInsufficient(
+                  e.fieldErrors['available'] ?? '?',
+                  e.fieldErrors['required'] ?? '?',
+                )
+              : e.code == 'CASH_REFUND_NEEDS_SHIFT'
+              ? describeApiError(e, s)
+              : e.fieldErrors.values.firstOrNull ?? describeApiError(e, s);
         });
       }
     }
@@ -518,6 +533,7 @@ class _ReturnDialogState extends State<ReturnDialog> {
               onChanged: (v) => setState(() {
                 _line = returnable.firstWhere((l) => l.saleItemId == v);
                 _quantity = 1;
+                _requestKey = null;
               }),
               child: Column(
                 children: [
@@ -550,7 +566,10 @@ class _ReturnDialogState extends State<ReturnDialog> {
                   key: const Key('returnQtyDec'),
                   tooltip: s.returnQtyDecrease,
                   onPressed: _quantity > 1
-                      ? () => setState(() => _quantity--)
+                      ? () => setState(() {
+                          _quantity--;
+                          _requestKey = null;
+                        })
                       : null,
                   icon: const Icon(Icons.remove_rounded, size: 18),
                 ),
@@ -570,7 +589,10 @@ class _ReturnDialogState extends State<ReturnDialog> {
                   key: const Key('returnQtyInc'),
                   tooltip: s.returnQtyIncrease,
                   onPressed: _quantity < (_line?.returnableQuantity ?? 1)
-                      ? () => setState(() => _quantity++)
+                      ? () => setState(() {
+                          _quantity++;
+                          _requestKey = null;
+                        })
                       : null,
                   icon: const Icon(Icons.add_rounded, size: 18),
                 ),

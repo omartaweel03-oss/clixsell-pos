@@ -70,6 +70,14 @@ public class ApiExceptionHandler {
         return error(HttpStatus.CONFLICT, "INSUFFICIENT_STOCK", e.getMessage(), e.getShortages());
     }
 
+    /** Approved cash refund policy: not enough recorded cash in the drawer (nothing was saved). */
+    @ExceptionHandler(com.clixsell.pos.returns.DrawerInsufficientException.class)
+    public ResponseEntity<ApiError> drawerInsufficient(com.clixsell.pos.returns.DrawerInsufficientException e) {
+        return error(HttpStatus.CONFLICT, "DRAWER_INSUFFICIENT", e.getMessage(), Map.of(
+                "available", java.math.BigDecimal.valueOf(e.getAvailableMinor(), 2).toPlainString(),
+                "required", java.math.BigDecimal.valueOf(e.getRequiredMinor(), 2).toPlainString()));
+    }
+
     @ExceptionHandler(DuplicateBarcodeException.class)
     public ResponseEntity<ApiError> duplicateBarcode(DuplicateBarcodeException e) {
         return error(HttpStatus.CONFLICT, "DUPLICATE_BARCODE", e.getMessage(),

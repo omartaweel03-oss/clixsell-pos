@@ -45,7 +45,8 @@ public final class DatabaseRules {
             Map.entry("CHEQUE_REFUND_BAD_DECISION", "This refund decision is not allowed (a refund is paid only once the cheque cleared)"),
             Map.entry("CHEQUE_RETURN_NEEDS_STORE_ADMIN", "This invoice was paid by cheque: its return is handled by the Store Admin"),
             Map.entry("CHEQUE_BAD_INSERT", "The cheque does not match its payment"),
-            Map.entry("CHEQUE_REFUND_BAD_INSERT", "The refund is more than the cheque"));
+            Map.entry("CHEQUE_REFUND_BAD_INSERT", "The refund is more than the cheque"),
+            Map.entry("DRAWER_INSUFFICIENT", "The drawer does not have enough cash for this refund"));
 
     /** The rule code inside a database error, or null when it is not a rule refusal. */
     public static String code(Throwable e) {

@@ -116,6 +116,14 @@ class ShiftStrings {
   String get positiveAmount =>
       _t('Enter an amount greater than 0.', 'أدخل مبلغاً أكبر من 0.');
 
+  /// Approved cash refund policy: the refund is blocked, with both amounts and what to do.
+  String drawerInsufficient(String available, String required) => _t(
+    'Not enough cash in the drawer: available ₪ $available, refund ₪ $required. '
+    'Ask the Store Admin to add cash to the drawer and record a cash-in, then try again.',
+    'لا يوجد نقد كافٍ في الدرج: المتوفر ₪ $available، والمرتجع ₪ $required. '
+    'اطلب من مدير المتجر إضافة نقد إلى الدرج وتسجيل إيداع نقدي، ثم أعد المحاولة.',
+  );
+
   /// Localized messages for the backend's shift codes (null = use the backend's message).
   String? forCode(String? code) => switch (code) {
     'SHIFT_REQUIRED' => _t(
@@ -135,6 +143,14 @@ class ShiftStrings {
     'DRAWER_IN_USE' => _t('This drawer already has an open shift.', 'هذا الدرج عليه وردية مفتوحة.'),
     'DRAWER_INACTIVE' => _t('This drawer is not in use.', 'هذا الدرج غير مستخدم.'),
     'DRAWER_NAME_TAKEN' => _t('A drawer with this name already exists.', 'يوجد درج بهذا الاسم.'),
+    'CASH_REFUND_NEEDS_SHIFT' => _t(
+      'A cash refund is paid from your cash drawer: open your cash shift first.',
+      'يُدفع المرتجع النقدي من درجك النقدي: افتح ورديتك النقدية أولاً.',
+    ),
+    'DRAWER_INSUFFICIENT' => _t(
+      'The drawer does not have enough cash for this refund.',
+      'لا يوجد في الدرج نقد كافٍ لهذا المرتجع.',
+    ),
     'CASH_OUT_TOO_LARGE' => _t(
       'The drawer does not hold that much cash.',
       'الدرج لا يحتوي على هذا المبلغ.',

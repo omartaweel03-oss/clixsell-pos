@@ -117,16 +117,18 @@ public class DemoDataInitializer implements ApplicationRunner {
         SaleResponse first = sales.complete(lina, sale(Map.of(s.get(0), 2, s.get(3), 1, s.get(5), 1),
                 null, null, PaymentMethod.CASH));
         // olive oil ×2, za'atar ×1 – 5% discount, card
-        sales.complete(lina, sale(Map.of(s.get(6), 2, s.get(8), 1), DiscountType.PERCENT, 5.0, PaymentMethod.CARD));
+        SaleResponse card = sales.complete(lina, sale(Map.of(s.get(6), 2, s.get(8), 1), DiscountType.PERCENT, 5.0,
+                PaymentMethod.CARD));
         // labaneh ×1, cheese ×1, water ×6 – ₪3 discount, e-wallet
         sales.complete(yousef, sale(Map.of(s.get(1), 1, s.get(2), 1, s.get(9), 6),
                 DiscountType.AMOUNT, 3.0, PaymentMethod.WALLET));
         // suspended: milk ×1, ka'ak ×2
         sales.suspend(yousef, sale(Map.of(s.get(0), 1, s.get(4), 2), null, null, null));
-        // return 1 milk from the first sale
-        long milkLine = first.items().stream()
-                .filter(i -> s.get(0).equals(i.productId())).findFirst().orElseThrow().saleItemId();
-        returns.processReturn(lina, new ReturnRequest(first.saleId(), milkLine, 1, "Damaged package"));
+        // return 1 olive oil from the card sale (refunded to the card: the approved cash refund policy
+        // pays cash only from an open drawer that holds it, and demo data never invents cash)
+        long oilLine = card.items().stream()
+                .filter(i -> s.get(6).equals(i.productId())).findFirst().orElseThrow().saleItemId();
+        returns.processReturn(lina, new ReturnRequest(card.saleId(), oilLine, 1, "Damaged package"));
 
         // ── Store 2: Neshan Market (Nablus) ───────────────────────────────
         long neshan = stores.createStore(new StoreRequest("Neshan Market",

@@ -52,8 +52,11 @@ class DemoDataTest {
         assertThat(db.queryForList("select invoice_number from sales where store_id = 2 order by sale_id",
                 String.class)).containsExactly("INV-000001", "INV-000002", "INV-000003");
 
-        // milk: 40 − 2 sold + 1 returned = 39 (the suspended invoice reserves nothing)
-        assertThat(count("select quantity from products where barcode = '6251000000011'")).isEqualTo(39);
+        // milk: 40 − 2 sold = 38 (the suspended invoice reserves nothing)
+        assertThat(count("select quantity from products where barcode = '6251000000011'")).isEqualTo(38);
+        // olive oil: 20 − 2 sold + 1 returned (to the card) = 19
+        assertThat(count("select quantity from products where barcode = '6251000000073'")).isEqualTo(19);
+        assertThat(db.queryForObject("select refund_method from returns", String.class)).isEqualTo("CARD");
         // first sale: 2×6.50 + 5.00 + 35.00 = 53.00, tax 16% = 8.48, total 61.48
         assertThat(db.queryForObject("select total from sales where store_id = 1 and invoice_number = 'INV-000001'",
                 Double.class)).isEqualTo(61.48);

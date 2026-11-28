@@ -935,13 +935,17 @@ public class V7MigrationValidationTest {
             assertThat(one(c, "SELECT expected_cash_minor || '/' || counted_cash_minor || '/' || difference_minor FROM cash_shifts "
                     + "WHERE shift_id = 1")).isEqualTo("50500/50500/0");
             // a later refund of an old sale goes to the CURRENT open shift (the closed record stays as it was)
-            sql(c, "INSERT INTO cash_shifts (store_id, drawer_id, cashier_id, status, opened_at, opening_cash_minor) VALUES (1, 1, 5, 'OPEN', 'd', 0)");
+            sql(c, "INSERT INTO cash_shifts (store_id, drawer_id, cashier_id, status, opened_at, opening_cash_minor) VALUES (1, 1, 5, 'OPEN', 'd', 1000)");
+            // approved cash refund policy, last line of defence: never more cash out than the drawer holds
+            assertThatThrownBy(() -> sql(c, "INSERT INTO returns (store_id, sale_id, sale_item_id, product_id, cashier_id, quantity, "
+                    + "reason, refund_amount, refund_method, return_date, shift_id, refund_minor) VALUES (1, 80, 80, 2, 5, 1, 'x', 50, "
+                    + "'CASH', 'e', 2, 5000)")).hasMessageContaining("DRAWER_INSUFFICIENT");
             assertThatThrownBy(() -> sql(c, "INSERT INTO returns (store_id, sale_id, sale_item_id, product_id, cashier_id, quantity, "
                     + "reason, refund_amount, refund_method, return_date, shift_id, refund_minor) VALUES (1, 80, 80, 2, 5, 1, 'x', 5, "
                     + "'CASH', 'e', 1, 500)")).hasMessageContaining("RETURN_SHIFT_NOT_OPEN");
             sql(c, "INSERT INTO returns (store_id, sale_id, sale_item_id, product_id, cashier_id, quantity, reason, refund_amount, "
                     + "refund_method, return_date, shift_id, refund_minor) VALUES (1, 80, 80, 2, 5, 1, 'x', 5, 'CASH', 'e', 2, 500)");
-            assertThat(one(c, EXPECTED.formatted(2))).isEqualTo("-500");
+            assertThat(one(c, EXPECTED.formatted(2))).isEqualTo("500"); // 10.00 − 5.00
             // even on an open shift, only a COMPLETED sale may carry it
             assertThatThrownBy(() -> sql(c, "UPDATE sales SET shift_id = 2 WHERE sale_id = 82")).hasMessageContaining("SALE_SHIFT_NEEDS_COMPLETED");
             sql(c, "UPDATE sales SET status = 'COMPLETED', completed_at = 'f', shift_id = 2 WHERE sale_id = 82");
