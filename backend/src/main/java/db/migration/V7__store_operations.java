@@ -1,4 +1,9 @@
-package com.clixsell.pos.v7proposal;
+package db.migration;
+
+import org.flywaydb.core.api.migration.BaseJavaMigration;
+import org.flywaydb.core.api.migration.Context;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -21,12 +26,12 @@ import java.util.TreeSet;
 import java.util.function.IntConsumer;
 
 /**
- * PROPOSAL ONLY — the corrected V7 schema for the POS store-operations upgrade, as an executable
- * prototype for validation on disposable V6 databases.
+ * V7: POS store operations — cash drawers and shifts, cash movements, product favorites,
+ * piece / carton / box packages, cash-only invoice rounding, and CHEQUE payments with their
+ * lifecycle, refunds and cash payouts (management decisions D1–D7).
  *
- * <p>It lives in the TEST source tree, in a package Flyway never scans ({@code db/migration} is the
- * only migration location), so it can never be applied to the application or to a real database.
- * After management approval it becomes {@code db.migration.V7__store_operations} unchanged.
+ * <p>Validated first as a prototype on disposable V6 databases (see V7MigrationValidationTest);
+ * the schema below is that validated schema, statement for statement.
  *
  * <p>Order of operations (each step stops everything if it fails):
  * <ol>
@@ -45,10 +50,9 @@ import java.util.function.IntConsumer;
  * rewritten; conversion is {@code CAST(round(x * 100) AS INTEGER)} in SQL and
  * {@code BigDecimal.valueOf(x).movePointRight(2).setScale(0, HALF_UP)} in Java.
  */
-public final class V7StoreOperationsProposal {
+public class V7__store_operations extends BaseJavaMigration {
 
-    private V7StoreOperationsProposal() {
-    }
+    private static final Logger log = LoggerFactory.getLogger(V7__store_operations.class);
 
     public static final String BACKUP_PREFIX = "clixsell-backup-before-v7-";
 
@@ -68,6 +72,9 @@ public final class V7StoreOperationsProposal {
     private static String integer(String col, String cond) {
         return "coalesce(typeof(" + col + ") = 'integer' AND " + cond + ", 0)";
     }
+
+    /** "this shift is CLOSED" for a shift-id expression. */
+    private static final String CLOSED = "(SELECT status FROM cash_shifts WHERE shift_id = %s) = 'CLOSED'";
 
     private static String role(String userExpr) {
         return "(SELECT role FROM users WHERE user_id = " + userExpr + ")";
@@ -565,6 +572,51 @@ public final class V7StoreOperationsProposal {
             "CREATE TRIGGER trg_cash_movement_no_delete BEFORE DELETE ON cash_movements "
                     + "BEGIN SELECT RAISE(ABORT, 'CASH_MOVEMENTS_APPEND_ONLY'); END",
 
+            // ── a closed shift's financial history is frozen (problems A–D) ─────────────
+            // only a COMPLETED sale carries a shift (a suspended sale belongs to none)
+            """
+            CREATE TRIGGER trg_sale_shift_completed_only_insert BEFORE INSERT ON sales
+            WHEN NEW.shift_id IS NOT NULL AND NEW.status IS NOT 'COMPLETED'
+            BEGIN SELECT RAISE(ABORT, 'SALE_SHIFT_NEEDS_COMPLETED'); END""",
+            """
+            CREATE TRIGGER trg_sale_shift_completed_only_update BEFORE UPDATE ON sales
+            WHEN NEW.shift_id IS NOT NULL AND NEW.status IS NOT 'COMPLETED'
+            BEGIN SELECT RAISE(ABORT, 'SALE_SHIFT_NEEDS_COMPLETED'); END""",
+            // A: no financial change to a sale of a closed shift (status, amounts, shift, date)
+            """
+            CREATE TRIGGER trg_sale_closed_shift_frozen BEFORE UPDATE OF status, subtotal, discount, tax_rate, tax, total,
+                rounding_minor, shift_id, completed_at, store_id ON sales
+            WHEN coalesce(%s OR %s, 0)
+            BEGIN SELECT RAISE(ABORT, 'SHIFT_CLOSED_RECORD'); END""".formatted(CLOSED.formatted("OLD.shift_id"), CLOSED.formatted("NEW.shift_id")),
+            """
+            CREATE TRIGGER trg_sale_closed_shift_no_delete BEFORE DELETE ON sales
+            WHEN coalesce(%s, 0)
+            BEGIN SELECT RAISE(ABORT, 'SHIFT_CLOSED_RECORD'); END""".formatted(CLOSED.formatted("OLD.shift_id")),
+            // B, C: no new payment, and no deletion of a payment, of a sale of a closed shift
+            """
+            CREATE TRIGGER trg_payment_closed_shift_insert BEFORE INSERT ON payments
+            WHEN coalesce(%s, 0)
+            BEGIN SELECT RAISE(ABORT, 'SHIFT_CLOSED_RECORD'); END""".formatted(CLOSED.formatted("(SELECT shift_id FROM sales WHERE sale_id = NEW.sale_id)")),
+            """
+            CREATE TRIGGER trg_payment_closed_shift_delete BEFORE DELETE ON payments
+            WHEN coalesce(%s, 0)
+            BEGIN SELECT RAISE(ABORT, 'SHIFT_CLOSED_RECORD'); END""".formatted(CLOSED.formatted("(SELECT shift_id FROM sales WHERE sale_id = OLD.sale_id)")),
+            // the lines of a closed-shift sale keep their amounts (returned_quantity may still grow)
+            """
+            CREATE TRIGGER trg_sale_item_closed_shift_update BEFORE UPDATE OF sale_id, quantity, unit_price, line_total,
+                unit_price_minor ON sale_items
+            WHEN coalesce(%s, 0)
+            BEGIN SELECT RAISE(ABORT, 'SHIFT_CLOSED_RECORD'); END""".formatted(CLOSED.formatted("(SELECT shift_id FROM sales WHERE sale_id = OLD.sale_id)")),
+            """
+            CREATE TRIGGER trg_sale_item_closed_shift_delete BEFORE DELETE ON sale_items
+            WHEN coalesce(%s, 0)
+            BEGIN SELECT RAISE(ABORT, 'SHIFT_CLOSED_RECORD'); END""".formatted(CLOSED.formatted("(SELECT shift_id FROM sales WHERE sale_id = OLD.sale_id)")),
+            // D: a cash return of a closed shift is never deleted (its amounts are already fixed)
+            """
+            CREATE TRIGGER trg_return_closed_shift_no_delete BEFORE DELETE ON returns
+            WHEN coalesce(%s, 0)
+            BEGIN SELECT RAISE(ABORT, 'SHIFT_CLOSED_RECORD'); END""".formatted(CLOSED.formatted("OLD.shift_id")),
+
             // ── shift closing: the expected cash is the database's own calculation (I3) ─
             """
             CREATE TRIGGER trg_shift_expected BEFORE UPDATE ON cash_shifts
@@ -595,8 +647,26 @@ public final class V7StoreOperationsProposal {
         }
     }
 
+    /** VACUUM INTO (the backup) cannot run inside a transaction, so this migration manages its own. */
+    @Override
+    public boolean canExecuteInTransaction() {
+        return false;
+    }
+
+    /** Flyway entry point: the database file is the connection's "main" database. */
+    @Override
+    public void migrate(Context context) throws Exception {
+        Connection c = context.getConnection();
+        String file = one(c, "SELECT file FROM pragma_database_list WHERE name = 'main'");
+        Path dbFile = file == null || file.isBlank() ? null : Path.of(file);
+        Outcome outcome = apply(c, dbFile, null, null);
+        if (outcome.backup() != null) log.info("Database backup written and checked: {}", outcome.backup());
+        log.info("V7 store-operations schema added; existing rows kept unchanged");
+    }
+
     /**
-     * Runs pre-flight, backup and the migration transaction on {@code dbFile}.
+     * Runs pre-flight, backup and the migration transaction on {@code dbFile} with its own connection
+     * (used by the tests on disposable databases).
      *
      * @param afterStatement test hook called after each schema statement (index) inside the
      *                       transaction; throwing from it simulates a failure mid-migration
@@ -604,48 +674,57 @@ public final class V7StoreOperationsProposal {
      */
     public static Outcome migrate(Path dbFile, IntConsumer afterStatement, String backupName) throws Exception {
         try (Connection c = DriverManager.getConnection("jdbc:sqlite:" + dbFile + "?foreign_keys=on")) {
-            preflight(c);
-            List<String> tables = tables(c);
-            Map<String, List<String>> columns = new LinkedHashMap<>();
-            for (String t : tables) columns.put(t, columns(c, t));
-            Map<String, Long> rows = counts(c, tables);
-            Map<String, String> hashes = hashes(c, columns);
-            TreeSet<String> objects = objects(c);
-            Long paymentSeq = paymentSequence(c);
-
-            Path backup = null;
-            if (rows.values().stream().anyMatch(n -> n > 0)) {
-                backup = dbFile.toAbsolutePath().getParent().resolve(backupName != null ? backupName : backupName());
-                try {
-                    writeBackup(c, backup, rows, hashes, columns);
-                } catch (Exception e) {
-                    throw new BackupFailed("Backup failed; the database was not changed: " + e.getMessage(), e);
-                }
-            }
-
-            c.setAutoCommit(false);
-            try {
-                for (int i = 0; i < SCHEMA.size(); i++) {
-                    exec(c, SCHEMA.get(i));
-                    if (afterStatement != null) afterStatement.accept(i);
-                }
-                // keep the AUTOINCREMENT high-water mark of the rebuilt payments table
-                if (paymentSeq != null) {
-                    exec(c, "UPDATE sqlite_sequence SET seq = max(seq, " + paymentSeq + ") WHERE name = 'payments'");
-                    if (count(c, "SELECT COUNT(*) FROM sqlite_sequence WHERE name = 'payments'") == 0) {
-                        exec(c, "INSERT INTO sqlite_sequence (name, seq) VALUES ('payments', " + paymentSeq + ")");
-                    }
-                }
-                verifyAfter(c, rows, hashes, columns, objects);
-                c.commit();
-            } catch (Exception e) {
-                c.rollback();
-                throw e;
-            } finally {
-                c.setAutoCommit(true);
-            }
-            return new Outcome(backup);
+            return apply(c, dbFile, afterStatement, backupName);
         }
+    }
+
+    /** The procedure itself, on an open connection in auto-commit mode. */
+    static Outcome apply(Connection c, Path dbFile, IntConsumer afterStatement, String backupName) throws Exception {
+        preflight(c);
+        List<String> tables = tables(c);
+        Map<String, List<String>> columns = new LinkedHashMap<>();
+        for (String t : tables) columns.put(t, columns(c, t));
+        Map<String, Long> rows = counts(c, tables);
+        Map<String, String> hashes = hashes(c, columns);
+        TreeSet<String> objects = objects(c);
+        Long paymentSeq = paymentSequence(c);
+
+        Path backup = null;
+        if (rows.values().stream().anyMatch(n -> n > 0)) {
+            if (dbFile == null) {
+                throw new BackupFailed("The database has data but no file to back up next to; nothing was changed", null);
+            }
+            backup = dbFile.toAbsolutePath().getParent().resolve(backupName != null ? backupName : backupName());
+            try {
+                writeBackup(c, backup, rows, hashes, columns);
+            } catch (Exception e) {
+                throw new BackupFailed("Backup failed; the database was not changed: " + e.getMessage(), e);
+            }
+        }
+
+        boolean autoCommit = c.getAutoCommit();
+        c.setAutoCommit(false);
+        try {
+            for (int i = 0; i < SCHEMA.size(); i++) {
+                exec(c, SCHEMA.get(i));
+                if (afterStatement != null) afterStatement.accept(i);
+            }
+            // keep the AUTOINCREMENT high-water mark of the rebuilt payments table
+            if (paymentSeq != null) {
+                exec(c, "UPDATE sqlite_sequence SET seq = max(seq, " + paymentSeq + ") WHERE name = 'payments'");
+                if (count(c, "SELECT COUNT(*) FROM sqlite_sequence WHERE name = 'payments'") == 0) {
+                    exec(c, "INSERT INTO sqlite_sequence (name, seq) VALUES ('payments', " + paymentSeq + ")");
+                }
+            }
+            verifyAfter(c, rows, hashes, columns, objects);
+            c.commit();
+        } catch (Exception e) {
+            c.rollback();
+            throw e;
+        } finally {
+            c.setAutoCommit(autoCommit);
+        }
+        return new Outcome(backup);
     }
 
     /** Next to the database, with time and 8 random hex characters: collisions are practically impossible. */
@@ -730,7 +809,7 @@ public final class V7StoreOperationsProposal {
 
     // ── helpers (same rules as V6) ──────────────────────────────────────────────────
 
-    static TreeSet<String> objects(Connection c) throws SQLException {
+    public static TreeSet<String> objects(Connection c) throws SQLException {
         TreeSet<String> s = new TreeSet<>();
         try (Statement st = c.createStatement(); ResultSet rs = st.executeQuery(
                 "SELECT type || ':' || name FROM sqlite_master WHERE type IN ('index', 'trigger', 'table') "
@@ -799,19 +878,19 @@ public final class V7StoreOperationsProposal {
         return m;
     }
 
-    static String one(Connection c, String sql) throws SQLException {
+    public static String one(Connection c, String sql) throws SQLException {
         try (Statement s = c.createStatement(); ResultSet rs = s.executeQuery(sql)) {
             return rs.next() ? rs.getString(1) : null;
         }
     }
 
-    static long count(Connection c, String sql) throws SQLException {
+    public static long count(Connection c, String sql) throws SQLException {
         try (Statement s = c.createStatement(); ResultSet rs = s.executeQuery(sql)) {
             return rs.next() ? rs.getLong(1) : 0;
         }
     }
 
-    static void exec(Connection c, String sql) throws SQLException {
+    public static void exec(Connection c, String sql) throws SQLException {
         try (Statement s = c.createStatement()) {
             s.execute(sql);
         }

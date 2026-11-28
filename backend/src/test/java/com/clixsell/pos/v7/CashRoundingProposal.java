@@ -1,4 +1,4 @@
-package com.clixsell.pos.v7proposal;
+package com.clixsell.pos.v7;
 
 /**
  * PROPOSAL ONLY — the cash rounding and refund-allocation rules (D4, requirement 7), in integer minor

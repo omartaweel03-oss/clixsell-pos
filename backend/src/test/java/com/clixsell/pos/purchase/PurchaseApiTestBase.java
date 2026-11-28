@@ -119,6 +119,9 @@ public abstract class PurchaseApiTestBase extends ApiTestBase {
                 VALUES (?, ?, ?, 'COMPLETED', ?, 0, 0, 0, ?, ?, ?, ?)""",
                 storeId, cashier, "T-" + invoice.incrementAndGet(), units * 14.0, units * 14.0, at, at, at);
         long saleId = db.queryForObject("SELECT MAX(sale_id) FROM sales", Long.class);
+        // as the application does: every completed sale has its payment (V7 checks refunds against it)
+        db.update("INSERT INTO payments (sale_id, payment_method, amount, payment_status, paid_at) VALUES (?, 'CASH', ?, 'PAID', ?)",
+                saleId, units * 14.0, at);
         db.update("""
                 INSERT INTO sale_items (sale_id, product_id, product_name, barcode, quantity, unit_price, line_total,
                                         returned_quantity, unit_cost)

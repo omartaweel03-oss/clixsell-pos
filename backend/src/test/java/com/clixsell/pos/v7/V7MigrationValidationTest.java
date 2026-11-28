@@ -1,4 +1,6 @@
-package com.clixsell.pos.v7proposal;
+package com.clixsell.pos.v7;
+
+import db.migration.V7__store_operations;
 
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,18 +21,19 @@ import java.util.Map;
 import java.util.TreeSet;
 import java.util.stream.Stream;
 
-import static com.clixsell.pos.v7proposal.CashRoundingProposal.adjustment;
-import static com.clixsell.pos.v7proposal.CashRoundingProposal.cashRefund;
-import static com.clixsell.pos.v7proposal.CashRoundingProposal.roundToStep;
+import static com.clixsell.pos.v7.CashRoundingProposal.adjustment;
+import static com.clixsell.pos.v7.CashRoundingProposal.cashRefund;
+import static com.clixsell.pos.v7.CashRoundingProposal.roundToStep;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Validation of the PROPOSED V7 (not applied to the application): disposable V6 databases with
- * representative history, the backup procedure, the payments rebuild, every new constraint and
- * trigger, failure handling, and the cash rounding / refund rules.
+ * Validation of V7 (db/migration/V7__store_operations) on disposable V6 databases with
+ * representative history: the backup procedure, the payments rebuild, every new constraint and
+ * trigger, failure handling, races, closed-shift immutability, and the cash rounding / refund rules.
+ * No real or operational database is ever opened.
  */
-public class V7ProposalValidationTest {
+public class V7MigrationValidationTest {
 
     @TempDir
     Path dir;
@@ -58,11 +61,11 @@ public class V7ProposalValidationTest {
     }
 
     private static long n(Connection c, String q) throws SQLException {
-        return V7StoreOperationsProposal.count(c, q);
+        return V7__store_operations.count(c, q);
     }
 
     private static String one(Connection c, String q) throws SQLException {
-        return V7StoreOperationsProposal.one(c, q);
+        return V7__store_operations.one(c, q);
     }
 
     private static String fileHash(Path p) throws Exception {
@@ -133,7 +136,7 @@ public class V7ProposalValidationTest {
     }
 
     private Path migrate() throws Exception {
-        return V7StoreOperationsProposal.migrate(db, null, null).backup();
+        return V7__store_operations.migrate(db, null, null).backup();
     }
 
     // ── 1. A populated V6 database ──────────────────────────────────────────────────
@@ -146,10 +149,10 @@ public class V7ProposalValidationTest {
         TreeSet<String> objectsBefore;
         Map<String, Long> rowsBefore;
         try (Connection c = open()) {
-            for (String t : V7StoreOperationsProposal.tables(c)) cols.put(t, V7StoreOperationsProposal.columns(c, t));
-            before = V7StoreOperationsProposal.hashes(c, cols);
-            rowsBefore = V7StoreOperationsProposal.counts(c, cols.keySet());
-            objectsBefore = V7StoreOperationsProposal.objects(c);
+            for (String t : V7__store_operations.tables(c)) cols.put(t, V7__store_operations.columns(c, t));
+            before = V7__store_operations.hashes(c, cols);
+            rowsBefore = V7__store_operations.counts(c, cols.keySet());
+            objectsBefore = V7__store_operations.objects(c);
         }
         String dbHashBefore = fileHash(db);
 
@@ -160,16 +163,16 @@ public class V7ProposalValidationTest {
         assertThat(backup.getFileName().toString()).matches("clixsell-backup-before-v7-\\d{8}-\\d{6}-\\d{3}-[0-9a-f]{8}\\.db");
         try (Connection b = DriverManager.getConnection("jdbc:sqlite:" + backup)) {
             assertThat(one(b, "PRAGMA integrity_check")).isEqualTo("ok");
-            assertThat(V7StoreOperationsProposal.hashes(b, cols)).isEqualTo(before);
+            assertThat(V7__store_operations.hashes(b, cols)).isEqualTo(before);
             assertThat(n(b, "SELECT COUNT(*) FROM sqlite_master WHERE name = 'cash_shifts'")).isZero();
         }
         assertThat(fileHash(db)).isNotEqualTo(dbHashBefore); // the database itself was migrated
 
         try (Connection c = open()) {
-            assertThat(V7StoreOperationsProposal.hashes(c, cols)).as("old values").isEqualTo(before);
-            assertThat(V7StoreOperationsProposal.counts(c, cols.keySet())).isEqualTo(rowsBefore);
-            assertThat(V7StoreOperationsProposal.objects(c)).containsAll(objectsBefore);
-            for (String t : V7StoreOperationsProposal.NEW_TABLES) assertThat(n(c, "SELECT COUNT(*) FROM " + t)).as(t).isZero();
+            assertThat(V7__store_operations.hashes(c, cols)).as("old values").isEqualTo(before);
+            assertThat(V7__store_operations.counts(c, cols.keySet())).isEqualTo(rowsBefore);
+            assertThat(V7__store_operations.objects(c)).containsAll(objectsBefore);
+            for (String t : V7__store_operations.NEW_TABLES) assertThat(n(c, "SELECT COUNT(*) FROM " + t)).as(t).isZero();
             assertThat(one(c, "PRAGMA integrity_check")).isEqualTo("ok");
             assertThat(n(c, "SELECT COUNT(*) FROM pragma_foreign_key_check")).isZero();
             // historical payments: same ids, methods, amounts; AUTOINCREMENT high-water mark kept (20)
@@ -241,8 +244,8 @@ public class V7ProposalValidationTest {
         fillV6();
         Files.writeString(dir.resolve("taken.db"), "someone's file");
         String h = fileHash(db);
-        assertThatThrownBy(() -> V7StoreOperationsProposal.migrate(db, null, "taken.db"))
-                .isInstanceOf(V7StoreOperationsProposal.BackupFailed.class)
+        assertThatThrownBy(() -> V7__store_operations.migrate(db, null, "taken.db"))
+                .isInstanceOf(V7__store_operations.BackupFailed.class)
                 .hasMessageContaining("not changed");
         assertThat(fileHash(db)).isEqualTo(h);
         assertThat(Files.readString(dir.resolve("taken.db"))).isEqualTo("someone's file"); // never overwritten
@@ -255,18 +258,18 @@ public class V7ProposalValidationTest {
         Map<String, String> before;
         TreeSet<String> schemaBefore;
         try (Connection c = open()) {
-            for (String t : V7StoreOperationsProposal.tables(c)) cols.put(t, V7StoreOperationsProposal.columns(c, t));
-            before = V7StoreOperationsProposal.hashes(c, cols);
-            schemaBefore = V7StoreOperationsProposal.objects(c);
+            for (String t : V7__store_operations.tables(c)) cols.put(t, V7__store_operations.columns(c, t));
+            before = V7__store_operations.hashes(c, cols);
+            schemaBefore = V7__store_operations.objects(c);
         }
-        int drop = V7StoreOperationsProposal.SCHEMA.indexOf("DROP TABLE payments");
+        int drop = V7__store_operations.SCHEMA.indexOf("DROP TABLE payments");
         assertThat(drop).isPositive();
-        assertThatThrownBy(() -> V7StoreOperationsProposal.migrate(db, i -> {
+        assertThatThrownBy(() -> V7__store_operations.migrate(db, i -> {
             if (i == drop) throw new IllegalStateException("simulated crash after DROP TABLE payments");
         }, null)).hasMessageContaining("simulated crash");
         try (Connection c = open()) {
-            assertThat(V7StoreOperationsProposal.objects(c)).isEqualTo(schemaBefore); // schema exactly V6
-            assertThat(V7StoreOperationsProposal.hashes(c, cols)).isEqualTo(before);   // every value
+            assertThat(V7__store_operations.objects(c)).isEqualTo(schemaBefore); // schema exactly V6
+            assertThat(V7__store_operations.hashes(c, cols)).isEqualTo(before);   // every value
             assertThat(one(c, "SELECT seq FROM sqlite_sequence WHERE name = 'payments'")).isEqualTo("20");
             assertThat(one(c, "PRAGMA integrity_check")).isEqualTo("ok");
             assertThat(n(c, "SELECT COUNT(*) FROM pragma_table_info('stores') WHERE name = 'require_cash_shift'")).isZero();
@@ -798,6 +801,192 @@ public class V7ProposalValidationTest {
             sql(b, close.formatted(51000, 50000, -1000, "'10.00 short'"));
             assertThat(one(b, "SELECT status || '/' || expected_cash_minor || '/' || difference_minor FROM cash_shifts"))
                     .isEqualTo("CLOSED/51000/-1000");
+        }
+    }
+
+    // ── the real Flyway path (what the application runs at start-up) ──
+
+    @Test
+    void flyway_populatedV6_migratesToV7_withVerifiedBackupNextToTheFile() throws Exception {
+        fillV6();
+        Map<String, List<String>> cols = new LinkedHashMap<>();
+        Map<String, String> before;
+        try (Connection c = open()) {
+            for (String t : V7__store_operations.tables(c)) cols.put(t, V7__store_operations.columns(c, t));
+            before = V7__store_operations.hashes(c, cols);
+        }
+        var result = Flyway.configure().dataSource(url(), null, null).locations("classpath:db/migration").load().migrate();
+        assertThat(result.targetSchemaVersion).isEqualTo("7");
+        assertThat(result.migrationsExecuted).isEqualTo(1);
+        List<Path> backups;
+        try (Stream<Path> files = Files.list(dir)) {
+            backups = files.filter(p -> p.getFileName().toString().startsWith(V7__store_operations.BACKUP_PREFIX)).toList();
+        }
+        assertThat(backups).hasSize(1);
+        try (Connection b = DriverManager.getConnection("jdbc:sqlite:" + backups.get(0))) {
+            assertThat(V7__store_operations.hashes(b, cols)).isEqualTo(before);
+            assertThat(V7__store_operations.one(b, "SELECT max(CAST(version AS INTEGER)) FROM flyway_schema_history")).isEqualTo("6");
+        }
+        try (Connection c = open()) {
+            assertThat(V7__store_operations.hashes(c, cols)).isEqualTo(before);
+            assertThat(V7__store_operations.one(c, "PRAGMA integrity_check")).isEqualTo("ok");
+            assertThat(n(c, "SELECT COUNT(*) FROM pragma_foreign_key_check")).isZero();
+            for (String t : V7__store_operations.NEW_TABLES) assertThat(n(c, "SELECT COUNT(*) FROM " + t)).as(t).isZero();
+        }
+        // a second start does nothing
+        assertThat(Flyway.configure().dataSource(url(), null, null).locations("classpath:db/migration").load().migrate()
+                .migrationsExecuted).isZero();
+    }
+
+    @Test
+    void flyway_newDatabase_V1toV7_noBackupNeeded() throws Exception {
+        Path fresh = dir.resolve("fresh.db");
+        var result = Flyway.configure().dataSource("jdbc:sqlite:" + fresh + "?foreign_keys=on", null, null)
+                .locations("classpath:db/migration").load().migrate();
+        assertThat(result.targetSchemaVersion).isEqualTo("7");
+        try (Stream<Path> files = Files.list(dir)) {
+            assertThat(files.filter(p -> p.getFileName().toString().startsWith(V7__store_operations.BACKUP_PREFIX))).isEmpty();
+        }
+        try (Connection c = DriverManager.getConnection("jdbc:sqlite:" + fresh)) {
+            for (String t : V7__store_operations.NEW_TABLES) {
+                assertThat(n(c, "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = '" + t + "'")).as(t).isOne();
+            }
+        }
+    }
+
+    /** Store 1: shift 1 (cashier 5) with a cash sale 10.00 and a cash return 5.00, then CLOSED. */
+    private static void closedShiftWithHistory(Connection c) throws SQLException {
+        openShift(c);
+        sql(c, SALE + "(80, 1, 5, 'INV-000080', 'COMPLETED', 10, 0, 0, 0, 10, 'a', 'a', 'a', 1, 0)",
+                "INSERT INTO sale_items (sale_item_id, sale_id, product_id, product_name, barcode, quantity, unit_price, line_total) "
+                        + "VALUES (80, 80, 2, 'Milk', '22222222', 2, 5, 10)",
+                "INSERT INTO payments (sale_id, payment_method, amount, payment_status, paid_at) VALUES (80, 'CASH', 10, 'PAID', 'a')",
+                "INSERT INTO returns (store_id, sale_id, sale_item_id, product_id, cashier_id, quantity, reason, refund_amount, "
+                        + "refund_method, return_date, shift_id, refund_minor) VALUES (1, 80, 80, 2, 5, 1, 'x', 5, 'CASH', 'a', 1, 500)",
+                // a completed sale without payment yet (to try problem B on), and a suspended one (problem A)
+                SALE + "(81, 1, 5, 'INV-000081', 'COMPLETED', 10, 0, 0, 0, 10, 'a', 'a', 'a', 1, 0)",
+                "INSERT INTO sales (sale_id, store_id, cashier_id, invoice_number, status, subtotal, discount, tax_rate, tax, total, "
+                        + "created_at, updated_at) VALUES (82, 1, 5, 'INV-000082', 'SUSPENDED', 10, 0, 0, 0, 10, 'a', 'a')",
+                "UPDATE cash_shifts SET status = 'CLOSED', closed_at = 'b', closed_by = 5, close_kind = 'CASHIER', "
+                        + "expected_cash_minor = 50500, counted_cash_minor = 50500, difference_minor = 0, version = 1 WHERE shift_id = 1");
+    }
+
+    // ── Shift problems A–D (independent review): a closed shift's history cannot change ──
+
+    @Test
+    void shiftProblemsAtoD_closedShiftHistoryIsFrozen() throws Exception {
+        fillV6();
+        migrate();
+        try (Connection c = open()) {
+            closedShiftWithHistory(c);
+            String before = one(c, EXPECTED.formatted(1));
+            assertThat(before).isEqualTo("50500");
+            // A: a suspended sale cannot hold a shift, and cannot be completed into the closed one
+            assertThatThrownBy(() -> sql(c, "UPDATE sales SET shift_id = 1 WHERE sale_id = 82"))
+                    .hasMessageMatching("(?s).*(SALE_SHIFT_NEEDS_COMPLETED|SHIFT_CLOSED_RECORD).*");
+            assertThatThrownBy(() -> sql(c, "UPDATE sales SET status = 'COMPLETED', completed_at = 'c', shift_id = 1 WHERE sale_id = 82"))
+                    .hasMessageMatching("(?s).*(SALE_SHIFT_NOT_OPEN|SHIFT_CLOSED_RECORD).*");
+            assertThatThrownBy(() -> sql(c, "UPDATE sales SET total = 99, subtotal = 99 WHERE sale_id = 80")).hasMessageContaining("SHIFT_CLOSED_RECORD");
+            assertThatThrownBy(() -> sql(c, "UPDATE sales SET status = 'CANCELED' WHERE sale_id = 80")).hasMessageContaining("SHIFT_CLOSED_RECORD");
+            assertThatThrownBy(() -> sql(c, "DELETE FROM sales WHERE sale_id = 80")).hasMessageContaining("SHIFT_CLOSED_RECORD");
+            // B: no new (cash or other) payment on a sale of the closed shift
+            assertThatThrownBy(() -> sql(c, "INSERT INTO payments (sale_id, payment_method, amount, payment_status, paid_at) "
+                    + "VALUES (81, 'CASH', 10, 'PAID', 'c')")).hasMessageContaining("SHIFT_CLOSED_RECORD");
+            // C: no deletion or change of its payment
+            assertThatThrownBy(() -> sql(c, "DELETE FROM payments WHERE sale_id = 80")).hasMessageContaining("SHIFT_CLOSED_RECORD");
+            assertThatThrownBy(() -> sql(c, "UPDATE payments SET amount = 1 WHERE sale_id = 80")).hasMessageContaining("PAYMENT_NO_UPDATE");
+            // D: no deletion or change of its cash return
+            assertThatThrownBy(() -> sql(c, "DELETE FROM returns WHERE shift_id = 1")).hasMessageContaining("SHIFT_CLOSED_RECORD");
+            assertThatThrownBy(() -> sql(c, "UPDATE returns SET refund_minor = 1, refund_amount = 0.01 WHERE shift_id = 1"))
+                    .hasMessageContaining("RETURN_FIXED");
+            // its lines keep their amounts and cannot be removed; a later return may still raise returned_quantity
+            assertThatThrownBy(() -> sql(c, "UPDATE sale_items SET line_total = 1 WHERE sale_item_id = 80")).hasMessageContaining("SHIFT_CLOSED_RECORD");
+            assertThatThrownBy(() -> sql(c, "DELETE FROM sale_items WHERE sale_item_id = 80")).hasMessageContaining("SHIFT_CLOSED_RECORD");
+            sql(c, "UPDATE sale_items SET returned_quantity = 2 WHERE sale_item_id = 80");
+            // nothing changed the closed shift's balance; the record itself is frozen
+            assertThat(one(c, EXPECTED.formatted(1))).isEqualTo(before);
+            assertThat(one(c, "SELECT expected_cash_minor || '/' || counted_cash_minor || '/' || difference_minor FROM cash_shifts "
+                    + "WHERE shift_id = 1")).isEqualTo("50500/50500/0");
+            // a later refund of an old sale goes to the CURRENT open shift (the closed record stays as it was)
+            sql(c, "INSERT INTO cash_shifts (store_id, drawer_id, cashier_id, status, opened_at, opening_cash_minor) VALUES (1, 1, 5, 'OPEN', 'd', 0)");
+            assertThatThrownBy(() -> sql(c, "INSERT INTO returns (store_id, sale_id, sale_item_id, product_id, cashier_id, quantity, "
+                    + "reason, refund_amount, refund_method, return_date, shift_id, refund_minor) VALUES (1, 80, 80, 2, 5, 1, 'x', 5, "
+                    + "'CASH', 'e', 1, 500)")).hasMessageContaining("RETURN_SHIFT_NOT_OPEN");
+            sql(c, "INSERT INTO returns (store_id, sale_id, sale_item_id, product_id, cashier_id, quantity, reason, refund_amount, "
+                    + "refund_method, return_date, shift_id, refund_minor) VALUES (1, 80, 80, 2, 5, 1, 'x', 5, 'CASH', 'e', 2, 500)");
+            assertThat(one(c, EXPECTED.formatted(2))).isEqualTo("-500");
+            // even on an open shift, only a COMPLETED sale may carry it
+            assertThatThrownBy(() -> sql(c, "UPDATE sales SET shift_id = 2 WHERE sale_id = 82")).hasMessageContaining("SALE_SHIFT_NEEDS_COMPLETED");
+            sql(c, "UPDATE sales SET status = 'COMPLETED', completed_at = 'f', shift_id = 2 WHERE sale_id = 82");
+            assertThat(one(c, EXPECTED.formatted(1))).isEqualTo(before);
+        }
+    }
+
+    @Test
+    void races_doubleClose_refundVsClose_movementVsClose_doubleCompletion() throws Exception {
+        fillV6();
+        migrate();
+        try (Connection c = open()) {
+            openShift(c);
+            sql(c, "INSERT INTO sales (sale_id, store_id, cashier_id, invoice_number, status, subtotal, discount, tax_rate, tax, total, "
+                    + "created_at, updated_at) VALUES (85, 1, 5, 'INV-000085', 'SUSPENDED', 10, 0, 0, 0, 10, 'a', 'a')");
+        }
+        String close = "UPDATE cash_shifts SET status = 'CLOSED', closed_at = 'b', closed_by = 5, close_kind = 'CASHIER', "
+                + "expected_cash_minor = %d, counted_cash_minor = %d, difference_minor = %d, closing_note = %s, "
+                + "version = version + 1 WHERE shift_id = 1 AND status = 'OPEN' AND version = %d";
+        try (Connection a = open(); Connection b = open()) {
+            sql(b, "PRAGMA busy_timeout = 100");
+            // two attempts to complete the same invoice: the second sees it no longer SUSPENDED (0 rows)
+            sql(a, "BEGIN IMMEDIATE");
+            int first;
+            try (Statement st = a.createStatement()) {
+                first = st.executeUpdate("UPDATE sales SET status = 'COMPLETED', completed_at = 'c', shift_id = 1 "
+                        + "WHERE sale_id = 85 AND status = 'SUSPENDED'");
+            }
+            sql(a, "INSERT INTO payments (sale_id, payment_method, amount, payment_status, paid_at) VALUES (85, 'CASH', 10, 'PAID', 'c')");
+            assertThatThrownBy(() -> sql(b, "BEGIN IMMEDIATE")).hasMessageContaining("BUSY");
+            sql(a, "COMMIT");
+            int second;
+            try (Statement st = b.createStatement()) {
+                second = st.executeUpdate("UPDATE sales SET status = 'COMPLETED', completed_at = 'c2', shift_id = 1 "
+                        + "WHERE sale_id = 85 AND status = 'SUSPENDED'");
+            }
+            assertThat(first).isEqualTo(1);
+            assertThat(second).isZero();
+            assertThatThrownBy(() -> sql(b, "INSERT INTO payments (sale_id, payment_method, amount, payment_status, paid_at) "
+                    + "VALUES (85, 'CASH', 10, 'PAID', 'c2')")).hasMessageContaining("UNIQUE");
+
+            // a cash movement while the cashier is closing: the close waits, then its stale amount is refused
+            sql(a, "BEGIN IMMEDIATE", "INSERT INTO cash_movements (store_id, shift_id, type, amount_minor, reason, created_by, "
+                    + "created_at, request_key) VALUES (1, 1, 'CASH_OUT', 2000, 'Bank deposit', 4, 'd', 'req-RACE0001')");
+            assertThatThrownBy(() -> sql(b, close.formatted(51000, 51000, 0, "NULL", 0))).hasMessageContaining("BUSY");
+            sql(a, "COMMIT");
+            assertThatThrownBy(() -> sql(b, close.formatted(51000, 51000, 0, "NULL", 0))).hasMessageContaining("SHIFT_EXPECTED_MISMATCH");
+
+            // a cash refund racing the close: the same — no refund can slip in unseen
+            sql(a, "BEGIN IMMEDIATE", "INSERT INTO sale_items (sale_item_id, sale_id, product_id, product_name, barcode, quantity, "
+                    + "unit_price, line_total) VALUES (85, 85, 2, 'Milk', '22222222', 2, 5, 10)");
+            // (the line exists before the refund; the refund itself)
+            sql(a, "INSERT INTO returns (store_id, sale_id, sale_item_id, product_id, cashier_id, quantity, reason, refund_amount, "
+                    + "refund_method, return_date, shift_id, refund_minor) VALUES (1, 85, 85, 2, 5, 1, 'x', 5, 'CASH', 'e', 1, 500)");
+            assertThatThrownBy(() -> sql(b, close.formatted(49000, 49000, 0, "NULL", 0))).hasMessageContaining("BUSY");
+            sql(a, "COMMIT");
+            assertThatThrownBy(() -> sql(b, close.formatted(49000, 49000, 0, "NULL", 0))).hasMessageContaining("SHIFT_EXPECTED_MISMATCH");
+            // 500 + 10 − 20 − 5 = 485.00
+            assertThat(one(b, EXPECTED.formatted(1))).isEqualTo("48500");
+
+            // two closes of the same shift: one wins (optimistic version), the other changes nothing
+            int c1, c2;
+            try (Statement st = a.createStatement()) {
+                c1 = st.executeUpdate(close.formatted(48500, 48000, -500, "'5.00 short'", 0));
+            }
+            try (Statement st = b.createStatement()) {
+                c2 = st.executeUpdate(close.formatted(48500, 48500, 0, "NULL", 0));
+            }
+            assertThat(c1).isEqualTo(1);
+            assertThat(c2).isZero();
+            assertThat(one(b, "SELECT counted_cash_minor || '/' || difference_minor || '/' || version FROM cash_shifts WHERE shift_id = 1"))
+                    .isEqualTo("48000/-500/1");
         }
     }
 

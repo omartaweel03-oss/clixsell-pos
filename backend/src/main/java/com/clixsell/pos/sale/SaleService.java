@@ -56,6 +56,12 @@ public class SaleService {
     public SaleResponse complete(CurrentUser user, SaleRequest request) {
         Sale sale = openSale(user, request);
         BigDecimal change = cashChange(request, sale);
+        if (request.saleId() != null) {
+            // A resumed invoice already exists: Hibernate writes INSERTs (the payment) before UPDATEs
+            // (the recalculated total), so the payment would briefly sit next to the OLD total. Write
+            // the new total first; V7 checks every payment against the invoice it pays.
+            sales.saveAndFlush(sale);
+        }
         sale.completeSale(request.paymentMethod());
         Sale saved = sales.save(sale);
         if (saved.getDiscount() > 0) {

@@ -40,7 +40,7 @@ class BackupPreservationTest {
     static final List<Class<?>> BACKUP_TESTS = List.of(MigrationTest.class, GuardianMigrationTest.class,
             UpgradeToSalesVersionTest.class, BackupApiTest.class, PurchaseMigrationTest.class,
             com.clixsell.pos.backup.BackupWalSnapshotTest.class,
-            com.clixsell.pos.v7proposal.V7ProposalValidationTest.class);
+            com.clixsell.pos.v7.V7MigrationValidationTest.class);
 
     private final Random random = new Random();
 
