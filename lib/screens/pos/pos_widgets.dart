@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../l10n/app_strings.dart';
+import '../../l10n/checkout_strings.dart';
 import '../../models/product.dart';
 import '../../models/product_category.dart';
 import '../../models/sale.dart';
@@ -15,6 +16,7 @@ String paymentLabel(PaymentMethod m, AppStrings s) => switch (m) {
   PaymentMethod.card => s.payCard,
   PaymentMethod.wallet => s.payWallet,
   PaymentMethod.bankTransfer => s.payBank,
+  PaymentMethod.cheque => s.isArabic ? 'شيك' : 'Cheque',
 };
 
 IconData paymentIcon(PaymentMethod m) => switch (m) {
@@ -22,6 +24,7 @@ IconData paymentIcon(PaymentMethod m) => switch (m) {
   PaymentMethod.card => Icons.credit_card_rounded,
   PaymentMethod.wallet => Icons.account_balance_wallet_outlined,
   PaymentMethod.bankTransfer => Icons.account_balance_outlined,
+  PaymentMethod.cheque => Icons.receipt_long_outlined,
 };
 
 /// White rounded panel with a bold title, used for the three POS columns.
@@ -156,7 +159,7 @@ class PosProductsPanel extends StatelessWidget {
                     itemCount: products.length,
                     itemBuilder: (context, i) => _ProductCard(
                       product: products[i],
-                      inCart: cart.lineFor(products[i].id)?.quantity ?? 0,
+                      inCart: cart.piecesOf(products[i].id),
                       onTap: () => onAdd(products[i]),
                     ),
                   ),
@@ -359,9 +362,9 @@ class PosInvoicePanel extends StatelessWidget {
         separatorBuilder: (_, _) => const Divider(height: 1),
         itemBuilder: (context, i) => _InvoiceLine(
           line: cart.lines[i],
-          onIncrement: () => onIncrement(cart.lines[i].product.id),
-          onDecrement: () => cart.decrement(cart.lines[i].product.id),
-          onRemove: () => cart.remove(cart.lines[i].product.id),
+          onIncrement: () => onIncrement(cart.lines[i].key),
+          onDecrement: () => cart.decrement(cart.lines[i].key),
+          onRemove: () => cart.remove(cart.lines[i].key),
         ),
       );
     }
@@ -404,7 +407,14 @@ class PosInvoicePanel extends StatelessWidget {
               ],
             ),
           ),
-          if (shrinkWrap) lines else Expanded(child: lines),
+          if (shrinkWrap)
+            lines
+          else if (cart.isEmpty)
+            // The empty-invoice message scrolls on short windows instead of
+            // overflowing (it was 100 px too tall at 1280x640).
+            Expanded(child: SingleChildScrollView(child: lines))
+          else
+            Expanded(child: lines),
           const Divider(height: AppSpacing.lg),
           Wrap(
             alignment: WrapAlignment.spaceBetween,
@@ -482,7 +492,7 @@ class _InvoiceLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
-    final id = line.product.id;
+    final id = line.key;
     Widget stepButton(IconData icon, String tip, VoidCallback onTap, Key key) =>
         SizedBox(
           width: 30,
@@ -518,7 +528,7 @@ class _InvoiceLine extends StatelessWidget {
                   ],
                   Expanded(
                     child: Text(
-                      line.product.name,
+                      line.displayName,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -534,7 +544,7 @@ class _InvoiceLine extends StatelessWidget {
           Expanded(
             flex: 2,
             child: _Money(
-              Formatters.currency(line.product.price),
+              Formatters.currency(line.unitCents / 100), // a carton line shows the carton price
               style: const TextStyle(
                 fontSize: 13,
                 color: AppColors.textSecondary,
@@ -599,16 +609,9 @@ class _InvoiceLine extends StatelessWidget {
 // ── Summary + payment ────────────────────────────────────────────────────────
 
 class PosSummaryPanel extends StatelessWidget {
-  const PosSummaryPanel({
-    super.key,
-    required this.cart,
-    required this.busy,
-    required this.onComplete,
-  });
+  const PosSummaryPanel({super.key, required this.cart});
 
   final PosCart cart;
-  final bool busy;
-  final VoidCallback onComplete;
 
   @override
   Widget build(BuildContext context) {
@@ -665,11 +668,22 @@ class PosSummaryPanel extends StatelessWidget {
                   Formatters.currency(cart.discount),
                   key: const Key('summaryDiscount'),
                 ),
-                row(
-                  s.taxLabel(cart.taxRate),
-                  Formatters.currency(cart.tax),
-                  key: const Key('summaryTax'),
-                ),
+                if (cart.roundingCents != 0) ...[
+                  row(
+                    CheckoutStrings.of(context).cashRounding,
+                    '${cart.roundingCents > 0 ? '+' : '−'} ${Formatters.currency(cart.roundingCents.abs() / 100)}',
+                    key: const Key('summaryRounding'),
+                  ),
+                  row(
+                    CheckoutStrings.of(context).amountDue,
+                    Formatters.currency(cart.amountDueCents / 100),
+                    key: const Key('summaryAmountDue'),
+                  ),
+                ],
+                // D5 (UI only): no tax row on the everyday checkout. The tax is
+                // still calculated by the server, included in the total and shown
+                // on the receipt and in the reports; the rate is a Store Admin
+                // setting.
                 const SizedBox(height: AppSpacing.sm),
                 Container(
                   padding: const EdgeInsets.symmetric(
@@ -703,6 +717,16 @@ class PosSummaryPanel extends StatelessWidget {
                     ],
                   ),
                 ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  CheckoutStrings.of(context).taxIncluded,
+                  key: const Key('summaryTaxIncluded'),
+                  textAlign: TextAlign.end,
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                  ),
+                ),
               ],
             ),
           ),
@@ -730,33 +754,104 @@ class PosSummaryPanel extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.sm),
                 ],
-                const SizedBox(height: AppSpacing.xs),
-                FilledButton.icon(
-                  key: const Key('completeSaleButton'),
-                  onPressed: cart.isEmpty || busy ? null : onComplete,
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 18),
-                  ),
-                  icon: busy
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(Icons.check_circle_outline_rounded),
-                  label: Text(
-                    s.completeSale,
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                ),
               ],
             ),
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Checkout footer (store upgrade, feature 4): always visible under the
+/// summary column, never inside a scroll view, so the cashier never scrolls
+/// to complete a sale. Shows the total and the payment method; the button is
+/// disabled while the invoice is empty or a sale is being sent (no double
+/// submit).
+class PosCheckoutFooter extends StatelessWidget {
+  const PosCheckoutFooter({
+    super.key,
+    required this.cart,
+    required this.busy,
+    required this.onComplete,
+  });
+
+  final PosCart cart;
+  final bool busy;
+  final VoidCallback onComplete;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppStrings.of(context);
+    final t = CheckoutStrings.of(context);
+    return Card(
+      key: const Key('checkoutFooter'),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    // cash with rounding: the footer shows what the customer pays (= what the
+                    // backend requires); the invoice total and the rounding stay in the summary
+                    cart.roundingCents != 0 ? t.amountDue : s.totalLabel,
+                    key: const Key('footerLabel'),
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+                Text(
+                  Formatters.currency(cart.amountDueCents / 100),
+                  key: const Key('footerTotal'),
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ],
+            ),
+            if (cart.roundingCents != 0)
+              Text(
+                '${s.totalLabel} ${Formatters.currency(cart.total)} · ${t.cashRounding} '
+                '\u2066${cart.roundingCents > 0 ? '+' : '−'}${Formatters.currency(cart.roundingCents.abs() / 100)}\u2069',
+                key: const Key('footerRoundingNote'),
+                style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+              ),
+            const SizedBox(height: 2),
+            Text(
+              '${t.payWith}: ${paymentLabel(cart.paymentMethod, s)}',
+              key: const Key('footerMethod'),
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            FilledButton.icon(
+              key: const Key('completeSaleButton'),
+              onPressed: cart.isEmpty || busy ? null : onComplete,
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+              icon: busy
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.check_circle_outline_rounded),
+              label: Text(s.completeSale, style: const TextStyle(fontSize: 16)),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

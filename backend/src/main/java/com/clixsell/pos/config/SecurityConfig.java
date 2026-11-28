@@ -82,6 +82,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/store/settings").hasRole("STORE_ADMIN")
                         .requestMatchers("/api/product-files", "/api/product-files/**").hasRole("STORE_ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/products/generate-barcode").hasRole("STORE_ADMIN")
+                        // Packages (carton / box): every store user reads them; the Store Admin manages them.
+                        .requestMatchers(HttpMethod.GET, "/api/packages").hasAnyRole("STORE_ADMIN", "CASHIER")
+                        .requestMatchers("/api/packages", "/api/packages/**").hasRole("STORE_ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/products", "/api/products/**").hasAnyRole("STORE_ADMIN", "CASHIER")
                         .requestMatchers("/api/products", "/api/products/**").hasRole("STORE_ADMIN")
                         // Reports and Sales Analytics are Manager (Store Admin) features.
@@ -94,6 +97,14 @@ public class SecurityConfig {
                         .requestMatchers("/api/purchase-recommendations", "/api/purchase-recommendations/**",
                                 "/api/purchase-candidates", "/api/purchase-candidates/**",
                                 "/api/purchase-orders", "/api/purchase-orders/**").hasRole("STORE_ADMIN")
+                        // POS favorites: every store user reads them; only the Store Admin changes them.
+                        .requestMatchers(HttpMethod.GET, "/api/favorites").hasAnyRole("STORE_ADMIN", "CASHIER")
+                        .requestMatchers("/api/favorites").hasRole("STORE_ADMIN")
+                        // Cheques (feature 9): Store Admin only.
+                        .requestMatchers("/api/cheques", "/api/cheques/**", "/api/cheque-refunds/**").hasRole("STORE_ADMIN")
+                        // Cash drawers and shifts (V7): store users; admin-only actions are checked by ShiftService.
+                        .requestMatchers("/api/drawers", "/api/drawers/**", "/api/shifts", "/api/shifts/**")
+                        .hasAnyRole("STORE_ADMIN", "CASHIER")
                         .requestMatchers("/api/sales", "/api/sales/**", "/api/returns", "/api/returns/**")
                         .hasAnyRole("STORE_ADMIN", "CASHIER")
                         .anyRequest().authenticated())

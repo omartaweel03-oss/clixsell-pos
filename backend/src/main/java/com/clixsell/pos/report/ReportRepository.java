@@ -30,20 +30,21 @@ public class ReportRepository {
                 storeId, p.startText(), p.endTextExclusive());
     }
 
-    /** Refunds of the returns made in the period. */
+    /** Refunds of the returns made in the period (exact shares: cash rounding is not revenue), in pieces. */
     public RefundTotals refundTotals(long storeId, ReportPeriod p) {
         return db.queryForObject("""
-                SELECT COUNT(*), COALESCE(SUM(refund_amount), 0), COALESCE(SUM(quantity), 0)
-                FROM returns
-                WHERE store_id = ? AND return_date >= ? AND return_date < ?""",
+                SELECT COUNT(*), COALESCE(SUM(r.refund_amount - r.rounding_minor / 100.0), 0),
+                       COALESCE(SUM(r.quantity * si.units_per_package), 0)
+                FROM returns r JOIN sale_items si ON si.sale_item_id = r.sale_item_id
+                WHERE r.store_id = ? AND r.return_date >= ? AND r.return_date < ?""",
                 (rs, i) -> new RefundTotals(rs.getLong(1), rs.getDouble(2), rs.getLong(3)),
                 storeId, p.startText(), p.endTextExclusive());
     }
 
-    /** Units sold in the period's completed invoices. */
+    /** Units (pieces: a carton counts its pieces) sold in the period's completed invoices. */
     public long unitsSold(long storeId, ReportPeriod p) {
         Long n = db.queryForObject("""
-                SELECT COALESCE(SUM(si.quantity), 0)
+                SELECT COALESCE(SUM(si.quantity * si.units_per_package), 0)
                 FROM sale_items si JOIN sales s ON s.sale_id = si.sale_id
                 WHERE s.store_id = ? AND s.status = 'COMPLETED' AND s.completed_at >= ? AND s.completed_at < ?""",
                 Long.class, storeId, p.startText(), p.endTextExclusive());
@@ -67,7 +68,7 @@ public class ReportRepository {
                     v[2] += rs.getLong(3);
                 }, prefix, storeId, p.startText(), p.endTextExclusive());
         db.query("""
-                SELECT substr(return_date, 1, ?) AS k, SUM(refund_amount)
+                SELECT substr(return_date, 1, ?) AS k, SUM(refund_amount - rounding_minor / 100.0)
                 FROM returns
                 WHERE store_id = ? AND return_date >= ? AND return_date < ?
                 GROUP BY k""",
@@ -87,7 +88,8 @@ public class ReportRepository {
     public List<ProductSales> productSales(long storeId, ReportPeriod p) {
         Map<String, ProductSales> byKey = new java.util.LinkedHashMap<>();
         db.query("""
-                SELECT si.product_id, si.product_name, SUM(si.quantity), SUM(s.total * si.line_total / s.subtotal)
+                SELECT si.product_id, si.product_name, SUM(si.quantity * si.units_per_package),
+                       SUM(s.total * si.line_total / s.subtotal)
                 FROM sale_items si JOIN sales s ON s.sale_id = si.sale_id
                 WHERE s.store_id = ? AND s.status = 'COMPLETED' AND s.completed_at >= ? AND s.completed_at < ?
                   AND s.subtotal > 0
@@ -97,7 +99,7 @@ public class ReportRepository {
                     add(byKey, id, rs.getString(2), rs.getLong(3), rs.getDouble(4));
                 }, storeId, p.startText(), p.endTextExclusive());
         db.query("""
-                SELECT si.product_id, si.product_name, SUM(r.quantity), SUM(r.refund_amount)
+                SELECT si.product_id, si.product_name, SUM(r.quantity * si.units_per_package), SUM(r.refund_amount - r.rounding_minor / 100.0)
                 FROM returns r JOIN sale_items si ON si.sale_item_id = r.sale_item_id
                 WHERE r.store_id = ? AND r.return_date >= ? AND r.return_date < ?
                 GROUP BY COALESCE(CAST(si.product_id AS TEXT), 'name:' || si.product_name)""",

@@ -41,6 +41,9 @@ one = lambda s, *a: db.execute(s, a).fetchone()[0]
 
 SA = login('shini.admin', 'Admin-Pass-1')      # Ahmad Odeh
 LINA = login('shini.cashier', 'Cashier-Pass-1')   # Lina Saleh
+# approved cash refund policy: Lina refunds cash from her open drawer (counted opening cash)
+from e2e_shifts import open_shift
+open_shift(SA, LINA, 'E2E Guardian Till')
 YOUSEF = login('shini.cashier2', 'Cashier-Pass-1')  # Yousef Khalil
 NA = login('neshan.admin', 'Admin-Pass-1')
 NC = login('neshan.cashier', 'Cashier-Pass-1')

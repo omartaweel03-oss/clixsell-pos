@@ -45,7 +45,7 @@ Future<List<String>?> loadSuspendedIntoCart(
     );
     if (!ok || !context.mounted) return null;
   }
-  return cart.resume(sale, store.products);
+  return cart.resume(sale, store.products, packages: cart.packages);
 }
 
 /// The message shown after a suspended invoice was loaded.

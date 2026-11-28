@@ -52,6 +52,8 @@ class StockAlertsApiTest extends ApiTestBase {
     void stores() throws Exception {
         shini = setupStore("Shini Supermarket", "shini");
         neshan = setupStore("Neshan Market", "neshan");
+        openCashShifts(shini);
+        openCashShifts(neshan);
         tea = product(shini, "Tea", "11111111", 3, 2);
         rice = product(shini, "Rice", "22222222", 2, 2);
         sugar = product(shini, "Sugar", "33333333", 0, 5);

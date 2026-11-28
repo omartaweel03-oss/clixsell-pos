@@ -5,5 +5,7 @@ public enum PaymentMethod {
     CASH,
     CARD,
     WALLET,
-    BANK_TRANSFER
+    BANK_TRANSFER,
+    /** Feature 9 (V7): recorded with its cheque (number, bank, amount, due date); managed by the Store Admin. */
+    CHEQUE
 }

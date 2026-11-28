@@ -45,8 +45,19 @@ const field = async (p, label, value) => {
   await f.click({ timeout: 8000 }); await p.keyboard.press('Control+A'); await p.keyboard.press('Backspace');
   await p.keyboard.type(String(value)); await p.waitForTimeout(250);
 };
+// Store upgrade (feature 3): a CASH sale asks "How much did the customer give you?". Like a cashier,
+// take the exact amount and complete the payment. Card / wallet / transfer sales open no dialog.
+const payCashIfAsked = async (p, wait) => {
+  const exact = p.getByRole('button', { name: /^(Exact amount|المبلغ بالضبط)$/ });
+  if (await exact.count() === 0) return;
+  await exact.first().click({ timeout: 8000 }); await p.waitForTimeout(400);
+  await p.getByRole('button', { name: /^(Complete payment|إتمام الدفع)$/ }).first().click({ timeout: 8000 });
+  await p.waitForTimeout(wait);
+};
+const isCompleteSale = (name) => name === 'Complete Sale' || name === 'إتمام البيع';
 const click = async (p, name, wait = 1300, nth = 0) => {
   await p.getByRole('button', { name }).nth(nth).click({ timeout: 8000 }); await p.waitForTimeout(wait);
+  if (isCompleteSale(name)) await payCashIfAsked(p, wait);
 };
 // The search box is the only input on the Products list and on the POS. Its accessible label is its
 // hint, which disappears once it holds text, so it is found by position, not by label.
@@ -240,6 +251,10 @@ function checkSaleRow(area, exp, row) {
     /Settings|Reports|Stock Alerts|Cashiers|Add Product|Guardian Mode/.test(t) ? 'restricted item visible' : 'none visible',
     t.includes('Point of Sale') && !/Settings|Reports|Stock Alerts|Cashiers|Add Product|Guardian Mode/.test(t), await shot(p, 'en_cashier_pos'));
   const SC = token('shini.cashier', 'Cashier-Pass-1');
+  // approved cash refund policy: the cashier refunds cash from an open drawer (counted opening cash)
+  { const d = api('POST', '/drawers', SA, { name: 'RW Till' }).json.drawerId;
+    const sh = api('POST', '/shifts', SC, { drawerId: d, openingCash: 1000 });
+    rec('Setup', 'API', 'cashier opens a cash shift (1,000.00 counted)', 201, sh.status, sh.status === 201); }
   for (const [m, url, body] of [['GET', '/reports/summary?from=2026-01-01&to=2026-01-31'], ['GET', '/guardian/dashboard'],
     ['POST', '/products', { name: 'X', barcode: '72988800009', category: 'other', sellingPrice: 1, quantity: 1, minStock: 0, supplierName: 'X' }],
     ['PUT', '/store/settings', { taxRate: 0 }], ['GET', '/store/cashiers'], ['GET', '/admin/stores'], ['POST', '/admin/backups']]) {
@@ -269,9 +284,14 @@ function checkSaleRow(area, exp, row) {
     await field(p, 'Discount', 10); await click(p, 'Apply', 1200);
     const exp = expectSale([['P01', 2], ['P03', 3], ['P04', 1]], 10, 'CASH');
     t = await txt(p);
-    rec('POS', 'UI', 'invoice summary before paying (subtotal, discount, tax 16 %, total)', `${money(exp.sub)}, ${money(exp.disc)}, ${money(exp.tax)}, ${money(exp.total)}`,
-      [exp.sub, exp.disc, exp.tax, exp.total].map(v => t.includes(money(v)) ? money(v) : 'missing ' + money(v)).join(', '),
-      [exp.sub, exp.disc, exp.tax, exp.total].every(v => t.includes(money(v))), await shot(p, 'en_pos_invoice_t1'));
+    // D5: the checkout shows subtotal, discount and the total (tax included) — no tax row; the
+    // tax stays in the total, on the receipt and in the database (checked below).
+    rec('POS', 'UI', 'invoice summary before paying (subtotal, discount, total incl. 16 % tax)', `${money(exp.sub)}, ${money(exp.disc)}, ${money(exp.total)}`,
+      [exp.sub, exp.disc, exp.total].map(v => t.includes(money(v)) ? money(v) : 'missing ' + money(v)).join(', '),
+      [exp.sub, exp.disc, exp.total].every(v => t.includes(money(v))), await shot(p, 'en_pos_invoice_t1'));
+    rec('POS', 'UI', 'D5: no tax row on the checkout; "Includes tax" note', 'no "Tax (16%)", note shown',
+      `${t.includes('Tax (16%)') ? 'tax row shown' : 'no tax row'}, ${t.includes('Includes tax') ? 'note shown' : 'no note'}`,
+      !t.includes('Tax (16%)') && t.includes('Includes tax'));
     await click(p, 'Cash', 600); await click(p, 'Complete Sale', 2500);
     const row = lastSale(); checkSaleRow('POS', exp, row);
     const sid = row[0], inv = row[1];
@@ -284,7 +304,17 @@ function checkSaleRow(area, exp, row) {
     const apiSale = api('GET', `/sales/${sid}`, SC).json;
     rec('POS', 'API+DB', `receipt code returned to the app = the saved QR value (the dialog shows it as selectable text, not readable by automation; see ${rshot})`,
       qr, apiSale && apiSale.receiptCode, apiSale && apiSale.receiptCode === qr);
+    rec('POS', 'UI', `${inv}: the receipt still shows the tax line and amount (D5 is display only)`, `Tax (16%) ${money(exp.tax)}`,
+      `${t.includes('Tax (16%)') ? 'Tax (16%)' : 'no tax label'} ${t.includes(money(exp.tax)) ? money(exp.tax) : 'no amount'}`,
+      t.includes('Tax (16%)') && t.includes(money(exp.tax)));
     rec('POS', 'DB', `${inv}: payment method`, 'CASH', one(`select payment_method from payments where sale_id=${sid}`), one(`select payment_method from payments where sale_id=${sid}`) === 'CASH');
+    // Store upgrade, feature 3: the cash dialog (exact amount) — receipt shows cash received and change;
+    // the payment is recorded at the invoice total, one row only.
+    rec('POS', 'UI', `${inv}: receipt shows the cash received and the change`, 'Cash received + Change given',
+      ['Cash received', 'Change given'].filter(w => t.includes(w)).join(', '), t.includes('Cash received') && t.includes('Change given'));
+    const payRows = one(`select count(*) || ':' || printf('%.2f', sum(amount)) from payments where sale_id=${sid}`);
+    rec('POS', 'DB', `${inv}: one payment, at the invoice total (change is not revenue)`, `1:${exp.total.toFixed(2)}`, payRows,
+      payRows === `1:${exp.total.toFixed(2)}`);
     stock.P01 -= 2; stock.P03 -= 3; stock.P04 -= 1; checkStock('POS', ['P01', 'P03', 'P04', 'P05'], 'after T1');
     sales.push({ ...exp, sid, inv });
     await p.keyboard.press('Escape'); await p.waitForTimeout(800);
@@ -410,8 +440,9 @@ function checkSaleRow(area, exp, row) {
     await click(p, 'العربية', 2500);
     await tile(p, 'RW Pita Bread 10pcs');
     t = await txt(p);
-    rec('Arabic', 'UI', 'POS in Arabic (labels)', 'إتمام البيع, دفع نقدي, الضريبة (16%)', ['إتمام البيع', 'دفع نقدي', 'الضريبة (16%)'].filter(w => t.includes(w)).join(', '),
-      ['إتمام البيع', 'دفع نقدي', 'الضريبة (16%)'].every(w => t.includes(w)), await shot(p, 'ar_pos'));
+    rec('Arabic', 'UI', 'POS in Arabic (labels; D5: no tax row, "يشمل الضريبة")', 'إتمام البيع, دفع نقدي, يشمل الضريبة; no الضريبة (16%)',
+      ['إتمام البيع', 'دفع نقدي', 'يشمل الضريبة'].filter(w => t.includes(w)).join(', ') + (t.includes('الضريبة (16%)') ? '; tax row shown' : '; no tax row'),
+      ['إتمام البيع', 'دفع نقدي', 'يشمل الضريبة'].every(w => t.includes(w)) && !t.includes('الضريبة (16%)'), await shot(p, 'ar_pos'));
     await click(p, 'دفع نقدي', 600); await click(p, 'إتمام البيع', 2500);
     const exp = expectSale([['P03', 1]], 0, 'CASH'); const row = lastSale(); checkSaleRow('Arabic', exp, row);
     rec('Arabic', 'UI', 'receipt in Arabic shows the invoice number', row[1], (await txt(p)).includes(row[1]) ? row[1] : 'missing', (await txt(p)).includes(row[1]), await shot(p, 'ar_receipt'));

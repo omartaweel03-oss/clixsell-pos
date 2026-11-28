@@ -11,24 +11,63 @@ class SaleDraft {
     this.discountType,
     this.discountValue = 0,
     this.paymentMethod,
+    this.cashReceivedCents,
+    this.cheque,
   });
 
-  /// productId → quantity
+  /// line key → quantity. The key is the product id (pieces), or "productId@packageId" for
+  /// a carton / box (quantity = packages).
   final Map<String, int> lines;
   final int? saleId;
   final DiscountType? discountType;
   final double discountValue;
   final PaymentMethod? paymentMethod;
 
+  /// Cash only: what the customer handed over, in cents (agorot). The server
+  /// checks it against its own total and answers with the change.
+  final int? cashReceivedCents;
+
+  /// CHEQUE only (feature 9): number, bank, amount, dueDate (yyyy-MM-dd), notes.
+  final Map<String, dynamic>? cheque;
+
+  /// The same draft with the cheque handed over.
+  SaleDraft withCheque(Map<String, dynamic> details) => SaleDraft(
+    lines: lines,
+    saleId: saleId,
+    discountType: discountType,
+    discountValue: discountValue,
+    paymentMethod: paymentMethod,
+    cashReceivedCents: cashReceivedCents,
+    cheque: details,
+  );
+
+  /// The same draft with the cash amount received.
+  SaleDraft withCashReceived(int cents) => SaleDraft(
+    lines: lines,
+    saleId: saleId,
+    discountType: discountType,
+    discountValue: discountValue,
+    paymentMethod: paymentMethod,
+    cashReceivedCents: cents,
+    cheque: cheque,
+  );
+
   Map<String, dynamic> toJson() => {
     'saleId': saleId,
     'items': [
       for (final e in lines.entries)
-        {'productId': int.parse(e.key), 'quantity': e.value},
+        {
+          'productId': int.parse(e.key.split('@').first),
+          'quantity': e.value,
+          if (e.key.contains('@')) 'packageId': int.parse(e.key.split('@').last),
+        },
     ],
     'discountType': discountValue > 0 ? discountType?.apiName : null,
     'discountValue': discountValue > 0 ? discountValue : null,
     'paymentMethod': paymentMethod?.apiName,
+    // cents / 100 prints the exact decimal (e.g. 4010 -> 40.1)
+    if (cashReceivedCents != null) 'cashReceived': cashReceivedCents! / 100,
+    if (cheque != null) 'cheque': cheque,
   };
 }
 
@@ -87,12 +126,14 @@ class SalesApiClient {
     required int saleItemId,
     required int quantity,
     required String reason,
+    String? requestKey,
   }) async => ReturnResult.fromJson(
     await _http.post('/returns', {
           'saleId': saleId,
           'saleItemId': saleItemId,
           'quantity': quantity,
           'reason': reason.trim(),
+          'requestKey': ?requestKey,
         })
         as Map<String, dynamic>,
   );

@@ -43,6 +43,9 @@ def login(u, p): return call('/auth/login', method='POST', body={'username': u, 
 
 one = lambda sql, *a: db.execute(sql, a).fetchone()[0]
 SA, SC = login('shini.admin', 'Admin-Pass-1'), login('shini.cashier', 'Cashier-Pass-1')
+# approved cash refund policy: the cashier refunds cash from an open drawer (counted opening cash)
+from e2e_shifts import open_shift
+open_shift(SA, SC, 'E2E Boundary Till')
 NA, NC = login('neshan.admin', 'Admin-Pass-1'), login('neshan.cashier', 'Cashier-Pass-1')
 SHINI = one("select store_id from users where username='shini.admin'")
 NESHAN = one("select store_id from users where username='neshan.admin'")

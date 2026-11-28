@@ -4,6 +4,7 @@ import 'package:flutter/semantics.dart' show SemanticsData;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/fake_product_backend.dart';
+import 'support/pos_checkout.dart';
 
 /// Accessibility corrections A1–A3 (overnight mission B2): what a screen reader gets, in
 /// English and Arabic. Checked on the semantics tree of the real screens.
@@ -77,7 +78,7 @@ void main() {
 
         // A3: complete a sale; the receipt code has a spoken label with the code
         await _tap(tester, 'posProduct-1');
-        await _tap(tester, 'completeSaleButton');
+        await completeSaleLikeACashier(tester);
         final code = backend.sales.single['receiptCode'] as String;
         expect(
           find.text(code),

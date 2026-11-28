@@ -70,6 +70,14 @@ public class ApiExceptionHandler {
         return error(HttpStatus.CONFLICT, "INSUFFICIENT_STOCK", e.getMessage(), e.getShortages());
     }
 
+    /** Approved cash refund policy: not enough recorded cash in the drawer (nothing was saved). */
+    @ExceptionHandler(com.clixsell.pos.returns.DrawerInsufficientException.class)
+    public ResponseEntity<ApiError> drawerInsufficient(com.clixsell.pos.returns.DrawerInsufficientException e) {
+        return error(HttpStatus.CONFLICT, "DRAWER_INSUFFICIENT", e.getMessage(), Map.of(
+                "available", java.math.BigDecimal.valueOf(e.getAvailableMinor(), 2).toPlainString(),
+                "required", java.math.BigDecimal.valueOf(e.getRequiredMinor(), 2).toPlainString()));
+    }
+
     @ExceptionHandler(DuplicateBarcodeException.class)
     public ResponseEntity<ApiError> duplicateBarcode(DuplicateBarcodeException e) {
         return error(HttpStatus.CONFLICT, "DUPLICATE_BARCODE", e.getMessage(),
@@ -96,8 +104,23 @@ public class ApiExceptionHandler {
     /** A database constraint failed (for example two saves with the same barcode at once). */
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ApiError> constraint(DataIntegrityViolationException e) {
+        String rule = DatabaseRules.code(e);
+        if (rule != null) return error(HttpStatus.CONFLICT, rule, DatabaseRules.message(rule), Map.of());
         return error(HttpStatus.CONFLICT, "CONSTRAINT_VIOLATION",
                 "The data conflicts with existing records", Map.of());
+    }
+
+    /**
+     * A database rule (trigger) refused the change but the driver error reached us under another
+     * Spring type (Hibernate reports trigger aborts as JpaSystemException). Known rule → 409 with its
+     * code; anything else is a real server error and is passed on unchanged.
+     */
+    @ExceptionHandler({org.springframework.orm.jpa.JpaSystemException.class,
+            org.springframework.jdbc.UncategorizedSQLException.class})
+    public ResponseEntity<ApiError> databaseRule(RuntimeException e) {
+        String rule = DatabaseRules.code(e);
+        if (rule == null) throw e;
+        return error(HttpStatus.CONFLICT, rule, DatabaseRules.message(rule), Map.of());
     }
 
     @ExceptionHandler({HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class})

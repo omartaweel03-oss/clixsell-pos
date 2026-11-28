@@ -52,6 +52,8 @@ class ReportApiIntegrationTest extends ApiTestBase {
     void salesHistory() throws Exception {
         shini = setupStore("Shini Supermarket", "shini");
         neshan = setupStore("Neshan Market", "neshan");
+        openCashShifts(shini);
+        openCashShifts(neshan);
         milk = createProduct(shini.adminToken(), "Milk", "11111111", 5.00, 10);
         bread = createProduct(shini.adminToken(), "Bread", "22222222", 2.00, 3);
         eggs = createProduct(shini.adminToken(), "Eggs", "33333333", 15.00, 0);

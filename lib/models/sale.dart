@@ -3,7 +3,9 @@ enum PaymentMethod {
   cash('CASH'),
   card('CARD'),
   wallet('WALLET'),
-  bankTransfer('BANK_TRANSFER');
+  bankTransfer('BANK_TRANSFER'),
+  // Feature 9: recorded with its cheque; managed by the Store Admin
+  cheque('CHEQUE');
 
   const PaymentMethod(this.apiName);
 
@@ -41,6 +43,9 @@ class SaleLine {
     required this.returnedQuantity,
     required this.returnableQuantity,
     this.barcode,
+    this.packageId,
+    this.packageName,
+    this.unitsPerPackage = 1,
   });
 
   factory SaleLine.fromJson(Map<String, dynamic> j) => SaleLine(
@@ -53,6 +58,9 @@ class SaleLine {
     lineTotal: (j['lineTotal'] as num).toDouble(),
     returnedQuantity: (j['returnedQuantity'] as num).toInt(),
     returnableQuantity: (j['returnableQuantity'] as num).toInt(),
+    packageId: (j['packageId'] as num?)?.toInt(),
+    packageName: j['packageName'] as String?,
+    unitsPerPackage: (j['unitsPerPackage'] as num?)?.toInt() ?? 1,
   );
 
   final int saleItemId;
@@ -66,6 +74,14 @@ class SaleLine {
   final double lineTotal;
   final int returnedQuantity;
   final int returnableQuantity;
+
+  /// Feature 6: the carton / box sold on this line (null = pieces).
+  final int? packageId;
+  final String? packageName;
+  final int unitsPerPackage;
+
+  /// The name with its package, e.g. "Water · Carton 24".
+  String get displayName => packageName == null ? productName : '$productName · $packageName';
 }
 
 /// A saved invoice as returned by the backend (SaleResponse).
@@ -85,6 +101,10 @@ class Sale {
     this.paymentMethod,
     this.receiptCode,
     this.completedAt,
+    this.cashReceived,
+    this.changeDue,
+    this.roundingAdjustment = 0,
+    this.amountDue,
   });
 
   factory Sale.fromJson(Map<String, dynamic> j) => Sale(
@@ -110,6 +130,10 @@ class Sale {
     completedAt: j['completedAt'] == null
         ? null
         : DateTime.parse(j['completedAt'] as String),
+    cashReceived: (j['cashReceived'] as num?)?.toDouble(),
+    changeDue: (j['changeDue'] as num?)?.toDouble(),
+    roundingAdjustment: (j['roundingAdjustment'] as num?)?.toDouble() ?? 0,
+    amountDue: (j['amountDue'] as num?)?.toDouble(),
   );
 
   final int saleId;
@@ -128,6 +152,17 @@ class Sale {
   final String? receiptCode;
   final DateTime createdAt;
   final DateTime? completedAt;
+
+  /// Only in the answer to a cash sale paid with an amount received: what the
+  /// customer handed over and the change given back (not stored yet).
+  final double? cashReceived;
+  final double? changeDue;
+
+  /// D4: cash rounding (amountDue − total); 0 when none.
+  final double roundingAdjustment;
+
+  /// What the customer paid (total + rounding); null in answers from before D4.
+  final double? amountDue;
 
   int get itemCount => items.length;
 }

@@ -20,6 +20,7 @@ class GuardianAuditApiTest extends GuardianApiTestBase {
     @BeforeEach
     void store() throws Exception {
         shini = setupStore("Shini Supermarket", "shini");
+        openCashShifts(shini);
     }
 
     /**

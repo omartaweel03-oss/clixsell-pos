@@ -52,7 +52,21 @@ class FakeProductBackend {
 
   /// Sales ("sales" + their lines), in SaleResponse JSON format.
   final List<Map<String, dynamic>> sales = [];
+
+  /// Every cash amount received sent with a completed sale.
+  final List<double> cashReceivedLog = [];
+
+  /// Store upgrade: the store's cash rounding step (agorot) and the POS favorites (product ids).
+  int cashRoundingMinor = 0;
+  List<int> favoriteIds = [];
   final List<Map<String, dynamic>> returns = [];
+
+  /// Approved cash refund policy: when set, a return is refused as the real backend does when the
+  /// drawer lacks cash (409 DRAWER_INSUFFICIENT with the two amounts).
+  ({String available, String required})? refuseCashRefund;
+
+  /// Every requestKey sent with POST /api/returns (null when none).
+  final List<String?> returnRequestKeys = [];
 
   /// saleItemId → purchase cost copied when the sale was completed (server side only).
   final Map<int, double?> unitCosts = {};
@@ -379,7 +393,17 @@ class FakeProductBackend {
     // Own store settings
     if (path == '/api/store' && method == 'GET') {
       if (role == 'SYSTEM_ADMIN') return _forbidden();
-      return _json(200, _storeJson(_find(stores, 'storeId', storeId!)!));
+      return _json(200, {
+        ..._storeJson(_find(stores, 'storeId', storeId!)!),
+        'cashRoundingMinor': cashRoundingMinor,
+      });
+    }
+    if (path == '/api/favorites' && method == 'GET') {
+      if (role == 'SYSTEM_ADMIN') return _forbidden();
+      return _json(200, [
+        for (var i = 0; i < favoriteIds.length; i++)
+          {'productId': favoriteIds[i], 'name': 'p${favoriteIds[i]}', 'position': i},
+      ]);
     }
     // POS: sales and returns (Store Admin and Cashier, own store)
     if (path.startsWith('/api/sales') || path.startsWith('/api/returns')) {
@@ -854,7 +878,18 @@ class FakeProductBackend {
       );
     }
     if (path == '/api/returns' && method == 'POST') {
-      return _return(user, storeId, body());
+      final b = body();
+      returnRequestKeys.add(b['requestKey'] as String?);
+      final refuse = refuseCashRefund;
+      if (refuse != null) {
+        return _json(409, {
+          'status': 409,
+          'code': 'DRAWER_INSUFFICIENT',
+          'message': 'The drawer does not have enough cash for this refund',
+          'fieldErrors': {'available': refuse.available, 'required': refuse.required},
+        });
+      }
+      return _return(user, storeId, b);
     }
 
     final suspendedId = RegExp(
@@ -980,6 +1015,24 @@ class FakeProductBackend {
           'paymentMethod': 'Choose a payment method',
         });
       }
+      // Same rule as the server (SaleService.cashChange): the amount received
+      // is for CASH only and must cover the total; nothing changes otherwise.
+      final received = b['cashReceived'] as num?;
+      if (received != null) {
+        final totalCents = (_money(subtotal - discount + tax) * 100).round();
+        final receivedCents = (received * 100).round();
+        if (b['paymentMethod'] != 'CASH') {
+          return _error(400, 'VALIDATION_FAILED', 'Some fields are not valid', {
+            'cashReceived': 'The amount received is only for cash payments',
+          });
+        }
+        if (receivedCents < totalCents) {
+          return _error(400, 'VALIDATION_FAILED', 'Some fields are not valid', {
+            'cashReceived': 'still to pay',
+          });
+        }
+        cashReceivedLog.add(received.toDouble());
+      }
       final shortages = <String, String>{};
       for (final i in items) {
         final p = rowById(i['productId'] as int)!;
@@ -1028,6 +1081,18 @@ class FakeProductBackend {
       sales[sales.indexOf(existing)] = sale;
     } else {
       sales.add(sale);
+    }
+    final received = complete ? b['cashReceived'] as num? : null;
+    if (received != null) {
+      // In the answer only (the real server does not store it before V7).
+      return _json(201, {
+        ...sale,
+        'cashReceived': received.toDouble(),
+        'changeDue':
+            ((received * 100).round() -
+                ((sale['total'] as double) * 100).round()) /
+            100,
+      });
     }
     return _json(complete || existing == null ? 201 : 200, sale);
   }

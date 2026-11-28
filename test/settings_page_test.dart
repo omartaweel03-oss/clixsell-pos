@@ -248,7 +248,8 @@ void main() {
 
       await _nav(tester, 'pos');
       await _tap(tester, 'posProduct-1');
-      expect(find.text('Tax (10%)'), findsOneWidget);
+      // D5: no tax row on the checkout; the new 10 % is in the total
+      expect(find.textContaining('Tax ('), findsNothing);
       expect(
         tester.widget<Text>(find.byKey(const Key('summaryTotal'))).data,
         '₪ 11.00',
@@ -510,12 +511,15 @@ void main() {
       go: false,
     );
     await _tap(tester, 'posProduct-1');
-    expect(find.text('Tax (16%)'), findsOneWidget);
+    // D5: no tax row on the checkout any more; the rate is seen in the total
+    expect(
+      tester.widget<Text>(find.byKey(const Key('summaryTotal'))).data,
+      '₪ 11.60', // 10.00 + 16 %
+    );
     backend.stores.first['taxRate'] =
         5.0; // changed by the Store Admin meanwhile
     await _nav(tester, 'suspendedInvoices');
     await _nav(tester, 'pos');
-    expect(find.text('Tax (5%)'), findsOneWidget);
     expect(
       tester.widget<Text>(find.byKey(const Key('summaryTotal'))).data,
       '₪ 10.50',

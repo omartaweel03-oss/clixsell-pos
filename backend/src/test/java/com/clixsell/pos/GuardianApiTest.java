@@ -34,6 +34,8 @@ class GuardianApiTest extends GuardianApiTestBase {
     void stores() throws Exception {
         shini = setupStore("Shini Supermarket", "shini");
         neshan = setupStore("Neshan Market", "neshan");
+        openCashShifts(shini);
+        openCashShifts(neshan);
     }
 
     // ── Security ────────────────────────────────────────────────────────

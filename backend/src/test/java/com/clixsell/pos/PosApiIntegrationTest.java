@@ -32,6 +32,8 @@ class PosApiIntegrationTest extends ApiTestBase {
     void twoStoresWithProducts() throws Exception {
         shini = setupStore("Shini Supermarket", "shini");
         neshan = setupStore("Neshan Supermarket", "neshan");
+        openCashShifts(shini);
+        openCashShifts(neshan);
         shiniMilk = createProduct(shini.adminToken(), "Milk 1L", "11111111", 5, 10);
         shiniBread = createProduct(shini.adminToken(), "Bread", "22222222", 2, 3);
         neshanJuice = createProduct(neshan.adminToken(), "Juice", "11111111", 8, 5);

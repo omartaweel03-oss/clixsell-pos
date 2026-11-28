@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_strings.dart';
+import '../l10n/shift_strings.dart';
+import '../l10n/cheque_strings.dart';
 import '../l10n/purchase_order_strings.dart';
 import '../l10n/purchase_strings.dart';
 import '../l10n/guardian_strings.dart';
@@ -28,6 +30,10 @@ enum SidebarDestination {
   purchaseRecommendations,
   purchaseOrderDetails,
   purchaseOrderForm,
+  // Cash drawers and shifts (store upgrade): Store Admin management page
+  shifts,
+  // Cheques (store upgrade, feature 9): Store Admin
+  cheques,
 }
 
 /// Which pages each role may open (the backend enforces the same rules).
@@ -56,6 +62,8 @@ extension RoleDestinations on UserRole {
       SidebarDestination.suppliers,
       SidebarDestination.pos,
       SidebarDestination.suspendedInvoices,
+      SidebarDestination.shifts,
+      SidebarDestination.cheques,
       SidebarDestination.reports,
       SidebarDestination.salesAnalytics,
       SidebarDestination.cashiers,
@@ -199,6 +207,20 @@ class AppSidebar extends StatelessWidget {
           Icons.pause_circle_filled_rounded,
           s.navSuspended,
         ),
+        if (user.role == UserRole.storeAdmin)
+          item(
+            SidebarDestination.shifts,
+            Icons.account_balance_wallet_outlined,
+            Icons.account_balance_wallet_rounded,
+            ShiftStrings.of(context).navShifts,
+          ),
+        if (user.role == UserRole.storeAdmin)
+          item(
+            SidebarDestination.cheques,
+            Icons.receipt_long_outlined,
+            Icons.receipt_long_rounded,
+            ChequeStrings.of(context).navCheques,
+          ),
         section(s.navSectionInventory),
         item(
           SidebarDestination.products,

@@ -14,11 +14,14 @@ public record ReturnResponse(
         double refundAmount,
         PaymentMethod refundMethod,
         LocalDateTime returnDate,
-        int stillReturnable
+        int stillReturnable,
+        // D4: cash rounding included in refundAmount (refundAmount − exact share)
+        double roundingAdjustment
 ) {
     public static ReturnResponse from(ReturnProduct r) {
         return new ReturnResponse(r.getReturnId(), r.getSale().getInvoiceNumber(),
                 r.getSaleItem().getProductName(), r.getQuantity(), r.getReason(), r.getRefundAmount(),
-                r.getRefundMethod(), r.getReturnDate(), r.getSaleItem().getReturnableQuantity());
+                r.getRefundMethod(), r.getReturnDate(), r.getSaleItem().getReturnableQuantity(),
+                java.math.BigDecimal.valueOf(r.getRoundingMinor(), 2).doubleValue());
     }
 }

@@ -70,6 +70,16 @@ public class Store {
     @Column(name = "guardian_enabled", nullable = false)
     private boolean guardianEnabled = false;
 
+    /** D2: when on, every sale and cash refund needs an open cash shift (default off). */
+    @Column(name = "require_cash_shift", nullable = false)
+    private boolean requireCashShift = false;
+
+    /** D4: cash invoices are rounded to this step in agorot (0 = no rounding, default; 5, 10, 50, 100). */
+    @Column(name = "cash_rounding_minor", nullable = false)
+    private int cashRoundingMinor = 0;
+
+    public static final java.util.Set<Integer> ROUNDING_STEPS = java.util.Set.of(0, 5, 10, 50, 100);
+
     /** Required by JPA. Use {@link #create(StoreRequest)}. */
     protected Store() {
     }
@@ -111,6 +121,11 @@ public class Store {
         this.phone = blankToNull(newPhone);
         this.taxRate = newTax;
         this.maxDiscountPercent = newMax;
+        if (r.cashRoundingMinor() != null && !ROUNDING_STEPS.contains(r.cashRoundingMinor())) {
+            throw new ValidationException(Map.of("cashRoundingMinor", "Cash rounding is 0 (none), 5, 10, 50 or 100 agorot"));
+        }
+        if (r.requireCashShift() != null) this.requireCashShift = r.requireCashShift();
+        if (r.cashRoundingMinor() != null) this.cashRoundingMinor = r.cashRoundingMinor();
     }
 
     /**
@@ -191,5 +206,7 @@ public class Store {
     public LocalDateTime getCreatedAt() { return createdAt; }
     public double getTaxRate() { return taxRate; }
     public double getMaxDiscountPercent() { return maxDiscountPercent; }
+    public boolean isRequireCashShift() { return requireCashShift; }
+    public int getCashRoundingMinor() { return cashRoundingMinor; }
     public boolean isGuardianEnabled() { return guardianEnabled; }
 }

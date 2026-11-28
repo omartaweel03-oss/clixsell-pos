@@ -52,8 +52,19 @@ const field = async (p, label, value) => {
   await f.click({ timeout: 8000 }); await p.keyboard.press('Control+A'); await p.keyboard.press('Backspace');
   if (value !== '') await p.keyboard.type(String(value)); await p.waitForTimeout(250);
 };
+// Store upgrade (feature 3): a CASH sale asks "How much did the customer give you?". Like a cashier,
+// take the exact amount and complete the payment. Card / wallet / transfer sales open no dialog.
+const payCashIfAsked = async (p, wait) => {
+  const exact = p.getByRole('button', { name: /^(Exact amount|المبلغ بالضبط)$/ });
+  if (await exact.count() === 0) return;
+  await exact.first().click({ timeout: 8000 }); await p.waitForTimeout(400);
+  await p.getByRole('button', { name: /^(Complete payment|إتمام الدفع)$/ }).first().click({ timeout: 8000 });
+  await p.waitForTimeout(wait);
+};
+const isCompleteSale = (name) => name === 'Complete Sale' || name === 'إتمام البيع';
 const click = async (p, name, wait = 1300, nth = 0) => {
   await p.getByRole('button', typeof name === 'string' ? { name, exact: true } : { name }).nth(nth).click({ timeout: 8000 }); await p.waitForTimeout(wait);
+  if (isCompleteSale(name)) await payCashIfAsked(p, wait);
 };
 // Buttons whose name may carry a visible tooltip or a badge count: matched by prefix, and the mouse is
 // moved away first so a tooltip from the previous click does not change the accessible name.
@@ -131,6 +142,11 @@ function checkStock(area, keys, why) {
   const SC = await token('shini.cashier', 'Cashier-Pass-1');
   const NA = await token('neshan.admin', 'Admin-Pass-1');
   const NC = await token('neshan.cashier', 'Cashier-Pass-1');
+  // approved cash refund policy: the Store Admin (who makes the returns below) refunds cash from an
+  // open drawer with a counted opening cash
+  { const d = (await api('POST', '/drawers', SA, { name: 'IX Office Till' })).json.drawerId;
+    const sh = await api('POST', '/shifts', SA, { drawerId: d, openingCash: 1000 });
+    rec('Setup', 'Store Admin opens a cash shift (1,000.00 counted)', 201, sh.status, sh.status === 201); }
   const storeInfo = (await api('GET', '/store', SA)).json; TAX = storeInfo.taxRate;
   await api('PUT', '/guardian/status', SA, { enabled: true });
   const NESHAN = one("select store_id from users where username='neshan.admin'");
@@ -331,9 +347,10 @@ function checkStock(area, keys, why) {
     await field(p, 'Discount', 10); await click(p, 'Apply', 1200);
     const exp = expectSale([['IX1', 2], ['IX3', 3]], 10);
     t = await txt(p);
-    rec('POS', 'invoice totals before paying', [exp.sub, exp.disc, exp.tax, exp.total].map(money).join(', '),
-      [exp.sub, exp.disc, exp.tax, exp.total].map(v => t.includes(money(v)) ? money(v) : 'missing').join(', '),
-      [exp.sub, exp.disc, exp.tax, exp.total].every(v => t.includes(money(v))), await shot(p, 'en_pos_imported_products'));
+    // D5: no tax row on the checkout (tax included in the total, kept in the database — checked below)
+    rec('POS', 'invoice totals before paying (total incl. tax)', [exp.sub, exp.disc, exp.total].map(money).join(', '),
+      [exp.sub, exp.disc, exp.total].map(v => t.includes(money(v)) ? money(v) : 'missing').join(', '),
+      [exp.sub, exp.disc, exp.total].every(v => t.includes(money(v))), await shot(p, 'en_pos_imported_products'));
     await click(p, 'Cash', 600); await click(p, 'Complete Sale', 2500);
     const row = lastSale(); checkSale('POS', 'S1 cash', exp, row); sales.push({ key: 'S1', row, exp });
     stock.IX1 -= 2; stock.IX3 -= 3; checkStock('POS', ['IX1', 'IX3', 'IX5'], 'after S1');

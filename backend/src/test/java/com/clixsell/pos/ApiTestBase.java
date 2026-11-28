@@ -81,21 +81,33 @@ public abstract class ApiTestBase {
         }
     }
 
+    /**
+     * In ONE transaction with every foreign key deferred to COMMIT: since V7 cheque refunds and
+     * their cash payouts reference each other, so neither can be deleted first one by one.
+     */
     private void deleteAllRows() {
-        db.update("DELETE FROM purchase_order_events");
-        db.update("DELETE FROM purchase_order_items");
-        db.update("DELETE FROM purchase_orders");
-        db.update("DELETE FROM activity_log");
-        db.update("DELETE FROM user_sessions");
-        db.update("DELETE FROM returns");
-        db.update("DELETE FROM payments");
-        db.update("DELETE FROM receipts");
-        db.update("DELETE FROM sale_items");
-        db.update("DELETE FROM sales");
-        db.update("DELETE FROM products");
-        db.update("DELETE FROM suppliers");
-        db.update("DELETE FROM users WHERE role <> 'SYSTEM_ADMIN'");
-        db.update("DELETE FROM stores");
+        db.execute((org.springframework.jdbc.core.ConnectionCallback<Void>) c -> {
+            boolean autoCommit = c.getAutoCommit();
+            c.setAutoCommit(false);
+            try (java.sql.Statement s = c.createStatement()) {
+                s.execute("PRAGMA defer_foreign_keys = ON");
+                for (String table : List.of("cash_movements", "cheque_refunds", "cheque_events", "cheques",
+                        "purchase_order_events", "purchase_order_items", "purchase_orders", "activity_log",
+                        "user_sessions", "returns", "payments", "receipts", "sale_items", "sales", "cash_shifts",
+                        "cash_drawers", "product_favorites", "product_packages", "products", "suppliers")) {
+                    s.executeUpdate("DELETE FROM " + table);
+                }
+                s.executeUpdate("DELETE FROM users WHERE role <> 'SYSTEM_ADMIN'");
+                s.executeUpdate("DELETE FROM stores");
+                c.commit();
+            } catch (java.sql.SQLException e) {
+                c.rollback();
+                throw e;
+            } finally {
+                c.setAutoCommit(autoCommit);
+            }
+            return null;
+        });
     }
 
     /** A store with one Store Admin and one Cashier, already logged in. */
@@ -157,6 +169,24 @@ public abstract class ApiTestBase {
         String adminToken = login(admin, STORE_ADMIN_PASSWORD);
         createCashier(adminToken, cashier, CASHIER_PASSWORD);
         return new StoreSetup(storeId, admin, adminToken, cashier, login(cashier, CASHIER_PASSWORD));
+    }
+
+    /**
+     * Approved cash refund policy: a cash refund is paid from an open drawer that holds the cash. Tests
+     * that refund cash first open a shift — as a real store must — for the cashier and the Store Admin,
+     * each on its own drawer with a counted opening cash of 1,000.00.
+     */
+    protected void openCashShifts(StoreSetup s) throws Exception {
+        String[][] users = {{s.cashierToken(), "Till C"}, {s.adminToken(), "Till A"}};
+        for (String[] u : users) {
+            MvcResult d = mvc.perform(post("/api/drawers").header("Authorization", bearer(s.adminToken()))
+                            .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"" + u[1] + "\"}"))
+                    .andExpect(status().isCreated()).andReturn();
+            mvc.perform(post("/api/shifts").header("Authorization", bearer(u[0]))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"drawerId\":" + jsonLong(d, "drawerId") + ",\"openingCash\":1000}"))
+                    .andExpect(status().isCreated());
+        }
     }
 
     /** Creates a product in the Store Admin's store and returns its id. */

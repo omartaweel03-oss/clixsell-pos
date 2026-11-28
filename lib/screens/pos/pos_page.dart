@@ -10,7 +10,16 @@ import '../../state/pos_cart.dart';
 import '../../state/product_store.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/min_width_scroll.dart';
+import '../../services/shift_api_client.dart';
+import '../shifts/pos_shift_bar.dart';
+import '../../services/favorite_api_client.dart';
+import '../favorites/favorites_dialog.dart';
+import '../../models/product_package.dart';
+import '../../services/package_api_client.dart';
+import 'package_choice_dialog.dart';
 import '../../widgets/page_header.dart';
+import 'cash_payment_dialog.dart';
+import 'cheque_payment_dialog.dart';
 import 'pos_dialogs.dart';
 import 'pos_resume.dart';
 import 'pos_widgets.dart';
@@ -22,9 +31,25 @@ import 'pos_widgets.dart';
 /// to the backend, which checks stock, calculates the totals and saves
 /// everything for this store only.
 class PosPage extends StatefulWidget {
-  const PosPage({super.key, required this.api, this.message});
+  const PosPage({
+    super.key,
+    required this.api,
+    this.message,
+    this.shifts,
+    this.favorites,
+    this.packages,
+  });
 
   final SalesApiClient api;
+
+  /// Cash shifts (store upgrade, features 1–2); null = no shift bar (e.g. in tests).
+  final ShiftApiClient? shifts;
+
+  /// POS favorites (feature 5); null = no favorites strip.
+  final FavoriteApiClient? favorites;
+
+  /// Cartons / boxes (feature 6); null = pieces only.
+  final PackageApiClient? packages;
 
   /// Shown once when the page opens (e.g. "Invoice INV-000003 resumed").
   final String? message;
@@ -42,6 +67,8 @@ class _PosPageState extends State<PosPage> {
   /// The POS has its own messenger so messages appear above the action bar
   /// instead of covering its buttons.
   final _messengerKey = GlobalKey<ScaffoldMessengerState>();
+  final _shiftBar = GlobalKey<PosShiftBarState>();
+  List<String> _favoriteIds = const [];
 
   @override
   void initState() {
@@ -53,6 +80,36 @@ class _PosPageState extends State<PosPage> {
       });
     }
     _refreshStoreSettings();
+    _loadFavorites();
+    _loadPackages();
+  }
+
+  /// Active packages of the store (prices come from the backend at checkout anyway).
+  Future<void> _loadPackages() async {
+    final api = widget.packages;
+    if (api == null) return;
+    try {
+      final all = await api.list();
+      if (mounted) PosCartScope.read(context).packages = all;
+    } catch (_) {
+      // pieces only; the backend still decides every price
+    }
+  }
+
+  List<ProductPackage> _packagesOf(String productId) => [
+    for (final p in PosCartScope.read(context).packages)
+      if (p.productId == productId && p.active) p,
+  ];
+
+  Future<void> _loadFavorites() async {
+    final api = widget.favorites;
+    if (api == null) return;
+    try {
+      final ids = await api.list();
+      if (mounted) setState(() => _favoriteIds = ids);
+    } catch (_) {
+      // no favorites strip; the product grid works as before
+    }
   }
 
   /// The store's tax rate and maximum discount may have been changed in
@@ -65,6 +122,7 @@ class _PosPageState extends State<PosPage> {
       PosCartScope.read(context).applyStoreSettings(
         taxRate: store.taxRate,
         maxDiscountPercent: store.maxDiscountPercent,
+        cashRoundingMinor: store.cashRoundingMinor,
       );
     } on ApiException {
       // Keep the values read at login; the backend calculates the real totals.
@@ -88,6 +146,10 @@ class _PosPageState extends State<PosPage> {
           content: Text(message),
           backgroundColor: error ? AppColors.danger : null,
           duration: const Duration(seconds: 3),
+          // Floating and narrow, centred over the invoice column: never over
+          // the checkout footer (Complete Sale) in the summary column.
+          behavior: SnackBarBehavior.floating,
+          width: (MediaQuery.sizeOf(context).width - 32).clamp(200.0, 440.0),
         ),
       );
   }
@@ -113,9 +175,21 @@ class _PosPageState extends State<PosPage> {
 
   // ── Adding products ──────────────────────────────────────────────────────
 
-  void _add(Product product) {
+  /// A tap on a product: pieces, or — when it has cartons / boxes — the unit to sell.
+  Future<void> _add(Product product) async {
+    final packs = _packagesOf(product.id);
+    if (packs.isEmpty) return _addUnit(product, null);
+    final choice = await showDialog<Object>(
+      context: context,
+      builder: (ctx) => PackageChoiceDialog(product: product, packages: packs),
+    );
+    if (!mounted || choice == null) return;
+    _addUnit(product, choice is ProductPackage ? choice : null);
+  }
+
+  void _addUnit(Product product, ProductPackage? package) {
     final s = AppStrings.of(context);
-    switch (PosCartScope.read(context).add(product)) {
+    switch (PosCartScope.read(context).add(product, package: package)) {
       case AddResult.added:
         break;
       case AddResult.outOfStock:
@@ -140,6 +214,19 @@ class _PosPageState extends State<PosPage> {
     final code = text.trim();
     if (code.isEmpty) return;
     final products = ProductStoreScope.read(context).products;
+    // a carton / box barcode (feature 6) adds that package directly
+    for (final pkg in PosCartScope.read(context).packages) {
+      if (pkg.active && pkg.barcode == code) {
+        final product = products.where((p) => p.id == pkg.productId).firstOrNull;
+        if (product != null) {
+          _addUnit(product, pkg);
+          _search.clear();
+          setState(() {});
+          _searchFocus.requestFocus();
+          return;
+        }
+      }
+    }
     final exact = products.where((p) => p.barcode == code).toList();
     final matches = exact.isNotEmpty ? exact : _visibleProducts(products);
     if (matches.length == 1) {
@@ -176,15 +263,40 @@ class _PosPageState extends State<PosPage> {
     if (ok) cart.clearLines();
   }
 
+  bool _askingCash = false;
+
   Future<void> _complete() async {
     final s = AppStrings.of(context);
     final cart = PosCartScope.read(context);
-    if (cart.isEmpty || _busy) return;
+    if (cart.isEmpty || _busy || _askingCash) return;
+    var draft = cart.toDraft(withPayment: true);
+    // Cash: ask how much the customer gave (feature 3). The server checks
+    // it against its own total and answers with the change.
+    if (cart.paymentMethod == PaymentMethod.cash) {
+      _askingCash = true; // a second Complete cannot open a second dialog
+      final int? received;
+      try {
+        received = await CashPaymentDialog.show(context, cart.amountDueCents);
+      } finally {
+        _askingCash = false;
+      }
+      if (!mounted || received == null) return;
+      draft = draft.withCashReceived(received);
+    } else if (cart.paymentMethod == PaymentMethod.cheque) {
+      // feature 9: the cheque handed over; the backend checks it and records it RECEIVED
+      _askingCash = true;
+      final Map<String, dynamic>? details;
+      try {
+        details = await ChequePaymentDialog.show(context, cart.totalCents);
+      } finally {
+        _askingCash = false;
+      }
+      if (!mounted || details == null) return;
+      draft = draft.withCheque(details);
+    }
     setState(() => _busy = true);
     try {
-      final sale = await widget.api.completeSale(
-        cart.toDraft(withPayment: true),
-      );
+      final sale = await widget.api.completeSale(draft);
       cart.reset();
       if (!mounted) return;
       setState(() => _busy = false);
@@ -228,6 +340,7 @@ class _PosPageState extends State<PosPage> {
         );
       } else {
         _toast(describeApiError(e, s), error: true);
+        if (e.code == 'SHIFT_REQUIRED') _shiftBar.currentState?.reload();
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -354,7 +467,8 @@ class _PosPageState extends State<PosPage> {
       onDiscount: _discount,
       onClear: _clearAll,
     );
-    final summary = PosSummaryPanel(
+    final summary = PosSummaryPanel(cart: cart);
+    final footer = PosCheckoutFooter(
       cart: cart,
       busy: _busy,
       onComplete: _complete,
@@ -399,20 +513,53 @@ class _PosPageState extends State<PosPage> {
             fillHeight: true,
             child: Column(
               children: [
+                if (widget.shifts != null)
+                  PosShiftBar(
+                    key: _shiftBar,
+                    api: widget.shifts!,
+                    onMessage: (m, {error = false}) => _toast(m, error: error),
+                  ),
                 header,
                 const SizedBox(height: AppSpacing.lg),
                 Expanded(
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      // Summary and payment methods scroll if the window
+                      // is short; the checkout footer (total + Complete
+                      // Sale) is outside the scroll and always visible.
                       SizedBox(
                         width: 300,
-                        child: SingleChildScrollView(child: summary),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(
+                              child: SingleChildScrollView(child: summary),
+                            ),
+                            const SizedBox(height: AppSpacing.sm),
+                            footer,
+                          ],
+                        ),
                       ),
                       const SizedBox(width: AppSpacing.lg),
                       Expanded(flex: 5, child: invoicePanel()),
                       const SizedBox(width: AppSpacing.lg),
-                      Expanded(flex: 6, child: productsPanel),
+                      Expanded(
+                        flex: 6,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            PosFavoritesStrip(
+                              products: [
+                                for (final id in _favoriteIds)
+                                  ...store.products.where((p) => p.id == id),
+                              ],
+                              onAdd: _add,
+                            ),
+                            Expanded(child: productsPanel),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                 ),

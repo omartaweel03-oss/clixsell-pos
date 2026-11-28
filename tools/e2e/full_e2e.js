@@ -27,7 +27,17 @@ async function session(user, pw, w, h) {
   return { ctx, p, st };
 }
 const field = async (p, l, v) => { await p.locator(`flt-semantics-host input[aria-label^="${l}"], flt-semantics-host textarea[aria-label^="${l}"]`).first().click({ timeout: 8000 }); await p.keyboard.press('Control+A'); await p.keyboard.type(v); await p.waitForTimeout(250); };
-const click = async (p, name, wait = 1400) => { await p.getByRole('button', { name }).first().click({ timeout: 8000 }); await p.waitForTimeout(wait); };
+// Store upgrade (feature 3): a CASH sale asks "How much did the customer give you?". Like a cashier,
+// take the exact amount and complete the payment. Card / wallet / transfer sales open no dialog.
+const payCashIfAsked = async (p, wait) => {
+  const exact = p.getByRole('button', { name: /^(Exact amount|المبلغ بالضبط)$/ });
+  if (await exact.count() === 0) return;
+  await exact.first().click({ timeout: 8000 }); await p.waitForTimeout(400);
+  await p.getByRole('button', { name: /^(Complete payment|إتمام الدفع)$/ }).first().click({ timeout: 8000 });
+  await p.waitForTimeout(wait);
+};
+const isCompleteSale = (name) => name === 'Complete Sale' || name === 'إتمام البيع';
+const click = async (p, name, wait = 1400) => { await p.getByRole('button', { name }).first().click({ timeout: 8000 }); await p.waitForTimeout(wait); if (isCompleteSale(name)) await payCashIfAsked(p, wait); };
 const has = async (p, name) => (await p.getByRole('button', { name }).count()) > 0;
 const txt = async p => p.locator('flt-semantics-host').innerText();
 // Visible text PLUS the accessible labels (aria-label) Flutter uses for many texts.
@@ -201,9 +211,14 @@ const section = async (name, fn) => { console.log(`\n=== ${name}`); try { await 
   await section('New sale uses new tax; old sales unchanged', async () => {
     const before = q("select sale_id,tax_rate,total from sales where status='COMPLETED' and store_id=1 order by sale_id");
     const { ctx, p } = await session('shini.cashier', 'Cashier-Pass-1');
-    let t = await txt(p); ok('cashier POS shows Tax (10%)', t.includes('Tax (10%)'));
+    // D5: the checkout has no tax row any more; the new 10 % shows in the total (2.50 + 10 % = 2.75)
+    // and on the receipt.
     await p.getByRole('button').filter({ hasText: 'Mineral Water' }).first().click(); await p.waitForTimeout(700);
+    let t = await txt(p);
+    ok('cashier POS total uses the new tax (₪ 2.75), no tax row on the checkout', t.includes('2.75') && !t.includes('Tax ('),
+      `${t.includes('2.75') ? 'total 2.75' : 'no 2.75'}, ${t.includes('Tax (') ? 'tax row shown' : 'no tax row'}`);
     await click(p, 'Complete Sale', 2000);
+    t = await txt(p); ok('receipt shows Tax (10%)', t.includes('Tax (10%)'));
     ok('new sale saved with 10%', q("select tax_rate,total from sales where store_id=1 order by sale_id desc limit 1") === '(10.0, 2.75)', q("select tax_rate,total from sales where store_id=1 order by sale_id desc limit 1"));
     const lastBefore = before.split(' | ').slice(-1)[0].replace(/[()]/g, '').split(',')[0];
     ok('earlier completed sales unchanged', q(`select sale_id,tax_rate,total from sales where status='COMPLETED' and store_id=1 and sale_id<=${lastBefore} order by sale_id`) === before);

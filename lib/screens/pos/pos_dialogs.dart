@@ -3,9 +3,13 @@ import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../l10n/app_strings.dart';
+import '../../l10n/checkout_strings.dart';
+import '../../l10n/shift_strings.dart';
+import '../../l10n/cheque_strings.dart';
 import '../../models/sale.dart';
 import '../../services/api_http.dart';
 import '../../services/sales_api_client.dart';
+import '../../services/shift_api_client.dart';
 import '../../state/pos_cart.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/formatters.dart';
@@ -16,7 +20,9 @@ String describeApiError(ApiException e, AppStrings s) => e.isNetworkError
     ? s.networkError
     : e.isForbidden
     ? s.notAllowed
-    : e.message;
+    : ShiftStrings.forLanguage(arabic: s.isArabic).forCode(e.code) ??
+          ChequeStrings.forLanguage(arabic: s.isArabic).forCode(e.code) ??
+          e.message;
 
 String _dateTime(BuildContext context, DateTime d) {
   final l = MaterialLocalizations.of(context);
@@ -328,6 +334,9 @@ class _ReturnDialogState extends State<ReturnDialog> {
   Sale? _sale;
   SaleLine? _line;
   int _quantity = 1;
+
+  /// One key per chosen sale / line / quantity: a double tap or a retry refunds once (server checks).
+  String? _requestKey;
   ReturnResult? _result;
   bool _busy = false;
   String? _error;
@@ -352,6 +361,7 @@ class _ReturnDialogState extends State<ReturnDialog> {
         _sale = sale;
         _line = sale.items.where((l) => l.returnableQuantity > 0).firstOrNull;
         _quantity = 1;
+        _requestKey = null;
         _busy = false;
       });
     } on ApiException catch (e) {
@@ -377,11 +387,13 @@ class _ReturnDialogState extends State<ReturnDialog> {
       _error = null;
     });
     try {
+      _requestKey ??= ShiftApiClient.newRequestKey();
       final result = await widget.api.returnProduct(
         saleId: sale.saleId,
         saleItemId: line.saleItemId,
         quantity: _quantity,
         reason: _reason.text,
+        requestKey: _requestKey,
       );
       if (mounted) {
         setState(() {
@@ -393,7 +405,15 @@ class _ReturnDialogState extends State<ReturnDialog> {
       if (mounted) {
         setState(() {
           _busy = false;
-          _error = e.fieldErrors.values.firstOrNull ?? describeApiError(e, s);
+          // approved cash refund policy: a clear message with the drawer's cash and the refund
+          _error = e.code == 'DRAWER_INSUFFICIENT'
+              ? ShiftStrings.forLanguage(arabic: s.isArabic).drawerInsufficient(
+                  e.fieldErrors['available'] ?? '?',
+                  e.fieldErrors['required'] ?? '?',
+                )
+              : e.code == 'CASH_REFUND_NEEDS_SHIFT'
+              ? describeApiError(e, s)
+              : e.fieldErrors.values.firstOrNull ?? describeApiError(e, s);
         });
       }
     }
@@ -513,6 +533,7 @@ class _ReturnDialogState extends State<ReturnDialog> {
               onChanged: (v) => setState(() {
                 _line = returnable.firstWhere((l) => l.saleItemId == v);
                 _quantity = 1;
+                _requestKey = null;
               }),
               child: Column(
                 children: [
@@ -523,7 +544,7 @@ class _ReturnDialogState extends State<ReturnDialog> {
                       dense: true,
                       contentPadding: EdgeInsets.zero,
                       title: Text(
-                        l.productName,
+                        l.displayName,
                         style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
                       subtitle: Text(
@@ -545,7 +566,10 @@ class _ReturnDialogState extends State<ReturnDialog> {
                   key: const Key('returnQtyDec'),
                   tooltip: s.returnQtyDecrease,
                   onPressed: _quantity > 1
-                      ? () => setState(() => _quantity--)
+                      ? () => setState(() {
+                          _quantity--;
+                          _requestKey = null;
+                        })
                       : null,
                   icon: const Icon(Icons.remove_rounded, size: 18),
                 ),
@@ -565,7 +589,10 @@ class _ReturnDialogState extends State<ReturnDialog> {
                   key: const Key('returnQtyInc'),
                   tooltip: s.returnQtyIncrease,
                   onPressed: _quantity < (_line?.returnableQuantity ?? 1)
-                      ? () => setState(() => _quantity++)
+                      ? () => setState(() {
+                          _quantity++;
+                          _requestKey = null;
+                        })
                       : null,
                   icon: const Icon(Icons.add_rounded, size: 18),
                 ),
@@ -673,7 +700,7 @@ class ReceiptDialog extends StatelessWidget {
               const Divider(),
               for (final l in sale.items)
                 row(
-                  '${l.productName} × ${l.quantity}',
+                  '${l.displayName} × ${l.quantity}',
                   Formatters.currency(l.lineTotal),
                 ),
               const Divider(),
@@ -682,8 +709,30 @@ class ReceiptDialog extends StatelessWidget {
                 row(s.discountLabel, '− ${Formatters.currency(sale.discount)}'),
               row(s.taxLabel(sale.taxRate), Formatters.currency(sale.tax)),
               row(s.totalLabel, Formatters.currency(sale.total), bold: true),
+              if (sale.roundingAdjustment != 0) ...[
+                row(
+                  CheckoutStrings.of(context).cashRounding,
+                  '${sale.roundingAdjustment > 0 ? '+' : '−'} ${Formatters.currency(sale.roundingAdjustment.abs())}',
+                ),
+                row(
+                  CheckoutStrings.of(context).amountPaid,
+                  Formatters.currency(sale.amountDue ?? sale.total),
+                  bold: true,
+                ),
+              ],
               if (sale.paymentMethod != null)
                 row(s.paidBy, paymentLabel(sale.paymentMethod!, s)),
+              if (sale.cashReceived != null) ...[
+                row(
+                  CheckoutStrings.of(context).received,
+                  Formatters.currency(sale.cashReceived!),
+                ),
+                row(
+                  CheckoutStrings.of(context).change,
+                  Formatters.currency(sale.changeDue ?? 0),
+                  bold: true,
+                ),
+              ],
               const SizedBox(height: AppSpacing.lg),
               Center(
                 child: Container(

@@ -1,17 +1,32 @@
 import 'package:flutter/widgets.dart';
 
 import '../models/product.dart';
+import '../models/product_package.dart';
 import '../models/sale.dart';
 import '../services/sales_api_client.dart';
 
-/// One product on the current invoice.
+/// One product on the current invoice: pieces, or packages (carton / box) of it.
 class CartLine {
-  CartLine(this.product, this.quantity);
+  CartLine(this.product, this.quantity, {this.package});
 
   Product product;
   int quantity;
 
-  int get unitCents => _cents(product.price);
+  /// Null = pieces; otherwise [quantity] counts packages (feature 6).
+  final ProductPackage? package;
+
+  /// Identifies the line: the product id for pieces (as before), "productId@packageId" for a package.
+  String get key => keyFor(product.id, package);
+
+  static String keyFor(String productId, ProductPackage? package) =>
+      package == null ? productId : '$productId@${package.packageId}';
+
+  /// Pieces this line takes from stock.
+  int get pieces => quantity * (package?.unitsPerPackage ?? 1);
+
+  String get displayName => package == null ? product.name : '${product.name} · ${package!.name}';
+
+  int get unitCents => _cents(package?.price ?? product.price);
   int get lineCents => unitCents * quantity;
   double get lineTotal => lineCents / 100;
 }
@@ -54,6 +69,9 @@ class PosCart extends ChangeNotifier {
   int get lineCount => _lines.length;
   int get unitCount => _lines.fold(0, (sum, l) => sum + l.quantity);
 
+  /// Package data known to the POS (to resume suspended invoices with cartons).
+  List<ProductPackage> packages = const [];
+
   DiscountType get discountType => _discountType;
   double get discountValue => _discountValue;
   PaymentMethod get paymentMethod => _paymentMethod;
@@ -71,7 +89,7 @@ class PosCart extends ChangeNotifier {
         (_discountValue == 0 || _discountType == _savedDiscountType);
     if (!sameDiscount || saved.length != _lines.length) return true;
     for (final l in _lines) {
-      if (saved[l.product.id] != l.quantity) return true;
+      if (saved[l.key] != l.quantity) return true;
     }
     return false;
   }
@@ -96,45 +114,70 @@ class PosCart extends ChangeNotifier {
   double get tax => _taxCents / 100;
   double get total => (_subtotalCents - _discountCents + _taxCents) / 100;
 
+  /// The invoice total in cents (agorot): exact, for the cash change.
+  int get totalCents => _subtotalCents - _discountCents + _taxCents;
+
+  /// D4: the store's cash rounding step in agorot (0 = none). Display only: the backend rounds.
+  int cashRoundingMinor = 0;
+
+  /// Cash rounding of this invoice (0 unless paying cash in a store that rounds).
+  int get roundingCents {
+    final step = cashRoundingMinor;
+    if (_paymentMethod != PaymentMethod.cash || step <= 0) return 0;
+    final t = totalCents, r = t % step, q = t ~/ step;
+    return (2 * r >= step ? q + 1 : q) * step - t;
+  }
+
+  /// What the customer pays: total + cash rounding.
+  int get amountDueCents => totalCents + roundingCents;
+
   /// Highest discount amount allowed for the current subtotal.
   double get maxDiscountAmount =>
       (_subtotalCents * maxDiscountPercent / 100).floor() / 100;
 
   // ── Editing ─────────────────────────────────────────────────────────────
 
-  CartLine? lineFor(String productId) {
+  /// The line with this key: the product id (pieces) or "productId@packageId".
+  CartLine? lineFor(String key) {
     for (final l in _lines) {
-      if (l.product.id == productId) return l;
+      if (l.key == key) return l;
     }
     return null;
   }
 
-  /// Adds one unit of [product], never more than its stock.
-  AddResult add(Product product) {
+  /// Pieces of a product already on the invoice (all its lines).
+  int piecesOf(String productId) => _lines
+      .where((l) => l.product.id == productId)
+      .fold(0, (sum, l) => sum + l.pieces);
+
+  /// Adds one piece of [product] — or one [package] of it — never more than its stock in pieces.
+  AddResult add(Product product, {ProductPackage? package}) {
     if (product.quantity <= 0) return AddResult.outOfStock;
-    final line = lineFor(product.id);
+    final units = package?.unitsPerPackage ?? 1;
+    if (piecesOf(product.id) + units > product.quantity) return AddResult.stockLimit;
+    final line = lineFor(CartLine.keyFor(product.id, package));
     if (line == null) {
-      _lines.add(CartLine(product, 1));
+      _lines.add(CartLine(product, 1, package: package));
     } else {
-      if (line.quantity >= product.quantity) return AddResult.stockLimit;
       line.quantity++;
     }
     notifyListeners();
     return AddResult.added;
   }
 
-  AddResult increment(String productId) {
-    final line = lineFor(productId);
+  AddResult increment(String key) {
+    final line = lineFor(key);
     if (line == null) return AddResult.outOfStock;
-    if (line.quantity >= line.product.quantity) return AddResult.stockLimit;
+    final units = line.package?.unitsPerPackage ?? 1;
+    if (piecesOf(line.product.id) + units > line.product.quantity) return AddResult.stockLimit;
     line.quantity++;
     notifyListeners();
     return AddResult.added;
   }
 
   /// One unit less; the line disappears at zero.
-  void decrement(String productId) {
-    final line = lineFor(productId);
+  void decrement(String key) {
+    final line = lineFor(key);
     if (line == null) return;
     if (line.quantity <= 1) {
       _lines.remove(line);
@@ -144,9 +187,9 @@ class PosCart extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Removes a single product from the invoice (SR7).
-  void remove(String productId) {
-    _lines.removeWhere((l) => l.product.id == productId);
+  /// Removes a single line from the invoice (SR7).
+  void remove(String key) {
+    _lines.removeWhere((l) => l.key == key);
     notifyListeners();
   }
 
@@ -189,9 +232,11 @@ class PosCart extends ChangeNotifier {
   void applyStoreSettings({
     required double taxRate,
     required double maxDiscountPercent,
+    int? cashRoundingMinor,
   }) {
     this.taxRate = taxRate;
     this.maxDiscountPercent = maxDiscountPercent;
+    if (cashRoundingMinor != null) this.cashRoundingMinor = cashRoundingMinor;
     notifyListeners();
   }
 
@@ -212,23 +257,29 @@ class PosCart extends ChangeNotifier {
 
   /// Loads a suspended invoice. Lines use the products' CURRENT data; lines
   /// whose product no longer exists are skipped and returned.
-  List<String> resume(Sale sale, List<Product> products) {
+  List<String> resume(
+    Sale sale,
+    List<Product> products, {
+    List<ProductPackage> packages = const [],
+  }) {
     final byId = {for (final p in products) p.id: p};
+    final pkgById = {for (final p in packages) p.packageId: p};
     _lines.clear();
     final missing = <String>[];
     for (final item in sale.items) {
       final p = item.productId == null ? null : byId['${item.productId}'];
-      if (p == null) {
-        missing.add(item.productName);
+      final pkg = item.packageId == null ? null : pkgById[item.packageId];
+      if (p == null || (item.packageId != null && (pkg == null || !pkg.active))) {
+        missing.add(item.packageName == null ? item.productName : '${item.productName} · ${item.packageName}');
       } else {
-        _lines.add(CartLine(p, item.quantity));
+        _lines.add(CartLine(p, item.quantity, package: pkg));
       }
     }
     _resumedSaleId = sale.saleId;
     _resumedInvoiceNumber = sale.invoiceNumber;
     _discountType = DiscountType.amount;
     _discountValue = sale.discount;
-    _savedLines = {for (final l in _lines) l.product.id: l.quantity};
+    _savedLines = {for (final l in _lines) l.key: l.quantity};
     _savedDiscountType = _discountType;
     _savedDiscountValue = _discountValue;
     notifyListeners();
@@ -238,7 +289,7 @@ class PosCart extends ChangeNotifier {
   /// The invoice as sent to the backend.
   SaleDraft toDraft({bool withPayment = false}) => SaleDraft(
     saleId: _resumedSaleId,
-    lines: {for (final l in _lines) l.product.id: l.quantity},
+    lines: {for (final l in _lines) l.key: l.quantity},
     discountType: _discountType,
     discountValue: _discountValue,
     paymentMethod: withPayment ? _paymentMethod : null,

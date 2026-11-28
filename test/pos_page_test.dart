@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/fake_product_backend.dart';
+import 'support/pos_checkout.dart';
 
 /// Shini (store 1): Milk ₪5 ×24 (id 1), Bread ₪2 ×3 (id 2), Eggs ₪15 ×0 (id 3).
 FakeProductBackend _backend() => FakeProductBackend()
@@ -49,7 +50,10 @@ void main() {
     expect(_text(tester, 'qty-1'), '2');
     expect(_text(tester, 'summaryItems'), '2');
     expect(_text(tester, 'summarySubtotal'), '₪ 12.00');
-    expect(_text(tester, 'summaryTax'), '₪ 1.92'); // 16%
+    // D5: no tax row on the checkout; the total still includes the 16% tax (1.92)
+    expect(find.byKey(const Key('summaryTax')), findsNothing);
+    expect(find.textContaining('Tax ('), findsNothing);
+    expect(_text(tester, 'summaryTaxIncluded'), 'Includes tax');
     expect(_text(tester, 'summaryTotal'), '₪ 13.92');
 
     await _tap(tester, 'inc-2');
@@ -110,7 +114,7 @@ void main() {
     await _tap(tester, 'posProduct-1');
     await _tap(tester, 'posProduct-1');
     await _tap(tester, 'pay-card');
-    await _tap(tester, 'completeSaleButton');
+    await completeSaleLikeACashier(tester);
 
     expect(backend.requests, contains('POST /api/sales'));
     final sale = backend.sales.single;
@@ -135,7 +139,7 @@ void main() {
     await _tap(tester, 'posProduct-2');
     await _tap(tester, 'posProduct-2');
     backend.rowById(2)!['quantity'] = 1; // another cashier sold some meanwhile
-    await _tap(tester, 'completeSaleButton');
+    await completeSaleLikeACashier(tester);
     expect(find.text('Not enough stock'), findsOneWidget);
     expect(find.textContaining('Only 1 left in stock'), findsOneWidget);
     expect(backend.sales, isEmpty);
@@ -157,7 +161,7 @@ void main() {
     expect(find.text('#INV-000001'), findsOneWidget);
     expect(_text(tester, 'qty-1'), '1');
 
-    await _tap(tester, 'completeSaleButton');
+    await completeSaleLikeACashier(tester);
     expect(backend.sales.single['status'], 'COMPLETED');
     expect(backend.sales.single['invoiceNumber'], 'INV-000001');
   });
@@ -224,7 +228,7 @@ void main() {
     await _openPos(tester, backend);
     await _tap(tester, 'posProduct-1');
     await _tap(tester, 'posProduct-1');
-    await _tap(tester, 'completeSaleButton');
+    await completeSaleLikeACashier(tester);
     await _tap(tester, 'receiptCloseButton');
     expect(backend.rowById(1)!['quantity'], 22);
 
@@ -251,13 +255,44 @@ void main() {
     expect(find.text('23 left'), findsOneWidget);
   });
 
+  for (final locale in const [Locale('en'), Locale('ar')]) {
+    testWidgets('approved cash refund policy [${locale.languageCode}]: drawer too low → clear message with both '
+        'amounts, nothing refunded; the retry keeps the same request key and succeeds after a cash-in', (tester) async {
+      final backend = _backend();
+      await _openPos(tester, backend, locale: locale);
+      await _tap(tester, 'posProduct-1');
+      await completeSaleLikeACashier(tester);
+      await _tap(tester, 'receiptCloseButton');
+      backend.refuseCashRefund = (available: '20.00', required: '5.80');
+      await _tap(tester, 'returnButton');
+      await tester.enterText(find.byKey(const Key('returnCodeField')), 'INV-000001');
+      await _tap(tester, 'returnFindButton');
+      await tester.enterText(find.byKey(const Key('returnReasonField')), 'Damaged');
+      await _tap(tester, 'confirmReturnButton');
+      final ar = locale.languageCode == 'ar';
+      expect(find.textContaining(ar ? 'لا يوجد نقد كافٍ في الدرج' : 'Not enough cash in the drawer'), findsOneWidget);
+      expect(find.textContaining('20.00'), findsWidgets);
+      expect(find.textContaining('5.80'), findsWidgets);
+      expect(find.textContaining(ar ? 'مدير المتجر' : 'Store Admin'), findsOneWidget);
+      expect(backend.returns, isEmpty);
+      // the Store Admin records a cash-in; the cashier presses again: the SAME request key is sent
+      backend.refuseCashRefund = null;
+      await _tap(tester, 'confirmReturnButton');
+      expect(backend.returns, hasLength(1));
+      expect(backend.returnRequestKeys, hasLength(2));
+      expect(backend.returnRequestKeys.first, isNotNull);
+      expect(backend.returnRequestKeys.first, backend.returnRequestKeys.last);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('return from an invoice with several products: the chosen (second) product is returned', (tester) async {
     final backend = _backend();
     await _openPos(tester, backend);
     await _tap(tester, 'posProduct-1');                 // Milk ×1   ₪5.00
     await _tap(tester, 'posProduct-2');
     await _tap(tester, 'posProduct-2');                 // Bread ×2  ₪4.00
-    await _tap(tester, 'completeSaleButton');           // total (9.00 + 16 %) = 10.44
+    await completeSaleLikeACashier(tester);           // total (9.00 + 16 %) = 10.44
     await _tap(tester, 'receiptCloseButton');
     expect(backend.rowById(1)!['quantity'], 23);
     expect(backend.rowById(2)!['quantity'], 1);
@@ -338,7 +373,7 @@ void main() {
       expect(find.byKey(const Key('minWidthScroll')), findsOneWidget);
       await _tap(tester, 'posProduct-1');
       expect(_text(tester, 'qty-1'), '1');
-      await _tap(tester, 'completeSaleButton');
+      await completeSaleLikeACashier(tester);
       expect(find.byKey(const Key('receiptDialog')), findsOneWidget);
       expect(backend.sales.single['status'], 'COMPLETED');
       expect(tester.takeException(), isNull);

@@ -28,6 +28,8 @@ class ProductDetailsApiTest extends ApiTestBase {
     void data() throws Exception {
         shini = setupStore("Shini Supermarket", "shini");
         neshan = setupStore("Neshan Market", "neshan");
+        openCashShifts(shini);
+        openCashShifts(neshan);
         milk = createProduct(shini.adminToken(), "Milk", "11111111", 5.00, 24);
         // purchase cost (Store Admin)
         mvc.perform(put("/api/products/" + milk).header("Authorization", bearer(shini.adminToken()))

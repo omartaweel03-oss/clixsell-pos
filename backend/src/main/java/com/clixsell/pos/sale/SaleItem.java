@@ -64,18 +64,55 @@ public class SaleItem {
     @Column(name = "unit_cost")
     private Double unitCost;
 
+    // ── V7, feature 6: piece / carton / box ──────────────────────────────────────
+    // A package line counts PACKAGES in quantity; stock moves quantity × unitsPerPackage
+    // base units. unit_price (and unit_cost) are per package, so line totals, revenue and
+    // profit need no special case. Name and size are a snapshot (fixed by the database).
+
+    @Column(name = "package_id")
+    private Long packageId;
+
+    @Column(name = "package_name")
+    private String packageName;
+
+    @Column(name = "units_per_package", nullable = false)
+    private int unitsPerPackage = 1;
+
+    @Column(name = "unit_price_minor")
+    private Long unitPriceMinor;
+
     protected SaleItem() {
     }
 
     static SaleItem of(Sale sale, Product product, int quantity) {
+        return of(sale, product, quantity, null);
+    }
+
+    static SaleItem of(Sale sale, Product product, int quantity, PackageSnapshot pkg) {
         SaleItem item = new SaleItem();
         item.sale = sale;
         item.product = product;
         item.productName = product.getName();
         item.barcode = product.getBarcode();
-        item.unitPrice = product.getSellingPrice();
+        item.unitPrice = pkg == null ? product.getSellingPrice() : pkg.price();
+        if (pkg != null) {
+            item.packageId = pkg.packageId();
+            item.packageName = pkg.name();
+            item.unitsPerPackage = pkg.unitsPerPackage();
+        }
+        item.unitPriceMinor = java.math.BigDecimal.valueOf(item.unitPrice).movePointRight(2)
+                .setScale(0, java.math.RoundingMode.HALF_UP).longValueExact();
         item.updateQuantity(quantity);
         return item;
+    }
+
+    public Long getPackageId() { return packageId; }
+    public String getPackageName() { return packageName; }
+    public int getUnitsPerPackage() { return unitsPerPackage; }
+
+    /** Base units (pieces) this line takes from stock. */
+    public int getBaseUnits() {
+        return quantity * unitsPerPackage;
     }
 
     /** Sets the quantity (1 – 10,000) and recalculates the line total. */
@@ -99,7 +136,10 @@ public class SaleItem {
 
     /** Copies the product's current purchase cost onto this line (at sale completion). */
     void recordUnitCost() {
-        this.unitCost = product == null ? null : product.getCostPrice();
+        // per sold unit of THIS line: a package costs its pieces
+        Double c = product == null ? null : product.getCostPrice();
+        this.unitCost = c == null ? null
+                : Money.round(Money.of(c).multiply(java.math.BigDecimal.valueOf(unitsPerPackage)));
     }
 
     public Double getUnitCost() {

@@ -1,5 +1,8 @@
 package com.clixsell.pos.sale;
 
+import com.clixsell.pos.cheque.ChequeService;
+import com.clixsell.pos.packaging.PackageController;
+import com.clixsell.pos.shift.ShiftService;
 import com.clixsell.pos.activity.ActivityEventType;
 import com.clixsell.pos.activity.ActivityLogService;
 import com.clixsell.pos.auth.CurrentUser;
@@ -42,21 +45,53 @@ public class SaleService {
     private final StoreRepository stores;
     private final UserRepository users;
     private final ActivityLogService activity;
+    private final ShiftService shifts;
+    private final PackageController.PackageService packages;
+    private final ChequeService cheques;
+    private final org.springframework.context.ApplicationEventPublisher events;
 
     public SaleService(SaleRepository sales, ProductRepository products, StoreRepository stores,
-                       UserRepository users, ActivityLogService activity) {
+                       UserRepository users, ActivityLogService activity, ShiftService shifts,
+                       PackageController.PackageService packages, ChequeService cheques,
+                       org.springframework.context.ApplicationEventPublisher events) {
         this.sales = sales;
         this.products = products;
         this.stores = stores;
         this.users = users;
         this.activity = activity;
+        this.shifts = shifts;
+        this.packages = packages;
+        this.cheques = cheques;
+        this.events = events;
     }
 
     /** Completes the current invoice (new or resumed): stock, payment and receipt. */
     public SaleResponse complete(CurrentUser user, SaleRequest request) {
         Sale sale = openSale(user, request);
-        sale.completeSale(request.paymentMethod());
+        int step = sale.getStore().getCashRoundingMinor();
+        BigDecimal change = cashChange(request, sale, step);
+        // feature 9: a cheque sale needs its cheque (checked before anything changes)
+        SaleRequest.Cheque cheque = null;
+        if (request.paymentMethod() == PaymentMethod.CHEQUE) {
+            cheque = cheques.validate(sale.getStore().getStoreId(), request.cheque(), sale.totalMinor());
+        } else if (request.cheque() != null) {
+            throw new ValidationException(Map.of("cheque", "Cheque details are only for a cheque payment"));
+        }
+        sale.prepareCashRounding(request.paymentMethod(), step);
+        if (request.saleId() != null) {
+            // A resumed invoice already exists: Hibernate writes INSERTs (the payment) before UPDATEs
+            // (the recalculated total), so the payment would briefly sit next to the OLD total. Write
+            // the new total first; V7 checks every payment against the invoice it pays.
+            sales.saveAndFlush(sale);
+        }
+        // the completing user's open cash shift (refused before any change when the store requires one)
+        Long shiftId = shifts.shiftForTill(user, true);
+        sale.completeSale(request.paymentMethod(), shiftId, step);
         Sale saved = sales.save(sale);
+        if (cheque != null) {
+            sales.flush(); // the sale and its payment exist; the cheque points to them
+            cheques.record(saved.getStore().getStoreId(), saved.getSaleId(), user.userId(), cheque);
+        }
         if (saved.getDiscount() > 0) {
             // The discount is calculated again from THIS request (openSale → calculateTotal),
             // so the user completing the sale is the one who applied the final discount.
@@ -73,7 +108,40 @@ public class SaleService {
             activity.record(user, ActivityEventType.DISCOUNT_APPLIED, "SALE", saved.getSaleId(),
                     saved.getInvoiceNumber(), d);
         }
-        return SaleResponse.from(saved);
+        // loyalty readiness (requirement 8): an integration point only; no listener exists yet
+        events.publishEvent(new SaleCompletedEvent(saved.getStore().getStoreId(), saved.getSaleId(), user.userId(),
+                saved.getPaymentMethod().name(), saved.totalMinor(), saved.payableMinor()));
+        SaleResponse response = SaleResponse.from(saved);
+        return change == null ? response
+                : response.withCash(request.cashReceived().doubleValue(), change.doubleValue());
+    }
+
+    /**
+     * Cash amount received (optional, CASH only): must cover the total the server calculated, with at
+     * most 2 decimals. Returns the change to give back, or null when no amount was sent. The payment
+     * itself is still recorded at the invoice total, so change is never revenue.
+     */
+    static BigDecimal cashChange(SaleRequest request, Sale sale) {
+        return cashChange(request, sale, 0);
+    }
+
+    /** As above, against the amount due after cash rounding (D4). */
+    static BigDecimal cashChange(SaleRequest request, Sale sale, int roundingStep) {
+        BigDecimal received = request.cashReceived();
+        if (received == null) return null;
+        if (request.paymentMethod() != PaymentMethod.CASH) {
+            throw new ValidationException(Map.of("cashReceived", "The amount received is only for cash payments"));
+        }
+        if (received.signum() <= 0 || received.stripTrailingZeros().scale() > 2) {
+            throw new ValidationException(Map.of("cashReceived", "Enter the amount received, with at most 2 decimals"));
+        }
+        BigDecimal total = BigDecimal.valueOf(sale.totalMinor() + Sale.cashRounding(sale.totalMinor(), roundingStep), 2);
+        if (received.compareTo(total) < 0) {
+            throw new ValidationException(Map.of("cashReceived", "The amount received is "
+                    + received.setScale(2, RoundingMode.HALF_UP).toPlainString() + "; still to pay: "
+                    + total.subtract(received).setScale(2, RoundingMode.HALF_UP).toPlainString()));
+        }
+        return received.subtract(total).setScale(2, RoundingMode.HALF_UP);
     }
 
     /** Suspends the current invoice (SR9). A resumed invoice keeps its number. */
@@ -149,7 +217,9 @@ public class SaleService {
             Product product = products.findByProductIdAndStore_StoreId(line.productId(), storeId)
                     .orElseThrow(() -> new NotFoundException("PRODUCT_NOT_FOUND",
                             "Product " + line.productId() + " is not available in this store"));
-            sale.addItem(product, line.quantity() == null ? 0 : line.quantity());
+            PackageSnapshot pkg = line.packageId() == null ? null
+                    : packages.forSale(storeId, line.productId(), line.packageId());
+            sale.addItem(product, line.quantity() == null ? 0 : line.quantity(), pkg);
         }
         sale.calculateTotal(request.discountType(), request.discountValue());
         return sale;
