@@ -1,5 +1,6 @@
 package com.clixsell.pos.sale;
 
+import com.clixsell.pos.cheque.ChequeService;
 import com.clixsell.pos.packaging.PackageController;
 import com.clixsell.pos.shift.ShiftService;
 import com.clixsell.pos.activity.ActivityEventType;
@@ -46,10 +47,13 @@ public class SaleService {
     private final ActivityLogService activity;
     private final ShiftService shifts;
     private final PackageController.PackageService packages;
+    private final ChequeService cheques;
+    private final org.springframework.context.ApplicationEventPublisher events;
 
     public SaleService(SaleRepository sales, ProductRepository products, StoreRepository stores,
                        UserRepository users, ActivityLogService activity, ShiftService shifts,
-                       PackageController.PackageService packages) {
+                       PackageController.PackageService packages, ChequeService cheques,
+                       org.springframework.context.ApplicationEventPublisher events) {
         this.sales = sales;
         this.products = products;
         this.stores = stores;
@@ -57,6 +61,8 @@ public class SaleService {
         this.activity = activity;
         this.shifts = shifts;
         this.packages = packages;
+        this.cheques = cheques;
+        this.events = events;
     }
 
     /** Completes the current invoice (new or resumed): stock, payment and receipt. */
@@ -64,6 +70,13 @@ public class SaleService {
         Sale sale = openSale(user, request);
         int step = sale.getStore().getCashRoundingMinor();
         BigDecimal change = cashChange(request, sale, step);
+        // feature 9: a cheque sale needs its cheque (checked before anything changes)
+        SaleRequest.Cheque cheque = null;
+        if (request.paymentMethod() == PaymentMethod.CHEQUE) {
+            cheque = cheques.validate(sale.getStore().getStoreId(), request.cheque(), sale.totalMinor());
+        } else if (request.cheque() != null) {
+            throw new ValidationException(Map.of("cheque", "Cheque details are only for a cheque payment"));
+        }
         sale.prepareCashRounding(request.paymentMethod(), step);
         if (request.saleId() != null) {
             // A resumed invoice already exists: Hibernate writes INSERTs (the payment) before UPDATEs
@@ -75,6 +88,10 @@ public class SaleService {
         Long shiftId = shifts.shiftForTill(user, true);
         sale.completeSale(request.paymentMethod(), shiftId, step);
         Sale saved = sales.save(sale);
+        if (cheque != null) {
+            sales.flush(); // the sale and its payment exist; the cheque points to them
+            cheques.record(saved.getStore().getStoreId(), saved.getSaleId(), user.userId(), cheque);
+        }
         if (saved.getDiscount() > 0) {
             // The discount is calculated again from THIS request (openSale → calculateTotal),
             // so the user completing the sale is the one who applied the final discount.
@@ -91,6 +108,9 @@ public class SaleService {
             activity.record(user, ActivityEventType.DISCOUNT_APPLIED, "SALE", saved.getSaleId(),
                     saved.getInvoiceNumber(), d);
         }
+        // loyalty readiness (requirement 8): an integration point only; no listener exists yet
+        events.publishEvent(new SaleCompletedEvent(saved.getStore().getStoreId(), saved.getSaleId(), user.userId(),
+                saved.getPaymentMethod().name(), saved.totalMinor(), saved.payableMinor()));
         SaleResponse response = SaleResponse.from(saved);
         return change == null ? response
                 : response.withCash(request.cashReceived().doubleValue(), change.doubleValue());

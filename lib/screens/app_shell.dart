@@ -30,6 +30,7 @@ import 'inventory/product_form_page.dart';
 import 'inventory/stock_alerts_page.dart';
 import 'purchasing/suppliers_page.dart';
 import 'shifts/shifts_page.dart';
+import 'cheques/cheques_page.dart';
 import 'purchasing/purchase_order_details_page.dart';
 import 'purchasing/purchase_order_form_page.dart';
 import 'purchasing/purchase_orders_page.dart';
@@ -39,6 +40,7 @@ import '../services/product_file_client.dart';
 import '../services/purchase_api_client.dart';
 import '../services/shift_api_client.dart';
 import '../services/favorite_api_client.dart';
+import '../services/cheque_api_client.dart';
 import '../services/package_api_client.dart';
 import '../services/supplier_api_client.dart';
 
@@ -426,6 +428,11 @@ class _AppShellState extends State<AppShell> {
           favorites: FavoriteApiClient(widget.http),
           packages: PackageApiClient(widget.http),
           message: message,
+        );
+      case SidebarDestination.cheques:
+        return ChequesPage(
+          key: const ValueKey('cheques'),
+          api: ChequeApiClient(widget.http),
         );
       case SidebarDestination.shifts:
         return ShiftsPage(

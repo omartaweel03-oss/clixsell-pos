@@ -16,6 +16,7 @@ String paymentLabel(PaymentMethod m, AppStrings s) => switch (m) {
   PaymentMethod.card => s.payCard,
   PaymentMethod.wallet => s.payWallet,
   PaymentMethod.bankTransfer => s.payBank,
+  PaymentMethod.cheque => s.isArabic ? 'شيك' : 'Cheque',
 };
 
 IconData paymentIcon(PaymentMethod m) => switch (m) {
@@ -23,6 +24,7 @@ IconData paymentIcon(PaymentMethod m) => switch (m) {
   PaymentMethod.card => Icons.credit_card_rounded,
   PaymentMethod.wallet => Icons.account_balance_wallet_outlined,
   PaymentMethod.bankTransfer => Icons.account_balance_outlined,
+  PaymentMethod.cheque => Icons.receipt_long_outlined,
 };
 
 /// White rounded panel with a bold title, used for the three POS columns.

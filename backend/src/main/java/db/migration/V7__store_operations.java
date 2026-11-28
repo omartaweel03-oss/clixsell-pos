@@ -517,6 +517,7 @@ public class V7__store_operations extends BaseJavaMigration {
                    > (SELECT amount_minor FROM cheques WHERE cheque_id = NEW.cheque_id), 1)
             BEGIN SELECT RAISE(ABORT, 'CHEQUE_REFUND_BAD_INSERT'); END""",
             // decided once, by a Store Admin; PAID only once the cheque is CLEARED; a CASH payout needs
+            // (null-safe IS: a CANCELLED decision has no paid_method, and NULL must not block it)
             // its movement (written first, same transaction); a bank transfer has no drawer movement
             """
             CREATE TRIGGER trg_cheque_refund_decide BEFORE UPDATE ON cheque_refunds
@@ -526,7 +527,7 @@ public class V7__store_operations extends BaseJavaMigration {
                 OR NEW.store_id IS NOT OLD.store_id OR NEW.version IS NOT OLD.version + 1
                 OR %s IS NOT 'STORE_ADMIN'
                 OR (NEW.status = 'PAID' AND (SELECT status FROM cheques WHERE cheque_id = NEW.cheque_id) IS NOT 'CLEARED')
-                OR (NEW.paid_method = 'CASH' AND NOT EXISTS (SELECT 1 FROM cash_movements m
+                OR (NEW.paid_method IS 'CASH' AND NOT EXISTS (SELECT 1 FROM cash_movements m
                     WHERE m.movement_id = NEW.payout_movement_id AND m.cheque_refund_id = NEW.cheque_refund_id
                       AND m.amount_minor = NEW.amount_minor AND m.created_by = NEW.decided_by))
                 OR (NEW.paid_method IS NOT 'CASH' AND EXISTS (SELECT 1 FROM cash_movements m

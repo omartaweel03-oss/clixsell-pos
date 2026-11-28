@@ -19,6 +19,7 @@ import '../../services/package_api_client.dart';
 import 'package_choice_dialog.dart';
 import '../../widgets/page_header.dart';
 import 'cash_payment_dialog.dart';
+import 'cheque_payment_dialog.dart';
 import 'pos_dialogs.dart';
 import 'pos_resume.dart';
 import 'pos_widgets.dart';
@@ -281,6 +282,17 @@ class _PosPageState extends State<PosPage> {
       }
       if (!mounted || received == null) return;
       draft = draft.withCashReceived(received);
+    } else if (cart.paymentMethod == PaymentMethod.cheque) {
+      // feature 9: the cheque handed over; the backend checks it and records it RECEIVED
+      _askingCash = true;
+      final Map<String, dynamic>? details;
+      try {
+        details = await ChequePaymentDialog.show(context, cart.totalCents);
+      } finally {
+        _askingCash = false;
+      }
+      if (!mounted || details == null) return;
+      draft = draft.withCheque(details);
     }
     setState(() => _busy = true);
     try {

@@ -19,12 +19,23 @@ public record SaleRequest(
         PaymentMethod paymentMethod,
         // Cash only, optional: what the customer handed over. Checked against the total the
         // server calculates; the change is returned, never recorded as revenue.
-        BigDecimal cashReceived
+        BigDecimal cashReceived,
+        // CHEQUE only, required then: the cheque handed over (its amount must be the invoice total)
+        Cheque cheque
 ) {
+    /** The cheque details (feature 9). amount is optional; when sent it must equal the server's total. */
+    public record Cheque(String number, String bank, BigDecimal amount, java.time.LocalDate dueDate, String notes) {
+    }
+
+    public SaleRequest(Long saleId, List<Line> items, DiscountType discountType, Double discountValue,
+                       PaymentMethod paymentMethod, BigDecimal cashReceived) {
+        this(saleId, items, discountType, discountValue, paymentMethod, cashReceived, null);
+    }
+
     /** The earlier form without the cash amount (suspend / existing callers). */
     public SaleRequest(Long saleId, List<Line> items, DiscountType discountType, Double discountValue,
                        PaymentMethod paymentMethod) {
-        this(saleId, items, discountType, discountValue, paymentMethod, null);
+        this(saleId, items, discountType, discountValue, paymentMethod, null, null);
     }
 
     /** packageId: optional carton / box of the product (feature 6); null = pieces. */

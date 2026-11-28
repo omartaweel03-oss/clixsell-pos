@@ -5,6 +5,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../../l10n/app_strings.dart';
 import '../../l10n/checkout_strings.dart';
 import '../../l10n/shift_strings.dart';
+import '../../l10n/cheque_strings.dart';
 import '../../models/sale.dart';
 import '../../services/api_http.dart';
 import '../../services/sales_api_client.dart';
@@ -18,7 +19,9 @@ String describeApiError(ApiException e, AppStrings s) => e.isNetworkError
     ? s.networkError
     : e.isForbidden
     ? s.notAllowed
-    : ShiftStrings.forLanguage(arabic: s.isArabic).forCode(e.code) ?? e.message;
+    : ShiftStrings.forLanguage(arabic: s.isArabic).forCode(e.code) ??
+          ChequeStrings.forLanguage(arabic: s.isArabic).forCode(e.code) ??
+          e.message;
 
 String _dateTime(BuildContext context, DateTime d) {
   final l = MaterialLocalizations.of(context);

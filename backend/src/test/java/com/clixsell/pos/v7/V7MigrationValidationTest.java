@@ -583,6 +583,20 @@ public class V7MigrationValidationTest {
             sql(c, "UPDATE cheque_refunds SET status = 'PAID', paid_method = 'BANK_TRANSFER', decided_by = 4, decided_at = 'd', "
                     + "version = version + 1 WHERE cheque_refund_id = " + cr2);
             assertThat(n(c, "SELECT COUNT(*) FROM cash_movements WHERE cheque_refund_id = " + cr2)).isZero();
+            // a PENDING refund can be CANCELLED with a reason (no paid_method: NULL must not block it —
+            // found by the API tests: the first V7 draft refused every cancellation)
+            long r3 = chequeReturn(c, 40, 100);
+            sql(c, "INSERT INTO cheque_refunds (store_id, sale_id, return_id, cheque_id, amount_minor, status, created_at) VALUES "
+                    + "(1, 40, " + r3 + ", " + chq + ", 100, 'PENDING', 'a')");
+            long cr3 = n(c, "SELECT cheque_refund_id FROM cheque_refunds WHERE return_id = " + r3);
+            assertThatThrownBy(() -> sql(c, "UPDATE cheque_refunds SET status = 'CANCELLED', decided_by = 4, decided_at = 'd', "
+                    + "version = version + 1 WHERE cheque_refund_id = " + cr3)).hasMessageContaining("CHECK"); // a reason is required
+            sql(c, "UPDATE cheque_refunds SET status = 'CANCELLED', decided_by = 4, decided_at = 'd', reason = 'Goods kept', "
+                    + "version = version + 1 WHERE cheque_refund_id = " + cr3);
+            assertThatThrownBy(() -> sql(c, "UPDATE cheque_refunds SET status = 'CANCELLED', decided_by = 5, decided_at = 'd', "
+                    + "reason = 'Not me', version = version + 1 WHERE cheque_refund_id = " + cr3))
+                    .hasMessageContaining("CHEQUE_REFUND_BAD_DECISION"); // decided once
+            assertThat(n(c, "SELECT COUNT(*) FROM cash_movements WHERE cheque_refund_id = " + cr3)).isZero();
             // the drawer: 500.00 opening − 5.00 cash payout (the bank transfer is not in the drawer)
             assertThat(one(c, EXPECTED.formatted(1))).isEqualTo("49500");
         }

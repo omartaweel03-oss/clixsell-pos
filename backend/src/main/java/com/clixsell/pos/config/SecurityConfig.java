@@ -100,6 +100,8 @@ public class SecurityConfig {
                         // POS favorites: every store user reads them; only the Store Admin changes them.
                         .requestMatchers(HttpMethod.GET, "/api/favorites").hasAnyRole("STORE_ADMIN", "CASHIER")
                         .requestMatchers("/api/favorites").hasRole("STORE_ADMIN")
+                        // Cheques (feature 9): Store Admin only.
+                        .requestMatchers("/api/cheques", "/api/cheques/**", "/api/cheque-refunds/**").hasRole("STORE_ADMIN")
                         // Cash drawers and shifts (V7): store users; admin-only actions are checked by ShiftService.
                         .requestMatchers("/api/drawers", "/api/drawers/**", "/api/shifts", "/api/shifts/**")
                         .hasAnyRole("STORE_ADMIN", "CASHIER")

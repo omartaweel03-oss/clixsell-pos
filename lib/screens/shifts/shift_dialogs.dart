@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../l10n/app_strings.dart';
 import '../../l10n/shift_strings.dart';
+import '../../l10n/cheque_strings.dart';
 import '../../models/cash_shift.dart';
 import '../../services/api_http.dart';
 import '../../services/shift_api_client.dart';
@@ -28,7 +29,7 @@ String shiftError(BuildContext context, Object e) {
   if (e is! ApiException) return e.toString();
   if (e.isNetworkError) return s.networkError;
   if (e.isForbidden) return s.notAllowed;
-  final byCode = ShiftStrings.of(context).forCode(e.code);
+  final byCode = ShiftStrings.of(context).forCode(e.code) ?? ChequeStrings.of(context).forCode(e.code);
   if (byCode != null) return byCode;
   if (e.fieldErrors.isNotEmpty) return e.fieldErrors.values.first;
   return e.message;

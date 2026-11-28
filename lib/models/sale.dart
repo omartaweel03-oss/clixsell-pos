@@ -3,7 +3,9 @@ enum PaymentMethod {
   cash('CASH'),
   card('CARD'),
   wallet('WALLET'),
-  bankTransfer('BANK_TRANSFER');
+  bankTransfer('BANK_TRANSFER'),
+  // Feature 9: recorded with its cheque; managed by the Store Admin
+  cheque('CHEQUE');
 
   const PaymentMethod(this.apiName);
 

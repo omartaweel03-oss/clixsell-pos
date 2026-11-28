@@ -12,6 +12,7 @@ class SaleDraft {
     this.discountValue = 0,
     this.paymentMethod,
     this.cashReceivedCents,
+    this.cheque,
   });
 
   /// line key → quantity. The key is the product id (pieces), or "productId@packageId" for
@@ -26,6 +27,20 @@ class SaleDraft {
   /// checks it against its own total and answers with the change.
   final int? cashReceivedCents;
 
+  /// CHEQUE only (feature 9): number, bank, amount, dueDate (yyyy-MM-dd), notes.
+  final Map<String, dynamic>? cheque;
+
+  /// The same draft with the cheque handed over.
+  SaleDraft withCheque(Map<String, dynamic> details) => SaleDraft(
+    lines: lines,
+    saleId: saleId,
+    discountType: discountType,
+    discountValue: discountValue,
+    paymentMethod: paymentMethod,
+    cashReceivedCents: cashReceivedCents,
+    cheque: details,
+  );
+
   /// The same draft with the cash amount received.
   SaleDraft withCashReceived(int cents) => SaleDraft(
     lines: lines,
@@ -34,6 +49,7 @@ class SaleDraft {
     discountValue: discountValue,
     paymentMethod: paymentMethod,
     cashReceivedCents: cents,
+    cheque: cheque,
   );
 
   Map<String, dynamic> toJson() => {
@@ -51,6 +67,7 @@ class SaleDraft {
     'paymentMethod': paymentMethod?.apiName,
     // cents / 100 prints the exact decimal (e.g. 4010 -> 40.1)
     if (cashReceivedCents != null) 'cashReceived': cashReceivedCents! / 100,
+    if (cheque != null) 'cheque': cheque,
   };
 }
 

@@ -39,7 +39,13 @@ public final class DatabaseRules {
             Map.entry("BARCODE_USED_BY_PACKAGE", "A package of this store already uses this barcode"),
             Map.entry("BARCODE_USED_BY_PRODUCT", "A product of this store already uses this barcode"),
             Map.entry("PACKAGE_IDENTITY_FIXED", "A package's size cannot change; add a new package instead"),
-            Map.entry("SALE_ITEM_PACKAGE_SNAPSHOT", "The package on this invoice line is not consistent"));
+            Map.entry("SALE_ITEM_PACKAGE_SNAPSHOT", "The package on this invoice line is not consistent"),
+            Map.entry("CHEQUE_EVENT_INVALID", "This cheque status change is not allowed"),
+            Map.entry("CHEQUE_UPDATE_WITHOUT_EVENT", "A cheque changes only through a recorded status change"),
+            Map.entry("CHEQUE_REFUND_BAD_DECISION", "This refund decision is not allowed (a refund is paid only once the cheque cleared)"),
+            Map.entry("CHEQUE_RETURN_NEEDS_STORE_ADMIN", "This invoice was paid by cheque: its return is handled by the Store Admin"),
+            Map.entry("CHEQUE_BAD_INSERT", "The cheque does not match its payment"),
+            Map.entry("CHEQUE_REFUND_BAD_INSERT", "The refund is more than the cheque"));
 
     /** The rule code inside a database error, or null when it is not a rule refusal. */
     public static String code(Throwable e) {

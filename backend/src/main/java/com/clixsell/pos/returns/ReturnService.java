@@ -5,6 +5,7 @@ import com.clixsell.pos.common.NotFoundException;
 import com.clixsell.pos.common.ValidationException;
 import com.clixsell.pos.sale.PaymentMethod;
 import com.clixsell.pos.sale.Sale;
+import com.clixsell.pos.cheque.ChequeService;
 import com.clixsell.pos.shift.ShiftService;
 import com.clixsell.pos.sale.SaleItem;
 import com.clixsell.pos.sale.SaleRepository;
@@ -32,14 +33,17 @@ public class ReturnService {
     private final UserRepository users;
     private final int maxDays;
     private final ShiftService shifts;
+    private final ChequeService cheques;
 
     public ReturnService(ReturnRepository returns, SaleRepository sales, UserRepository users,
-                         @Value("${clixsell.returns.max-days:14}") int maxDays, ShiftService shifts) {
+                         @Value("${clixsell.returns.max-days:14}") int maxDays, ShiftService shifts,
+                         ChequeService cheques) {
         this.returns = returns;
         this.sales = sales;
         this.users = users;
         this.maxDays = maxDays;
         this.shifts = shifts;
+        this.cheques = cheques;
     }
 
     public ReturnResponse processReturn(CurrentUser user, ReturnRequest request) {
@@ -56,6 +60,8 @@ public class ReturnService {
         User cashier = users.findById(user.userId()).orElseThrow();
         // the refund goes into the open shift of the user who makes it (a cash refund needs one when
         // the store requires shifts); an old sale's closed shift is never touched
+        boolean chequeSale = sale.getPaymentMethod() == PaymentMethod.CHEQUE;
+        if (chequeSale) cheques.requireReturnAllowed(user, sale.getSaleId()); // D6, before any change
         boolean cash = sale.getPaymentMethod() == PaymentMethod.CASH;
         Long shiftId = shifts.shiftForTill(user, cash);
         BigDecimal forLine = BigDecimal.valueOf(returns.refundedForLine(item.getSaleItemId())).setScale(2, RoundingMode.HALF_UP);
@@ -66,6 +72,11 @@ public class ReturnService {
         ReturnProduct saved = returns.save(ReturnProduct.process(sale, item, request.quantity(),
                 request.reason(), cashier, LocalDateTime.now(), maxDays, forLine, forSale, shiftId,
                 sale.getStore().getCashRoundingMinor(), lastReturn));
+        if (chequeSale) {
+            // D6: never automatic cash — what is owed back waits for the Store Admin's decision
+            returns.flush();
+            cheques.owe(storeId, sale.getSaleId(), saved.getReturnId(), saved.getRefundMinor());
+        }
         return ReturnResponse.from(saved);
     }
 }
