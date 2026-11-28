@@ -294,7 +294,6 @@ public class V7ProposalValidationTest {
                             + "VALUES (30, 'CASH', 20.00, 'PAID', 'a', 5000, 3000)");
             assertThatThrownBy(() -> sql(c, "INSERT INTO payments (sale_id, payment_method, amount, payment_status, paid_at) "
                     + "VALUES (30, 'CASH', 20.00, 'PAID', 'a')")).hasMessageContaining("UNIQUE"); // one per sale
-            // rounding on a card sale, wrong amount, change that does not add up, unknown method
             sql(c, SALE + "(31, 1, 5, 'INV-000031', 'COMPLETED', 17.22, 0, 16, 2.75, 19.97, 'a', 'a', 'a', NULL, 3)");
             assertThatThrownBy(() -> sql(c, "INSERT INTO payments (sale_id, payment_method, amount, payment_status, paid_at) "
                     + "VALUES (31, 'CARD', 20.00, 'PAID', 'a')")).hasMessageContaining("PAYMENT_AMOUNT_MISMATCH");
@@ -321,30 +320,32 @@ public class V7ProposalValidationTest {
             assertThatThrownBy(() -> sql(c, cheque(pay, 32, "100", "Bank of Palestine", 1160, "CLEARED")))
                     .hasMessageContaining("CHEQUE_BAD_INSERT"); // never cleared at sale time
             assertThatThrownBy(() -> sql(c, cheque(pay, 32, "100", "Bank", 1160, "RECEIVED").replace("'2026-12-31'", "'31/12/2026'")))
-                    .hasMessageContaining("CHECK"); // due date must be a real ISO date
+                    .hasMessageContaining("CHECK");
             sql(c, cheque(pay, 32, "100", "Bank of Palestine", 1160, "RECEIVED"));
             sql(c, SALE + "(33, 1, 5, 'INV-000033', 'COMPLETED', 10, 0, 16, 1.6, 11.6, 'a', 'a', 'a', NULL, 0)",
                     "INSERT INTO payments (sale_id, payment_method, amount, payment_status, paid_at) VALUES (33, 'CHEQUE', 11.6, 'PAID', 'a')");
             long pay2 = n(c, "SELECT payment_id FROM payments WHERE sale_id = 33");
             assertThatThrownBy(() -> sql(c, cheque(pay2, 33, "100", "BANK OF PALESTINE", 1160, "RECEIVED")))
                     .hasMessageContaining("UNIQUE"); // same cheque twice
+            // a suspended sale cannot carry a cheque
+            sql(c, "INSERT INTO sales (sale_id, store_id, cashier_id, invoice_number, status, subtotal, discount, tax_rate, tax, "
+                    + "total, created_at, updated_at) VALUES (34, 1, 5, 'INV-000034', 'SUSPENDED', 10, 0, 0, 0, 10, 'a', 'a')");
+            assertThatThrownBy(() -> sql(c, cheque(pay2, 34, "101", "Bank", 1000, "RECEIVED"))).hasMessageContaining("CHEQUE_BAD_INSERT");
 
-            // status: RECEIVED → DEPOSITED → CLEARED; no skipping, no going back, never deleted
             long chq = n(c, "SELECT cheque_id FROM cheques WHERE sale_id = 32");
-            assertThatThrownBy(() -> sql(c, status(chq, "CLEARED", 1))).hasMessageContaining("CHEQUE_BAD_TRANSITION");
-            sql(c, status(chq, "DEPOSITED", 1), status(chq, "CLEARED", 2));
-            assertThatThrownBy(() -> sql(c, status(chq, "RECEIVED", 3))).hasMessageContaining("CHEQUE_BAD_TRANSITION");
+            assertThatThrownBy(() -> sql(c, event(chq, "RECEIVED", "CLEARED", 1, 4, "2026-11-28T10:00", null)))
+                    .hasMessageContaining("CHEQUE_EVENT_INVALID"); // no skipping
+            sql(c, event(chq, "RECEIVED", "DEPOSITED", 1, 4, "2026-11-28T10:00", null),
+                    event(chq, "DEPOSITED", "CLEARED", 2, 4, "2026-11-29T10:00", null));
+            assertThat(one(c, "SELECT status || '/' || version FROM cheques WHERE cheque_id = " + chq)).isEqualTo("CLEARED/2");
+            assertThatThrownBy(() -> sql(c, event(chq, "CLEARED", "RECEIVED", 3, 4, "2026-11-30T10:00", null)))
+                    .hasMessageContaining("CHEQUE_EVENT_INVALID"); // CLEARED is final
             assertThatThrownBy(() -> sql(c, "DELETE FROM cheques WHERE cheque_id = " + chq)).hasMessageContaining("CHEQUE_NO_DELETE");
-            // history: status changes by a Store Admin only; append only
-            assertThatThrownBy(() -> sql(c, "INSERT INTO cheque_events (cheque_id, store_id, from_status, to_status, user_id, created_at) "
-                    + "VALUES (" + chq + ", 1, 'RECEIVED', 'DEPOSITED', 5, 'a')")).hasMessageContaining("CHEQUE_ACTOR_NOT_STORE_ADMIN");
-            sql(c, "INSERT INTO cheque_events (cheque_id, store_id, from_status, to_status, user_id, created_at) "
-                    + "VALUES (" + chq + ", 1, NULL, 'RECEIVED', 5, 'a'), (" + chq + ", 1, 'RECEIVED', 'DEPOSITED', 4, 'b')");
-            assertThatThrownBy(() -> sql(c, "UPDATE cheque_events SET note = 'x'")).hasMessageContaining("APPEND_ONLY");
             // another store cannot point at this store's sale (composite key)
             assertThatThrownBy(() -> sql(c, "INSERT INTO cheques (store_id, sale_id, payment_id, cheque_number, bank_name, "
                     + "amount_minor, due_date, status, created_by, created_at, updated_at) VALUES (2, 33, " + pay2
-                    + ", '7', 'Bank', 1160, '2026-12-31', 'RECEIVED', 6, 'a', 'a')")).hasMessageContaining("FOREIGN KEY");
+                    + ", '7', 'Bank', 1160, '2026-12-31', 'RECEIVED', 6, '2026-11-28T09:00', '2026-11-28T09:00')"))
+                    .hasMessageContaining("FOREIGN KEY");
         }
     }
 
@@ -354,54 +355,336 @@ public class V7ProposalValidationTest {
                 + "', " + amountMinor + ", '2026-12-31', '" + status + "', 5, '2026-11-28T09:00:00', '2026-11-28T09:00:00')";
     }
 
-    private static String status(long chequeId, String s, int version) {
-        return "UPDATE cheques SET status = '" + s + "', version = " + version + ", updated_at = 'x' WHERE cheque_id = " + chequeId;
+    /** A status change of a cheque: ONLY by recording its event (the database applies it). */
+    private static String event(long chequeId, String from, String to, int toVersion, int userId, String at, String note) {
+        return "INSERT INTO cheque_events (cheque_id, store_id, from_status, to_status, to_version, user_id, created_at, note) "
+                + "VALUES (" + chequeId + ", 1, " + (from == null ? "NULL" : "'" + from + "'") + ", '" + to + "', " + toVersion
+                + ", " + userId + ", '" + at + "', " + (note == null ? "NULL" : "'" + note + "'") + ")";
     }
 
+    /** A completed store-1 sale of 2 × Milk paid by CHEQUE for totalMinor; returns the cheque id. */
+    private static long chequeSale(Connection c, int saleId, long totalMinor, String number) throws SQLException {
+        double total = totalMinor / 100.0;
+        sql(c, SALE + "(" + saleId + ", 1, 5, 'INV-0000" + saleId + "', 'COMPLETED', " + total + ", 0, 0, 0, " + total
+                        + ", 'a', 'a', 'a', NULL, 0)",
+                "INSERT INTO sale_items (sale_item_id, sale_id, product_id, product_name, barcode, quantity, unit_price, line_total) "
+                        + "VALUES (" + saleId + ", " + saleId + ", 2, 'Milk', '22222222', 2, " + (total / 2) + ", " + total + ")",
+                "INSERT INTO payments (sale_id, payment_method, amount, payment_status, paid_at) VALUES (" + saleId
+                        + ", 'CHEQUE', " + total + ", 'PAID', 'a')");
+        long pay = n(c, "SELECT payment_id FROM payments WHERE sale_id = " + saleId);
+        sql(c, cheque(pay, saleId, number, "Arab Bank", totalMinor, "RECEIVED"));
+        return n(c, "SELECT cheque_id FROM cheques WHERE sale_id = " + saleId);
+    }
+
+    /** A Store Admin return of 1 unit of a cheque sale (refund owed, no cash now); returns the return id. */
+    private static long chequeReturn(Connection c, int saleId, long refundMinor) throws SQLException {
+        sql(c, "INSERT INTO returns (store_id, sale_id, sale_item_id, product_id, cashier_id, quantity, reason, refund_amount, "
+                + "refund_method, return_date, refund_minor) VALUES (1, " + saleId + ", " + saleId + ", 2, 4, 1, 'Damaged', "
+                + (refundMinor / 100.0) + ", 'CHEQUE', 'a', " + refundMinor + ")");
+        return n(c, "SELECT max(return_id) FROM returns");
+    }
+
+    private static void clear(Connection c, long chq) throws SQLException {
+        sql(c, event(chq, "RECEIVED", "DEPOSITED", 1, 4, "2026-11-28T10:00", null),
+                event(chq, "DEPOSITED", "CLEARED", 2, 4, "2026-11-29T10:00", null));
+    }
+
+    private static void openShift(Connection c) throws SQLException {
+        sql(c, "INSERT INTO cash_drawers (store_id, name, created_at) VALUES (1, 'Main', 'a')",
+                "INSERT INTO cash_shifts (store_id, drawer_id, cashier_id, status, opened_at, opening_cash_minor) "
+                        + "VALUES (1, 1, 5, 'OPEN', 'a', 50000)");
+    }
+
+    // ── Reported defect 3: every committed cheque status change has its exact audit event ──
+
     @Test
-    void chequeReturns_storeAdminOnly_refundPaidOnlyAfterClearing_neverCashAtReturnTime() throws Exception {
+    void defect3_chequeStatus_onlyThroughItsEvent_completeAccurateHistory() throws Exception {
         fillV6();
         migrate();
         try (Connection c = open()) {
-            sql(c, SALE + "(40, 1, 5, 'INV-000040', 'COMPLETED', 10, 0, 0, 0, 10, 'a', 'a', 'a', NULL, 0)",
-                    "INSERT INTO sale_items (sale_item_id, sale_id, product_id, product_name, barcode, quantity, unit_price, line_total) "
-                            + "VALUES (40, 40, 2, 'Milk', '22222222', 2, 5, 10)",
-                    "INSERT INTO payments (sale_id, payment_method, amount, payment_status, paid_at) VALUES (40, 'CHEQUE', 10, 'PAID', 'a')");
-            long pay = n(c, "SELECT payment_id FROM payments WHERE sale_id = 40");
-            sql(c, cheque(pay, 40, "555", "Arab Bank", 1000, "RECEIVED"));
-            long chq = n(c, "SELECT cheque_id FROM cheques WHERE sale_id = 40");
-            String ret = "INSERT INTO returns (store_id, sale_id, sale_item_id, product_id, cashier_id, quantity, reason, "
-                    + "refund_amount, refund_method, return_date, refund_minor) VALUES (1, 40, 40, 2, %d, 1, 'Damaged', 5, '%s', 'a', 500)";
-            // a cashier cannot do it; nobody can pay cash out at return time for a cheque sale
-            assertThatThrownBy(() -> sql(c, ret.formatted(5, "CHEQUE"))).hasMessageContaining("CHEQUE_RETURN_NEEDS_STORE_ADMIN");
-            assertThatThrownBy(() -> sql(c, ret.formatted(4, "CASH"))).hasMessageContaining("CHEQUE_RETURN_NEEDS_STORE_ADMIN");
-            sql(c, ret.formatted(4, "CHEQUE"));
-            long retId = n(c, "SELECT max(return_id) FROM returns");
-            sql(c, "INSERT INTO cheque_refunds (store_id, return_id, cheque_id, amount_minor, status, created_at) "
-                    + "VALUES (1, " + retId + ", " + chq + ", 500, 'PENDING', 'a')");
-            long cr = n(c, "SELECT cheque_refund_id FROM cheque_refunds");
-            String pay500 = "UPDATE cheque_refunds SET status = 'PAID', paid_method = 'CASH', decided_by = %d, decided_at = 'b', "
-                    + "version = version + 1 WHERE cheque_refund_id = " + cr;
-            // not cleared yet → cannot be paid; a cashier cannot decide
-            assertThatThrownBy(() -> sql(c, pay500.formatted(4))).hasMessageContaining("CHEQUE_REFUND_BAD_DECISION");
-            sql(c, status(chq, "DEPOSITED", 1), status(chq, "CLEARED", 2));
-            assertThatThrownBy(() -> sql(c, pay500.formatted(5))).hasMessageContaining("CHEQUE_REFUND_BAD_DECISION");
-            sql(c, pay500.formatted(4));
-            assertThatThrownBy(() -> sql(c, "UPDATE cheque_refunds SET status = 'CANCELLED', paid_method = NULL, reason = 'again', "
-                    + "version = version + 1 WHERE cheque_refund_id = " + cr)).hasMessageContaining("CHEQUE_REFUND_BAD_DECISION");
-            // the cash leaves the drawer only as a recorded movement in an OPEN shift, by a Store Admin
-            sql(c, "INSERT INTO cash_drawers (store_id, name, created_at) VALUES (1, 'Main', 'a')",
-                    "INSERT INTO cash_shifts (store_id, drawer_id, cashier_id, status, opened_at, opening_cash_minor) "
-                            + "VALUES (1, 1, 5, 'OPEN', 'a', 50000)");
-            sql(c, "INSERT INTO cash_movements (store_id, shift_id, type, amount_minor, reason, cheque_refund_id, created_by, "
-                    + "created_at, request_key) VALUES (1, 1, 'CHEQUE_REFUND_OUT', 500, 'Refund INV-000040', " + cr + ", 4, 'c', 'req-00000001')");
-            assertThatThrownBy(() -> sql(c, "INSERT INTO cash_movements (store_id, shift_id, type, amount_minor, reason, "
-                    + "cheque_refund_id, created_by, created_at, request_key) VALUES (1, 1, 'CHEQUE_REFUND_OUT', 500, 'Twice', "
-                    + cr + ", 4, 'c', 'req-00000002')")).hasMessageContaining("UNIQUE"); // no double refund
+            long chq = chequeSale(c, 40, 1000, "555");
+            // the RECEIVED event was written by the database with the cheque: actor, store, time, version 0
+            assertThat(one(c, "SELECT coalesce(from_status, 'null') || '>' || to_status || '/' || to_version || '/' || user_id "
+                    + "|| '/' || store_id || '/' || created_at FROM cheque_events WHERE cheque_id = " + chq))
+                    .isEqualTo("null>RECEIVED/0/5/1/2026-11-28T09:00:00");
+            // BEFORE the fix these succeeded: a transition with no event at all
+            assertThatThrownBy(() -> sql(c, "UPDATE cheques SET status = 'DEPOSITED', version = 1, updated_at = 'b' WHERE cheque_id = " + chq))
+                    .hasMessageContaining("CHEQUE_UPDATE_WITHOUT_EVENT");
+            assertThatThrownBy(() -> sql(c, "UPDATE cheques SET status = 'CLEARED', version = 1, updated_at = 'c' WHERE cheque_id = " + chq))
+                    .hasMessageContaining("CHEQUE_UPDATE_WITHOUT_EVENT");
+            assertThatThrownBy(() -> sql(c, "UPDATE cheques SET status = 'CLEARED', version = 2, updated_at = 'c' WHERE cheque_id = " + chq))
+                    .hasMessageContaining("CHEQUE_IDENTITY"); // version jump
+            // forged / wrong events are refused
+            assertThatThrownBy(() -> sql(c, event(chq, null, "RECEIVED", 0, 5, "2026-11-28T09:00:00", null)))
+                    .hasMessageContaining("UNIQUE"); // a second "initial" event
+            assertThatThrownBy(() -> sql(c, event(chq, "RECEIVED", "DEPOSITED", 1, 5, "2026-11-28T10:00", null)))
+                    .hasMessageContaining("CHEQUE_EVENT_INVALID"); // a cashier
+            assertThatThrownBy(() -> sql(c, event(chq, "DEPOSITED", "CLEARED", 1, 4, "2026-11-28T10:00", null)))
+                    .hasMessageContaining("CHEQUE_EVENT_INVALID"); // wrong previous status
+            assertThatThrownBy(() -> sql(c, event(chq, "RECEIVED", "DEPOSITED", 5, 4, "2026-11-28T10:00", null)))
+                    .hasMessageContaining("CHEQUE_EVENT_INVALID"); // wrong version
+            assertThatThrownBy(() -> sql(c, event(chq, "RECEIVED", "DEPOSITED", 1, 8, "2026-11-28T10:00", null)))
+                    .hasMessageContaining("FOREIGN KEY"); // Store Admin of ANOTHER store
+            assertThatThrownBy(() -> sql(c, "INSERT INTO cheque_events (cheque_id, store_id, from_status, to_status, to_version, "
+                    + "user_id, created_at) VALUES (" + chq + ", 2, 'RECEIVED', 'DEPOSITED', 1, 8, '2026-11-28T10:00')"))
+                    .hasMessageContaining("FOREIGN KEY"); // event filed under another store
+            // atomic: event + status in one statement; a rolled-back transaction leaves neither
+            c.setAutoCommit(false);
+            sql(c, event(chq, "RECEIVED", "DEPOSITED", 1, 4, "2026-11-28T10:00", null));
+            assertThat(one(c, "SELECT status FROM cheques WHERE cheque_id = " + chq)).isEqualTo("DEPOSITED");
+            c.rollback();
+            c.setAutoCommit(true);
+            assertThat(one(c, "SELECT status || '/' || version FROM cheques WHERE cheque_id = " + chq)).isEqualTo("RECEIVED/0");
+            assertThat(n(c, "SELECT COUNT(*) FROM cheque_events WHERE cheque_id = " + chq)).isEqualTo(1);
+            // real path: DEPOSITED, BOUNCED (note required), DEPOSITED again, CLEARED
+            sql(c, event(chq, "RECEIVED", "DEPOSITED", 1, 4, "2026-11-28T10:00", null));
+            assertThatThrownBy(() -> sql(c, event(chq, "DEPOSITED", "BOUNCED", 2, 4, "2026-11-29T10:00", null)))
+                    .hasMessageContaining("CHECK");
+            sql(c, event(chq, "DEPOSITED", "BOUNCED", 2, 4, "2026-11-29T10:00", "Insufficient funds"),
+                    event(chq, "BOUNCED", "DEPOSITED", 3, 4, "2026-11-30T10:00", null),
+                    event(chq, "DEPOSITED", "CLEARED", 4, 4, "2026-12-01T10:00", null));
+            assertThat(one(c, "SELECT status || '/' || version || '/' || updated_at FROM cheques WHERE cheque_id = " + chq))
+                    .isEqualTo("CLEARED/4/2026-12-01T10:00");
+            // the history is a complete unbroken chain: version+1 events, each from = previous to
+            assertThat(n(c, "SELECT COUNT(*) FROM cheque_events WHERE cheque_id = " + chq)).isEqualTo(5);
+            assertThat(n(c, "SELECT COUNT(*) FROM cheque_events e JOIN cheque_events p ON p.cheque_id = e.cheque_id "
+                    + "AND p.to_version = e.to_version - 1 WHERE e.cheque_id = " + chq + " AND e.from_status IS NOT p.to_status")).isZero();
+            assertThat(one(c, "SELECT group_concat(to_status, '>') FROM (SELECT to_status FROM cheque_events WHERE cheque_id = "
+                    + chq + " ORDER BY to_version)")).isEqualTo("RECEIVED>DEPOSITED>BOUNCED>DEPOSITED>CLEARED");
+            // no edits to the cheque itself, no edits / deletes of history
+            assertThatThrownBy(() -> sql(c, "UPDATE cheques SET notes = 'x', version = 5, updated_at = 'z' WHERE cheque_id = " + chq))
+                    .hasMessageMatching("(?s).*(CHEQUE_IDENTITY|CHEQUE_UPDATE_WITHOUT_EVENT).*"); // notes are fixed
+            assertThatThrownBy(() -> sql(c, "UPDATE cheque_events SET note = 'x'")).hasMessageContaining("APPEND_ONLY");
+            assertThatThrownBy(() -> sql(c, "DELETE FROM cheque_events")).hasMessageContaining("APPEND_ONLY");
         }
     }
 
-    // ── 4. Shifts and cash movements ────────────────────────────────────────────────
+    // ── Reported defect 1: a cheque refund belongs to the return AND the cheque of the SAME sale ──
+
+    @Test
+    void defect1_chequeRefund_sameSale_sameStore_exactAmount_noDuplicateOrExcess() throws Exception {
+        fillV6();
+        migrate();
+        try (Connection c = open()) {
+            long chq = chequeSale(c, 40, 1000, "555");
+            // the CASH sale 1 already has a return (return_id 1): BEFORE the fix it could be linked to cheque 40.
+            // Refused by the insert trigger (first) and by the composite foreign keys (proved alone below).
+            assertThatThrownBy(() -> sql(c, "INSERT INTO cheque_refunds (store_id, sale_id, return_id, cheque_id, amount_minor, "
+                    + "status, created_at) VALUES (1, 40, 1, " + chq + ", 500, 'PENDING', 'a')")).hasMessageContaining("CHEQUE_REFUND_BAD_INSERT");
+            assertThatThrownBy(() -> sql(c, "INSERT INTO cheque_refunds (store_id, sale_id, return_id, cheque_id, amount_minor, "
+                    + "status, created_at) VALUES (1, 1, 1, " + chq + ", 500, 'PENDING', 'a')")).hasMessageContaining("CHEQUE_REFUND_BAD_INSERT");
+            // returns of a cheque sale: Store Admin only, CHEQUE method only (no cash now), exact amount
+            String ret = "INSERT INTO returns (store_id, sale_id, sale_item_id, product_id, cashier_id, quantity, reason, "
+                    + "refund_amount, refund_method, return_date, refund_minor) VALUES (1, 40, 40, 2, %d, 1, 'x', 5, '%s', 'a', %s)";
+            assertThatThrownBy(() -> sql(c, ret.formatted(5, "CHEQUE", "500"))).hasMessageContaining("CHEQUE_RETURN_NEEDS_STORE_ADMIN");
+            assertThatThrownBy(() -> sql(c, ret.formatted(4, "CASH", "500"))).hasMessageContaining("RETURN_AMOUNT_INVALID");
+            assertThatThrownBy(() -> sql(c, ret.formatted(4, "CHEQUE", "NULL"))).hasMessageContaining("CHEQUE_RETURN_NEEDS_STORE_ADMIN");
+            assertThatThrownBy(() -> sql(c, ret.formatted(4, "CHEQUE", "400"))).hasMessageContaining("RETURN_AMOUNT_INVALID");
+            long r1 = chequeReturn(c, 40, 500);
+            String refund = "INSERT INTO cheque_refunds (store_id, sale_id, return_id, cheque_id, amount_minor, status, created_at) "
+                    + "VALUES (%d, %d, %d, %d, %d, '%s', 'a')";
+            assertThatThrownBy(() -> sql(c, refund.formatted(1, 40, r1, chq, 600, "PENDING"))).hasMessageContaining("CHEQUE_REFUND_BAD_INSERT");
+            assertThatThrownBy(() -> sql(c, refund.formatted(1, 40, r1, chq, 500, "PAID"))).hasMessageContaining("CHEQUE_REFUND_BAD_INSERT");
+            assertThatThrownBy(() -> sql(c, refund.formatted(2, 40, r1, chq, 500, "PENDING"))).hasMessageContaining("FOREIGN KEY");
+            sql(c, refund.formatted(1, 40, r1, chq, 500, "PENDING"));
+            assertThatThrownBy(() -> sql(c, refund.formatted(1, 40, r1, chq, 500, "PENDING"))).hasMessageContaining("UNIQUE"); // duplicate
+            // a cheque of ANOTHER cheque sale cannot be used for this return
+            long chq2 = chequeSale(c, 41, 1000, "556");
+            long r2 = chequeReturn(c, 40, 500);
+            assertThatThrownBy(() -> sql(c, refund.formatted(1, 40, r2, chq2, 500, "PENDING"))).hasMessageContaining("FOREIGN KEY");
+            assertThatThrownBy(() -> sql(c, refund.formatted(1, 41, r2, chq2, 500, "PENDING"))).hasMessageContaining("FOREIGN KEY");
+            sql(c, refund.formatted(1, 40, r2, chq, 500, "PENDING"));
+            // never more than the customer paid: a third return of this 10.00 sale is refused
+            assertThatThrownBy(() -> chequeReturn(c, 40, 100)).hasMessageContaining("RETURN_AMOUNT_INVALID");
+            assertThat(n(c, "SELECT sum(amount_minor) FROM cheque_refunds WHERE cheque_id = " + chq)).isEqualTo(1000);
+
+            // defence in depth: even WITHOUT the insert trigger (e.g. a buggy future change dropped it), the
+            // composite foreign keys alone refuse a return and a cheque of different sales
+            sql(c, "DROP TRIGGER trg_cheque_refund_insert");
+            assertThatThrownBy(() -> sql(c, "INSERT INTO cheque_refunds (store_id, sale_id, return_id, cheque_id, amount_minor, "
+                    + "status, created_at) VALUES (1, 40, 1, " + chq + ", 500, 'PENDING', 'a')")).hasMessageContaining("FOREIGN KEY");
+            assertThatThrownBy(() -> sql(c, "INSERT INTO cheque_refunds (store_id, sale_id, return_id, cheque_id, amount_minor, "
+                    + "status, created_at) VALUES (1, 1, 1, " + chq + ", 500, 'PENDING', 'a')")).hasMessageContaining("FOREIGN KEY");
+        }
+    }
+
+    // ── Reported defect 2: a cash payout of a cheque refund and its drawer movement are one unit ──
+
+    @Test
+    void defect2_cashPayout_exactlyOneMovement_atomic_retrySafe_bankTransferHasNone() throws Exception {
+        fillV6();
+        migrate();
+        try (Connection c = open()) {
+            long chq = chequeSale(c, 40, 1000, "555");
+            long r1 = chequeReturn(c, 40, 500), r2 = chequeReturn(c, 40, 300);
+            sql(c, "INSERT INTO cheque_refunds (store_id, sale_id, return_id, cheque_id, amount_minor, status, created_at) VALUES "
+                    + "(1, 40, " + r1 + ", " + chq + ", 500, 'PENDING', 'a'), (1, 40, " + r2 + ", " + chq + ", 300, 'PENDING', 'a')");
+            long cr1 = n(c, "SELECT cheque_refund_id FROM cheque_refunds WHERE return_id = " + r1);
+            long cr2 = n(c, "SELECT cheque_refund_id FROM cheque_refunds WHERE return_id = " + r2);
+            clear(c, chq);
+            openShift(c);
+            String paidCash = "UPDATE cheque_refunds SET status = 'PAID', paid_method = 'CASH', decided_by = 4, decided_at = 'd', "
+                    + "payout_movement_id = %s, version = version + 1 WHERE cheque_refund_id = %d";
+            String movement = "INSERT INTO cash_movements (store_id, shift_id, type, amount_minor, reason, cheque_refund_id, "
+                    + "created_by, created_at, request_key) VALUES (1, 1, 'CHEQUE_REFUND_OUT', %d, 'Refund INV-000040', %d, %d, 'c', '%s')";
+
+            // BEFORE the fix this succeeded: PAID in cash with no movement
+            assertThatThrownBy(() -> sql(c, paidCash.formatted("NULL", cr1))).hasMessageContaining("CHEQUE_REFUND_BAD_DECISION");
+            assertThatThrownBy(() -> sql(c, paidCash.formatted("999", cr1))).hasMessageContaining("CHEQUE_REFUND_BAD_DECISION");
+            // a movement alone cannot be committed (autocommit = its own transaction)
+            assertThatThrownBy(() -> sql(c, movement.formatted(500, cr1, 4, "req-0000001"))).hasMessageContaining("FOREIGN KEY");
+            assertThat(n(c, "SELECT COUNT(*) FROM cash_movements")).isZero();
+            // a transaction with the movement but without marking the refund PAID cannot COMMIT
+            c.setAutoCommit(false);
+            sql(c, movement.formatted(500, cr1, 4, "req-0000001"));
+            assertThatThrownBy(c::commit).hasMessageContaining("FOREIGN KEY");
+            c.rollback();
+            c.setAutoCommit(true);
+            assertThat(n(c, "SELECT COUNT(*) FROM cash_movements")).isZero();
+            // a failure between the two steps rolls BOTH back
+            c.setAutoCommit(false);
+            sql(c, movement.formatted(500, cr1, 4, "req-0000001"));
+            long m = n(c, "SELECT last_insert_rowid()");
+            sql(c, paidCash.formatted(String.valueOf(m), cr1));
+            c.rollback(); // e.g. the service throws after the update
+            c.setAutoCommit(true);
+            assertThat(one(c, "SELECT status FROM cheque_refunds WHERE cheque_refund_id = " + cr1)).isEqualTo("PENDING");
+            assertThat(n(c, "SELECT COUNT(*) FROM cash_movements")).isZero();
+            // wrong amount / a cashier / a movement of another refund: refused
+            assertThatThrownBy(() -> sql(c, movement.formatted(400, cr1, 4, "req-0000002"))).hasMessageContaining("CASH_MOVEMENT_NOT_ALLOWED");
+            assertThatThrownBy(() -> sql(c, movement.formatted(500, cr1, 5, "req-0000002"))).hasMessageContaining("CASH_MOVEMENT_NOT_ALLOWED");
+            // the correct payout: movement + refund PAID in one transaction, committed together
+            c.setAutoCommit(false);
+            sql(c, movement.formatted(500, cr1, 4, "req-0000001"));
+            long paid = n(c, "SELECT last_insert_rowid()");
+            sql(c, paidCash.formatted(String.valueOf(paid), cr1));
+            c.commit();
+            c.setAutoCommit(true);
+            assertThat(one(c, "SELECT status || '/' || paid_method || '/' || payout_movement_id FROM cheque_refunds "
+                    + "WHERE cheque_refund_id = " + cr1)).isEqualTo("PAID/CASH/" + paid);
+            assertThat(one(c, "SELECT shift_id || '/' || store_id || '/' || amount_minor || '/' || cheque_refund_id FROM cash_movements"))
+                    .isEqualTo("1/1/500/" + cr1);
+            // retries: same request key, or a second payout of the same refund — refused, still ONE movement
+            // (refused already by the trigger — the refund is no longer PENDING — and by UNIQUE behind it)
+            assertThatThrownBy(() -> sql(c, movement.formatted(500, cr1, 4, "req-0000001"))).hasMessageContaining("CASH_MOVEMENT_NOT_ALLOWED");
+            assertThatThrownBy(() -> sql(c, movement.formatted(500, cr1, 4, "req-0000009"))).hasMessageContaining("CASH_MOVEMENT_NOT_ALLOWED");
+            assertThatThrownBy(() -> sql(c, paidCash.formatted(String.valueOf(paid), cr1))).hasMessageContaining("CHEQUE_REFUND_BAD_DECISION");
+            assertThat(n(c, "SELECT COUNT(*) FROM cash_movements")).isEqualTo(1);
+            // bank transfer: no drawer movement at all; a movement for it can never be committed
+            c.setAutoCommit(false);
+            sql(c, movement.formatted(300, cr2, 4, "req-0000003"));
+            assertThatThrownBy(() -> sql(c, "UPDATE cheque_refunds SET status = 'PAID', paid_method = 'BANK_TRANSFER', decided_by = 4, "
+                    + "decided_at = 'd', version = version + 1 WHERE cheque_refund_id = " + cr2)).hasMessageContaining("CHEQUE_REFUND_BAD_DECISION");
+            c.rollback();
+            c.setAutoCommit(true);
+            sql(c, "UPDATE cheque_refunds SET status = 'PAID', paid_method = 'BANK_TRANSFER', decided_by = 4, decided_at = 'd', "
+                    + "version = version + 1 WHERE cheque_refund_id = " + cr2);
+            assertThat(n(c, "SELECT COUNT(*) FROM cash_movements WHERE cheque_refund_id = " + cr2)).isZero();
+            // the drawer: 500.00 opening − 5.00 cash payout (the bank transfer is not in the drawer)
+            assertThat(one(c, EXPECTED.formatted(1))).isEqualTo("49500");
+        }
+    }
+
+    /**
+     * The Spring side of defect 2: the payout service will run movement + refund in ONE @Transactional
+     * method. Here the same Spring transaction manager over SQLite: a payout that "forgets" the refund
+     * update fails at COMMIT (deferred foreign keys) and Spring rolls back; a complete one commits.
+     */
+    @Test
+    void defect2_springTransaction_incompletePayoutFailsAtCommit_completeOneCommits() throws Exception {
+        fillV6();
+        migrate();
+        long cr;
+        try (Connection c = open()) {
+            long chq = chequeSale(c, 40, 1000, "555");
+            long r = chequeReturn(c, 40, 500);
+            sql(c, "INSERT INTO cheque_refunds (store_id, sale_id, return_id, cheque_id, amount_minor, status, created_at) "
+                    + "VALUES (1, 40, " + r + ", " + chq + ", 500, 'PENDING', 'a')");
+            cr = n(c, "SELECT max(cheque_refund_id) FROM cheque_refunds");
+            clear(c, chq);
+            openShift(c);
+        }
+        var ds = new org.springframework.jdbc.datasource.DriverManagerDataSource(url());
+        var tx = new org.springframework.transaction.support.TransactionTemplate(
+                new org.springframework.jdbc.datasource.DataSourceTransactionManager(ds));
+        var jdbc = new org.springframework.jdbc.core.JdbcTemplate(ds);
+        String insertMovement = "INSERT INTO cash_movements (store_id, shift_id, type, amount_minor, reason, cheque_refund_id, "
+                + "created_by, created_at, request_key) VALUES (1, 1, 'CHEQUE_REFUND_OUT', 500, 'Refund', ?, 4, 'c', ?)";
+        // a buggy service: movement only
+        assertThatThrownBy(() -> tx.executeWithoutResult(s -> jdbc.update(insertMovement, cr, "req-S0000001")))
+                .hasStackTraceContaining("FOREIGN KEY");
+        // a service that throws after both writes (e.g. a later validation): everything rolled back
+        assertThatThrownBy(() -> tx.executeWithoutResult(s -> {
+            jdbc.update(insertMovement, cr, "req-S0000002");
+            Long m = jdbc.queryForObject("SELECT last_insert_rowid()", Long.class);
+            jdbc.update("UPDATE cheque_refunds SET status = 'PAID', paid_method = 'CASH', decided_by = 4, decided_at = 'd', "
+                    + "payout_movement_id = ?, version = version + 1 WHERE cheque_refund_id = ?", m, cr);
+            throw new IllegalStateException("receipt printing failed");
+        })).hasMessageContaining("receipt printing failed");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM cash_movements", Long.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT status FROM cheque_refunds WHERE cheque_refund_id = ?", String.class, cr))
+                .isEqualTo("PENDING");
+        // the correct service method: both writes, one commit
+        tx.executeWithoutResult(s -> {
+            jdbc.update(insertMovement, cr, "req-S0000003");
+            Long m = jdbc.queryForObject("SELECT last_insert_rowid()", Long.class);
+            jdbc.update("UPDATE cheque_refunds SET status = 'PAID', paid_method = 'CASH', decided_by = 4, decided_at = 'd', "
+                    + "payout_movement_id = ?, version = version + 1 WHERE cheque_refund_id = ?", m, cr);
+        });
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM cash_movements", Long.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT status FROM cheque_refunds WHERE cheque_refund_id = ?", String.class, cr))
+                .isEqualTo("PAID");
+    }
+
+    @Test
+    void defect2_concurrentPayouts_onlyOneSucceeds() throws Exception {
+        fillV6();
+        migrate();
+        long cr;
+        try (Connection c = open()) {
+            long chq = chequeSale(c, 40, 1000, "555");
+            long r = chequeReturn(c, 40, 500);
+            sql(c, "INSERT INTO cheque_refunds (store_id, sale_id, return_id, cheque_id, amount_minor, status, created_at) "
+                    + "VALUES (1, 40, " + r + ", " + chq + ", 500, 'PENDING', 'a')");
+            cr = n(c, "SELECT max(cheque_refund_id) FROM cheque_refunds");
+            clear(c, chq);
+            openShift(c);
+        }
+        try (Connection a = open(); Connection b = open()) {
+            sql(b, "PRAGMA busy_timeout = 100");
+            // A starts the payout and holds the write lock
+            sql(a, "BEGIN IMMEDIATE",
+                    "INSERT INTO cash_movements (store_id, shift_id, type, amount_minor, reason, cheque_refund_id, created_by, "
+                            + "created_at, request_key) VALUES (1, 1, 'CHEQUE_REFUND_OUT', 500, 'Refund', " + cr + ", 4, 'c', 'req-A0000001')");
+            long ma = n(a, "SELECT last_insert_rowid()");
+            sql(a, "UPDATE cheque_refunds SET status = 'PAID', paid_method = 'CASH', decided_by = 4, decided_at = 'd', "
+                    + "payout_movement_id = " + ma + ", version = version + 1 WHERE cheque_refund_id = " + cr);
+            // B (a second click / another admin) cannot even start writing meanwhile
+            assertThatThrownBy(() -> sql(b, "BEGIN IMMEDIATE")).hasMessageContaining("BUSY");
+            sql(a, "COMMIT");
+            // after A, B's payout of the same refund is refused
+            sql(b, "BEGIN IMMEDIATE");
+            assertThatThrownBy(() -> sql(b, "INSERT INTO cash_movements (store_id, shift_id, type, amount_minor, reason, "
+                    + "cheque_refund_id, created_by, created_at, request_key) VALUES (1, 1, 'CHEQUE_REFUND_OUT', 500, 'Refund', "
+                    + cr + ", 4, 'c', 'req-B0000001')")).hasMessageMatching("(?s).*(UNIQUE|CASH_MOVEMENT_NOT_ALLOWED).*");
+            sql(b, "ROLLBACK");
+            assertThat(n(b, "SELECT COUNT(*) FROM cash_movements")).isEqualTo(1);
+        }
+    }
+
+    // ── Shifts, cash movements, closing ────────────────────────────────────────────
+
+    /** The database's expected-cash formula (same as trg_shift_expected), for shift %d. */
+    private static final String EXPECTED = """
+            SELECT s.opening_cash_minor
+              + coalesce((SELECT sum(CAST(round(p.amount * 100) AS INTEGER)) FROM payments p JOIN sales x ON x.sale_id = p.sale_id
+                          WHERE x.shift_id = s.shift_id AND p.payment_method = 'CASH'), 0)
+              - coalesce((SELECT sum(coalesce(r.refund_minor, CAST(round(r.refund_amount * 100) AS INTEGER)))
+                          FROM returns r WHERE r.shift_id = s.shift_id AND r.refund_method = 'CASH'), 0)
+              + coalesce((SELECT sum(amount_minor) FROM cash_movements m WHERE m.shift_id = s.shift_id AND m.type = 'CASH_IN'), 0)
+              - coalesce((SELECT sum(amount_minor) FROM cash_movements m WHERE m.shift_id = s.shift_id
+                          AND m.type IN ('CASH_OUT', 'CHEQUE_REFUND_OUT')), 0)
+            FROM cash_shifts s WHERE s.shift_id = %d""";
 
     @Test
     void shifts_oneOpenPerCashierAndPerDrawer_closedFrozen_salesAndMovementsNeedAnOpenShift() throws Exception {
@@ -419,14 +702,13 @@ public class V7ProposalValidationTest {
             assertThatThrownBy(() -> sql(c, open.formatted(1, 2, 6))).hasMessageContaining("FOREIGN KEY"); // other store's cashier
             sql(c, open.formatted(1, 2, 7), open.formatted(2, 3, 6));
 
-            // sales on shift 1; another store's shift refused
-            sql(c, SALE + "(50, 1, 5, 'INV-000050', 'COMPLETED', 10, 0, 16, 1.6, 11.6, 'a', 'a', 'a', 1, 0)");
+            sql(c, SALE + "(50, 1, 5, 'INV-000050', 'COMPLETED', 10, 0, 16, 1.6, 11.6, 'a', 'a', 'a', 1, 0)",
+                    "INSERT INTO payments (sale_id, payment_method, amount, payment_status, paid_at) VALUES (50, 'CASH', 11.6, 'PAID', 'a')");
             assertThatThrownBy(() -> sql(c, SALE + "(51, 1, 5, 'INV-000051', 'COMPLETED', 10, 0, 16, 1.6, 11.6, 'a', 'a', 'a', 3, 0)"))
                     .hasMessageContaining("SALE_SHIFT_NOT_OPEN");
             assertThatThrownBy(() -> sql(c, "UPDATE sales SET shift_id = 2 WHERE sale_id = 50"))
-                    .hasMessageContaining("SALE_SHIFT_NOT_OPEN"); // never moved to another shift
+                    .hasMessageContaining("SALE_SHIFT_NOT_OPEN");
 
-            // movements: Store Admin only (D3), reason required, no duplicates, append only
             String mv = "INSERT INTO cash_movements (store_id, shift_id, type, amount_minor, reason, created_by, created_at, "
                     + "request_key) VALUES (1, 1, '%s', %d, '%s', %d, 'a', '%s')";
             assertThatThrownBy(() -> sql(c, mv.formatted("CASH_IN", 2000, "Change float", 5, "k-0000001")))
@@ -438,52 +720,107 @@ public class V7ProposalValidationTest {
                     .hasMessageContaining("UNIQUE");
             assertThatThrownBy(() -> sql(c, "DELETE FROM cash_movements")).hasMessageContaining("APPEND_ONLY");
 
-            // closing: difference = counted − expected, note required when not zero, by the cashier
+            // expected = 500.00 + 11.60 + 20.00 − 5.00 = 526.60 — computed by the database, not trusted from the caller
+            assertThat(one(c, EXPECTED.formatted(1))).isEqualTo("52660");
             String close = "UPDATE cash_shifts SET status = 'CLOSED', closed_at = 'b', closed_by = %d, close_kind = '%s', "
-                    + "close_reason = %s, expected_cash_minor = 160000, counted_cash_minor = 158000, difference_minor = %d, "
+                    + "close_reason = %s, expected_cash_minor = %d, counted_cash_minor = %d, difference_minor = %d, "
                     + "closing_note = %s, version = version + 1 WHERE shift_id = 1";
-            assertThatThrownBy(() -> sql(c, close.formatted(5, "CASHIER", "NULL", -2000, "NULL"))).hasMessageContaining("CHECK");
-            assertThatThrownBy(() -> sql(c, close.formatted(5, "CASHIER", "NULL", 0, "'ok'"))).hasMessageContaining("CHECK");
-            assertThatThrownBy(() -> sql(c, close.formatted(7, "CASHIER", "NULL", -2000, "'Short by 20'")))
-                    .hasMessageContaining("SHIFT_CLOSER_NOT_ALLOWED"); // not their shift
-            sql(c, close.formatted(5, "CASHIER", "NULL", -2000, "'Short by 20'"));
-            // closed: frozen — no second closing, no new sale or movement, never deleted
-            assertThatThrownBy(() -> sql(c, close.formatted(5, "CASHIER", "NULL", -2000, "'again'"))).hasMessageContaining("SHIFT_CLOSED");
+            assertThatThrownBy(() -> sql(c, close.formatted(5, "CASHIER", "NULL", 52000, 52000, 0, "NULL")))
+                    .hasMessageContaining("SHIFT_EXPECTED_MISMATCH"); // a wrong expected amount
+            assertThatThrownBy(() -> sql(c, close.formatted(5, "CASHIER", "NULL", 52660, 52460, -200, "NULL")))
+                    .hasMessageContaining("CHECK"); // a shortage needs a note
+            assertThatThrownBy(() -> sql(c, close.formatted(5, "CASHIER", "NULL", 52660, 52460, 0, "'ok'")))
+                    .hasMessageContaining("CHECK"); // difference must be counted − expected
+            assertThatThrownBy(() -> sql(c, close.formatted(7, "CASHIER", "NULL", 52660, 52460, -200, "'Short by 2'")))
+                    .hasMessageContaining("SHIFT_CLOSER_NOT_ALLOWED");
+            sql(c, close.formatted(5, "CASHIER", "NULL", 52660, 52460, -200, "'Short by 2'"));
+            assertThatThrownBy(() -> sql(c, close.formatted(5, "CASHIER", "NULL", 52660, 52460, -200, "'again'")))
+                    .hasMessageContaining("SHIFT_CLOSED");
             assertThatThrownBy(() -> sql(c, SALE + "(52, 1, 5, 'INV-000052', 'COMPLETED', 10, 0, 16, 1.6, 11.6, 'a', 'a', 'a', 1, 0)"))
                     .hasMessageContaining("SALE_SHIFT_NOT_OPEN");
             assertThatThrownBy(() -> sql(c, mv.formatted("CASH_IN", 100, "Late", 4, "k-0000003")))
                     .hasMessageContaining("CASH_MOVEMENT_NOT_ALLOWED");
             assertThatThrownBy(() -> sql(c, "DELETE FROM cash_shifts WHERE shift_id = 1")).hasMessageContaining("SHIFT_NO_DELETE");
 
-            // exceptional closure by a Store Admin needs a reason; a cashier cannot use it
             String admin = "UPDATE cash_shifts SET status = 'CLOSED', closed_at = 'b', closed_by = %d, close_kind = 'ADMIN_EXCEPTION', "
                     + "close_reason = %s, expected_cash_minor = 50000, counted_cash_minor = 50000, difference_minor = 0, "
                     + "version = version + 1 WHERE shift_id = 2";
             assertThatThrownBy(() -> sql(c, admin.formatted(4, "NULL"))).hasMessageContaining("CHECK");
             assertThatThrownBy(() -> sql(c, admin.formatted(5, "'Cashier left early'"))).hasMessageContaining("SHIFT_CLOSER_NOT_ALLOWED");
             sql(c, admin.formatted(4, "'Cashier left early'"));
-            // the drawer is free again: next cashier opens (shared drawer = hand-over)
-            sql(c, open.formatted(1, 1, 7));
+            sql(c, open.formatted(1, 1, 7)); // the drawer is free again (hand-over)
 
-            // mandatory shifts (D2): a completed sale and a cash refund need an open shift
+            // mandatory shifts (D2)
             sql(c, "UPDATE stores SET require_cash_shift = 1 WHERE store_id = 2");
             assertThatThrownBy(() -> sql(c, "INSERT INTO sales (sale_id, store_id, cashier_id, invoice_number, status, subtotal, "
                     + "discount, tax_rate, tax, total, created_at, updated_at, completed_at) VALUES (60, 2, 6, 'INV-000060', "
                     + "'COMPLETED', 8, 0, 16, 1.28, 9.28, 'a', 'a', 'a')")).hasMessageContaining("SHIFT_REQUIRED");
             sql(c, "INSERT INTO sales (sale_id, store_id, cashier_id, invoice_number, status, subtotal, discount, tax_rate, tax, "
-                    + "total, created_at, updated_at) VALUES (61, 2, 6, 'INV-000061', 'SUSPENDED', 8, 0, 16, 1.28, 9.28, 'a', 'a')");
+                    + "total, created_at, updated_at) VALUES (61, 2, 6, 'INV-000061', 'SUSPENDED', 8, 0, 16, 1.28, 9.28, 'a', 'a')",
+                    "INSERT INTO sale_items (sale_item_id, sale_id, product_id, product_name, barcode, quantity, unit_price, line_total) "
+                            + "VALUES (61, 61, 3, 'Juice', '33333333', 1, 8, 8)");
             assertThatThrownBy(() -> sql(c, "UPDATE sales SET status = 'COMPLETED' WHERE sale_id = 61"))
-                    .hasMessageContaining("SHIFT_REQUIRED"); // a suspended invoice belongs to no shift until completed
-            sql(c, "UPDATE sales SET status = 'COMPLETED', shift_id = 3 WHERE sale_id = 61");
-            assertThatThrownBy(() -> sql(c, "INSERT INTO returns (store_id, sale_id, sale_item_id, product_id, cashier_id, quantity, "
-                    + "reason, refund_amount, refund_method, return_date) VALUES (2, 7, 8, 3, 6, 1, 'x', 9.28, 'CASH', 'a')"))
                     .hasMessageContaining("SHIFT_REQUIRED");
-            sql(c, "INSERT INTO returns (store_id, sale_id, sale_item_id, product_id, cashier_id, quantity, reason, refund_amount, "
-                    + "refund_method, return_date, shift_id) VALUES (2, 7, 8, 3, 6, 1, 'x', 9.28, 'CASH', 'a', 3)");
-            // a legacy store (require_cash_shift = 0) keeps working exactly as before
+            sql(c, "UPDATE sales SET status = 'COMPLETED', shift_id = 3 WHERE sale_id = 61",
+                    "INSERT INTO payments (sale_id, payment_method, amount, payment_status, paid_at) VALUES (61, 'CASH', 9.28, 'PAID', 'a')");
+            String ret = "INSERT INTO returns (store_id, sale_id, sale_item_id, product_id, cashier_id, quantity, reason, "
+                    + "refund_amount, refund_method, return_date, shift_id, refund_minor) VALUES (2, 61, 61, 3, %d, 1, 'x', 9.28, 'CASH', 'a', %s, 928)";
+            assertThatThrownBy(() -> sql(c, ret.formatted(6, "NULL"))).hasMessageContaining("SHIFT_REQUIRED");
+            assertThatThrownBy(() -> sql(c, ret.formatted(6, "1"))).hasMessageContaining("RETURN_SHIFT_NOT_OPEN"); // other store
+            sql(c, ret.formatted(6, "3"));
+            assertThat(one(c, EXPECTED.formatted(3))).isEqualTo("50000"); // +9.28 −9.28
             sql(c, "INSERT INTO sales (sale_id, store_id, cashier_id, invoice_number, status, subtotal, discount, tax_rate, tax, "
                     + "total, created_at, updated_at, completed_at) VALUES (62, 1, 5, 'INV-000062', 'COMPLETED', 8, 0, 16, 1.28, "
-                    + "9.28, 'a', 'a', 'a')");
+                    + "9.28, 'a', 'a', 'a')"); // a store without mandatory shifts works as before
+        }
+    }
+
+    @Test
+    void closingRacesWithASale_theDatabaseRefusesAStaleExpectedAmount() throws Exception {
+        fillV6();
+        migrate();
+        try (Connection c = open()) {
+            openShift(c);
+        }
+        try (Connection a = open(); Connection b = open()) {
+            sql(b, "PRAGMA busy_timeout = 100");
+            String close = "UPDATE cash_shifts SET status = 'CLOSED', closed_at = 'b', closed_by = 5, close_kind = 'CASHIER', "
+                    + "expected_cash_minor = %d, counted_cash_minor = %d, difference_minor = %d, closing_note = %s, "
+                    + "version = version + 1 WHERE shift_id = 1";
+            // A: a cash sale is being completed on the shift
+            sql(a, "BEGIN IMMEDIATE", SALE + "(90, 1, 5, 'INV-000090', 'COMPLETED', 10, 0, 0, 0, 10, 'a', 'a', 'a', 1, 0)",
+                    "INSERT INTO payments (sale_id, payment_method, amount, payment_status, paid_at) VALUES (90, 'CASH', 10, 'PAID', 'a')");
+            // B: the cashier closes at the same moment with what B saw (500.00) — must wait
+            assertThatThrownBy(() -> sql(b, close.formatted(50000, 50000, 0, "NULL"))).hasMessageContaining("BUSY");
+            sql(a, "COMMIT");
+            // B retries with the stale expected amount: refused — the sale cannot be silently missed
+            assertThatThrownBy(() -> sql(b, close.formatted(50000, 50000, 0, "NULL"))).hasMessageContaining("SHIFT_EXPECTED_MISMATCH");
+            sql(b, close.formatted(51000, 50000, -1000, "'10.00 short'"));
+            assertThat(one(b, "SELECT status || '/' || expected_cash_minor || '/' || difference_minor FROM cash_shifts"))
+                    .isEqualTo("CLOSED/51000/-1000");
+        }
+    }
+
+    @Test
+    void returns_amountRules_methodMatchesSale_noOverRefund_roundingCashOnly() throws Exception {
+        fillV6();
+        migrate();
+        try (Connection c = open()) {
+            // sale 2: 2 × Milk 11.60 paid by CARD (legacy)
+            String ret = "INSERT INTO returns (store_id, sale_id, sale_item_id, product_id, cashier_id, quantity, reason, "
+                    + "refund_amount, refund_method, return_date, refund_minor, rounding_minor) VALUES (1, 2, 3, 2, 5, 1, 'x', %s, '%s', 'a', %s, %d)";
+            assertThatThrownBy(() -> sql(c, ret.formatted("5.8", "CASH", "580", 0))).hasMessageContaining("RETURN_AMOUNT_INVALID"); // wrong method
+            assertThatThrownBy(() -> sql(c, ret.formatted("5.8", "CARD", "590", 0))).hasMessageContaining("RETURN_AMOUNT_INVALID"); // minor ≠ REAL
+            assertThatThrownBy(() -> sql(c, ret.formatted("5.8", "CARD", "580", 2))).hasMessageContaining("RETURN_AMOUNT_INVALID"); // rounding on card
+            sql(c, ret.formatted("5.8", "CARD", "580", 0), ret.formatted("5.8", "CARD", "580", 0));
+            assertThatThrownBy(() -> sql(c, ret.formatted("0.01", "CARD", "1", 0))).hasMessageContaining("RETURN_AMOUNT_INVALID"); // over 11.60
+            // legacy returns (no minor amount) still count: sale 1 paid 12.76, 5.32 already refunded
+            assertThatThrownBy(() -> sql(c, "INSERT INTO returns (store_id, sale_id, sale_item_id, product_id, cashier_id, quantity, "
+                    + "reason, refund_amount, refund_method, return_date, refund_minor) VALUES (1, 1, 1, 2, 5, 1, 'x', 7.45, 'CASH', 'a', 745)"))
+                    .hasMessageContaining("RETURN_AMOUNT_INVALID");
+            sql(c, "INSERT INTO returns (store_id, sale_id, sale_item_id, product_id, cashier_id, quantity, reason, refund_amount, "
+                    + "refund_method, return_date, refund_minor) VALUES (1, 1, 1, 2, 5, 1, 'x', 7.44, 'CASH', 'a', 744)");
+            assertThatThrownBy(() -> sql(c, "UPDATE returns SET refund_minor = 1 WHERE return_id = 1")).hasMessageContaining("RETURN_FIXED");
         }
     }
 
@@ -575,19 +912,97 @@ public class V7ProposalValidationTest {
         }
     }
 
+    /** Reorder = one transaction: remove the store's favorites, insert them again at 0..n-1. */
+    private static void reorder(Connection c, int store, int admin, long... productIds) throws SQLException {
+        boolean auto = c.getAutoCommit();
+        c.setAutoCommit(false);
+        try {
+            sql(c, "DELETE FROM product_favorites WHERE store_id = " + store);
+            for (int i = 0; i < productIds.length; i++) {
+                sql(c, "INSERT INTO product_favorites (store_id, product_id, position, created_by, created_at) VALUES ("
+                        + store + ", " + productIds[i] + ", " + i + ", " + admin + ", 'a')");
+            }
+            c.commit();
+        } catch (SQLException e) {
+            c.rollback();
+            throw e;
+        } finally {
+            c.setAutoCommit(auto);
+        }
+    }
+
+    private static String order(Connection c, int store) throws SQLException {
+        return one(c, "SELECT group_concat(product_id, ',') FROM (SELECT product_id FROM product_favorites WHERE store_id = "
+                + store + " ORDER BY position)");
+    }
+
+    // ── Reported defect 4: favorite positions are unique, ordering is deterministic ──
+
     @Test
-    void favorites_storeAdminOnly_noDuplicates_sameStoreOnly_removedWithTheProduct() throws Exception {
+    void defect4_favorites_uniquePositions_safeReorder_storeAdminOnly_isolated() throws Exception {
         fillV6();
         migrate();
         try (Connection c = open()) {
+            sql(c, "INSERT INTO products (product_id, store_id, supplier_id, name, barcode, category, selling_price, quantity, "
+                    + "min_stock, created_at, updated_at) VALUES (4, 1, 1, 'Sugar', '44444444', 'groceries', 4, 9, 1, 'a', 'a')");
             String fav = "INSERT INTO product_favorites (store_id, product_id, position, created_by, created_at) VALUES (%d, %d, %d, %d, 'a')";
-            assertThatThrownBy(() -> sql(c, fav.formatted(1, 1, 0, 5))).hasMessageContaining("FAVORITE_ACTOR_NOT_STORE_ADMIN");
-            sql(c, fav.formatted(1, 1, 0, 4), fav.formatted(1, 2, 1, 4));
-            assertThatThrownBy(() -> sql(c, fav.formatted(1, 1, 2, 4))).hasMessageContaining("UNIQUE");
-            assertThatThrownBy(() -> sql(c, fav.formatted(1, 3, 2, 4))).hasMessageContaining("FOREIGN KEY"); // store 2 product
+            sql(c, fav.formatted(1, 1, 0, 4));
+            // BEFORE the fix this succeeded: two favorites on the same position
+            assertThatThrownBy(() -> sql(c, fav.formatted(1, 2, 0, 4))).hasMessageContaining("UNIQUE");
+            assertThatThrownBy(() -> sql(c, fav.formatted(1, 1, 1, 4))).hasMessageContaining("UNIQUE"); // same product twice
+            assertThatThrownBy(() -> sql(c, fav.formatted(1, 2, 1, 5))).hasMessageContaining("FAVORITE_ACTOR_NOT_STORE_ADMIN");
+            assertThatThrownBy(() -> sql(c, fav.formatted(1, 3, 1, 4))).hasMessageContaining("FOREIGN KEY"); // store 2 product
             assertThatThrownBy(() -> sql(c, fav.formatted(2, 3, 0, 4))).hasMessageContaining("FOREIGN KEY"); // store 1 admin
+            assertThatThrownBy(() -> sql(c, fav.formatted(1, 2, -1, 4))).hasMessageContaining("CHECK");
+            sql(c, fav.formatted(1, 2, 1, 4), fav.formatted(1, 4, 2, 4));
+            assertThat(order(c, 1)).isEqualTo("1,2,4");
+            // a naive swap through direct updates hits the unique position and changes nothing
+            c.setAutoCommit(false);
+            assertThatThrownBy(() -> sql(c, "UPDATE product_favorites SET position = 0 WHERE product_id = 4")).hasMessageContaining("UNIQUE");
+            c.rollback();
+            c.setAutoCommit(true);
+            assertThat(order(c, 1)).isEqualTo("1,2,4");
+            // reorder (Sugar, Water, Milk), repeated: same result, never a duplicate position
+            reorder(c, 1, 4, 4, 1, 2);
+            reorder(c, 1, 4, 4, 1, 2);
+            assertThat(order(c, 1)).isEqualTo("4,1,2");
+            assertThat(one(c, "SELECT group_concat(position, ',') FROM (SELECT position FROM product_favorites WHERE store_id = 1 ORDER BY position)"))
+                    .isEqualTo("0,1,2");
+            // a reorder that fails half way (a duplicate in the request) leaves the old order intact
+            assertThatThrownBy(() -> reorder(c, 1, 4, 2, 2, 1)).hasMessageContaining("UNIQUE");
+            assertThat(order(c, 1)).isEqualTo("4,1,2");
+            // remove: a gap is fine — ordering stays deterministic
+            sql(c, "DELETE FROM product_favorites WHERE store_id = 1 AND product_id = 1");
+            assertThat(order(c, 1)).isEqualTo("4,2");
+            // store 2 is untouched by store 1's reorders
+            sql(c, fav.formatted(2, 3, 0, 8));
+            reorder(c, 1, 4, 2, 4);
+            assertThat(order(c, 2)).isEqualTo("3");
+            // a product deleted later disappears from the favorites
             sql(c, "UPDATE sale_items SET product_id = NULL WHERE product_id = 2", "DELETE FROM products WHERE product_id = 2");
-            assertThat(n(c, "SELECT COUNT(*) FROM product_favorites")).isEqualTo(1);
+            assertThat(order(c, 1)).isEqualTo("4");
+        }
+        // two admins reorder at the same time: SQLite serialises them; the final order is one of the two, valid
+        try (Connection a = open(); Connection b = open()) {
+            sql(b, "PRAGMA busy_timeout = 5000");
+            sql(a, "INSERT INTO products (product_id, store_id, supplier_id, name, barcode, category, selling_price, quantity, "
+                    + "min_stock, created_at, updated_at) VALUES (5, 1, 1, 'Rice', '55555555', 'groceries', 4, 9, 1, 'a', 'a')");
+            a.setAutoCommit(false);
+            sql(a, "DELETE FROM product_favorites WHERE store_id = 1",
+                    "INSERT INTO product_favorites (store_id, product_id, position, created_by, created_at) VALUES (1, 5, 0, 4, 'a'), (1, 4, 1, 4, 'a')");
+            Thread t = new Thread(() -> {
+                try {
+                    Thread.sleep(200);
+                    a.commit();
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+            });
+            t.start();
+            reorder(b, 1, 4, 4, 5); // waits for A, then applies its own complete order
+            t.join();
+            assertThat(order(b, 1)).isEqualTo("4,5");
+            assertThat(n(b, "SELECT COUNT(*) FROM (SELECT position FROM product_favorites WHERE store_id = 1 GROUP BY position HAVING COUNT(*) > 1)")).isZero();
         }
     }
 

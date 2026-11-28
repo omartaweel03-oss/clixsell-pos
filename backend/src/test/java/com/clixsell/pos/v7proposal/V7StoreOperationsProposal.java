@@ -212,7 +212,8 @@ public final class V7StoreOperationsProposal {
                 FOREIGN KEY (product_id, store_id) REFERENCES products (product_id, store_id) ON DELETE CASCADE,
                 FOREIGN KEY (created_by, store_id) REFERENCES users (user_id, store_id)
             )""".formatted(integer("position", "position >= 0")),
-            "CREATE INDEX ix_favorites_order ON product_favorites (store_id, position)",
+            // one product per position in a store: ordering is total and deterministic
+            "CREATE UNIQUE INDEX ux_favorites_position ON product_favorites (store_id, position)",
             """
             CREATE TRIGGER trg_favorite_actor BEFORE INSERT ON product_favorites
             WHEN coalesce(%s IS NOT 'STORE_ADMIN', 1)
@@ -235,6 +236,11 @@ public final class V7StoreOperationsProposal {
                     OR (SELECT store_id FROM product_packages WHERE package_id = NEW.package_id)
                        IS NOT (SELECT store_id FROM sales WHERE sale_id = NEW.sale_id))), 1)
             BEGIN SELECT RAISE(ABORT, 'SALE_ITEM_PACKAGE_SNAPSHOT'); END""",
+            """
+            CREATE TRIGGER trg_sale_item_price_minor BEFORE INSERT ON sale_items
+            WHEN NEW.unit_price_minor IS NOT NULL
+            AND NEW.unit_price_minor IS NOT CAST(round(NEW.unit_price * 100) AS INTEGER)
+            BEGIN SELECT RAISE(ABORT, 'SALE_ITEM_PRICE_MISMATCH'); END""",
             """
             CREATE TRIGGER trg_sale_item_snapshot_fixed BEFORE UPDATE OF units_per_package, package_name ON sale_items
             WHEN NEW.units_per_package IS NOT OLD.units_per_package OR NEW.package_name IS NOT OLD.package_name
@@ -316,24 +322,44 @@ public final class V7StoreOperationsProposal {
             "ALTER TABLE returns ADD COLUMN rounding_minor INTEGER NOT NULL DEFAULT 0 "
                     + "CHECK (typeof(rounding_minor) = 'integer' AND rounding_minor BETWEEN -50 AND 50)",
             "CREATE INDEX ix_returns_shift ON returns (shift_id)",
+            // composite key: a cheque refund can only name a return together with ITS sale and store
+            "CREATE UNIQUE INDEX ux_returns_id_sale_store ON returns (return_id, sale_id, store_id)",
+            // a refund out of a drawer: an OPEN shift of this store, the returning user's own shift
+            // (or a Store Admin acting on a cashier's drawer)
             """
             CREATE TRIGGER trg_return_shift BEFORE INSERT ON returns WHEN NEW.shift_id IS NOT NULL
             AND coalesce((SELECT status FROM cash_shifts WHERE shift_id = NEW.shift_id) IS NOT 'OPEN'
-                OR (SELECT store_id FROM cash_shifts WHERE shift_id = NEW.shift_id) IS NOT NEW.store_id, 1)
-            BEGIN SELECT RAISE(ABORT, 'RETURN_SHIFT_NOT_OPEN'); END""",
+                OR (SELECT store_id FROM cash_shifts WHERE shift_id = NEW.shift_id) IS NOT NEW.store_id
+                OR ((SELECT cashier_id FROM cash_shifts WHERE shift_id = NEW.shift_id) IS NOT NEW.cashier_id
+                    AND %s IS NOT 'STORE_ADMIN'), 1)
+            BEGIN SELECT RAISE(ABORT, 'RETURN_SHIFT_NOT_OPEN'); END""".formatted(role("NEW.cashier_id")),
             """
             CREATE TRIGGER trg_return_cash_shift_required BEFORE INSERT ON returns
             WHEN NEW.refund_method = 'CASH' AND NEW.shift_id IS NULL
             AND coalesce((SELECT require_cash_shift FROM stores WHERE store_id = NEW.store_id) = 1, 0)
             BEGIN SELECT RAISE(ABORT, 'SHIFT_REQUIRED'); END""",
-            // D6: never cash out of the drawer at return time for a cheque sale; Store Admin only
+            // amounts of a new return: refund method = the sale's own payment method (as the code does);
+            // exact minor amount = the REAL amount; rounding only on a cash refund; never more refunded
+            // in total than the customer paid for the invoice
+            """
+            CREATE TRIGGER trg_return_amounts BEFORE INSERT ON returns
+            WHEN coalesce(NEW.refund_method IS NOT (SELECT payment_method FROM payments WHERE sale_id = NEW.sale_id)
+                OR (NEW.refund_minor IS NOT NULL
+                    AND NEW.refund_minor IS NOT CAST(round(NEW.refund_amount * 100) AS INTEGER))
+                OR (NEW.rounding_minor <> 0 AND (NEW.refund_method IS NOT 'CASH' OR NEW.refund_minor IS NULL))
+                OR (NEW.refund_minor IS NOT NULL AND NEW.refund_minor
+                    + coalesce((SELECT sum(coalesce(r.refund_minor, CAST(round(r.refund_amount * 100) AS INTEGER)))
+                                FROM returns r WHERE r.sale_id = NEW.sale_id), 0)
+                    > (SELECT CAST(round(amount * 100) AS INTEGER) FROM payments WHERE sale_id = NEW.sale_id)), 1)
+            BEGIN SELECT RAISE(ABORT, 'RETURN_AMOUNT_INVALID'); END""",
+            // D6: a return of a cheque sale is made by a Store Admin, with an exact amount (no cash now)
             """
             CREATE TRIGGER trg_return_cheque_sale BEFORE INSERT ON returns
             WHEN (SELECT payment_method FROM payments WHERE sale_id = NEW.sale_id) = 'CHEQUE'
-            AND coalesce(NEW.refund_method IS NOT 'CHEQUE' OR %s IS NOT 'STORE_ADMIN', 1)
+            AND coalesce(%s IS NOT 'STORE_ADMIN' OR NEW.refund_minor IS NULL, 1)
             BEGIN SELECT RAISE(ABORT, 'CHEQUE_RETURN_NEEDS_STORE_ADMIN'); END""".formatted(role("NEW.cashier_id")),
             "CREATE TRIGGER trg_return_no_update BEFORE UPDATE OF quantity, refund_amount, refund_minor, rounding_minor, "
-                    + "refund_method, shift_id ON returns BEGIN SELECT RAISE(ABORT, 'RETURN_FIXED'); END",
+                    + "refund_method, shift_id, sale_id, store_id ON returns BEGIN SELECT RAISE(ABORT, 'RETURN_FIXED'); END",
 
             // ── cheques (feature 9; D6) ─────────────────────────────────────────────────
             """
@@ -355,92 +381,149 @@ public final class V7StoreOperationsProposal {
                 FOREIGN KEY (sale_id, store_id)    REFERENCES sales (sale_id, store_id),
                 FOREIGN KEY (created_by, store_id) REFERENCES users (user_id, store_id),
                 UNIQUE (store_id, bank_name COLLATE NOCASE, cheque_number),
-                UNIQUE (cheque_id, store_id)
+                UNIQUE (cheque_id, store_id),
+                UNIQUE (cheque_id, sale_id, store_id)
             )""".formatted(text("cheque_number", 1, 30), text("bank_name", 2, 80),
                     integer("amount_minor", "amount_minor > 0")),
             "CREATE INDEX ix_cheques_store_status_due ON cheques (store_id, status, due_date)",
-            // a cheque is recorded RECEIVED, for the CHEQUE payment of that sale, for its full amount
+            // recorded RECEIVED, for the CHEQUE payment of that COMPLETED sale, for its full amount
             """
             CREATE TRIGGER trg_cheque_insert BEFORE INSERT ON cheques
             WHEN coalesce(NEW.status IS NOT 'RECEIVED' OR NEW.version IS NOT 0
+                OR (SELECT status FROM sales WHERE sale_id = NEW.sale_id) IS NOT 'COMPLETED'
                 OR (SELECT payment_method FROM payments WHERE payment_id = NEW.payment_id) IS NOT 'CHEQUE'
                 OR (SELECT sale_id FROM payments WHERE payment_id = NEW.payment_id) IS NOT NEW.sale_id
                 OR (SELECT CAST(round(amount * 100) AS INTEGER) FROM payments WHERE payment_id = NEW.payment_id)
                     IS NOT NEW.amount_minor, 1)
             BEGIN SELECT RAISE(ABORT, 'CHEQUE_BAD_INSERT'); END""",
             """
-            CREATE TRIGGER trg_cheque_identity BEFORE UPDATE ON cheques
-            WHEN coalesce(NEW.store_id IS NOT OLD.store_id OR NEW.sale_id IS NOT OLD.sale_id
-                OR NEW.payment_id IS NOT OLD.payment_id OR NEW.cheque_number IS NOT OLD.cheque_number
-                OR NEW.bank_name IS NOT OLD.bank_name OR NEW.amount_minor IS NOT OLD.amount_minor
-                OR NEW.created_by IS NOT OLD.created_by OR NEW.created_at IS NOT OLD.created_at
-                OR NEW.version IS NOT OLD.version + 1, 1)
-            BEGIN SELECT RAISE(ABORT, 'CHEQUE_IDENTITY'); END""",
-            """
-            CREATE TRIGGER trg_cheque_transition BEFORE UPDATE OF status ON cheques
-            WHEN NEW.status IS NOT OLD.status AND coalesce(NOT (
-                (OLD.status = 'RECEIVED'  AND NEW.status IN ('DEPOSITED', 'CANCELLED'))
-                OR (OLD.status = 'DEPOSITED' AND NEW.status IN ('CLEARED', 'BOUNCED'))
-                OR (OLD.status = 'BOUNCED'   AND NEW.status IN ('DEPOSITED', 'CANCELLED'))), 1)
-            BEGIN SELECT RAISE(ABORT, 'CHEQUE_BAD_TRANSITION'); END""",
-            "CREATE TRIGGER trg_cheque_no_delete BEFORE DELETE ON cheques "
-                    + "BEGIN SELECT RAISE(ABORT, 'CHEQUE_NO_DELETE'); END",
-            """
             CREATE TABLE cheque_events (
                 event_id     INTEGER PRIMARY KEY AUTOINCREMENT,
                 cheque_id    INTEGER NOT NULL,
                 store_id     INTEGER NOT NULL,
-                from_status  TEXT,
-                to_status    TEXT    NOT NULL,
+                from_status  TEXT    CHECK (from_status IS NULL
+                                   OR from_status IN ('RECEIVED', 'DEPOSITED', 'CLEARED', 'BOUNCED', 'CANCELLED')),
+                to_status    TEXT    NOT NULL CHECK (to_status IN ('RECEIVED', 'DEPOSITED', 'CLEARED', 'BOUNCED', 'CANCELLED')),
+                to_version   INTEGER NOT NULL CHECK (%s),
                 user_id      INTEGER NOT NULL,
-                created_at   TEXT    NOT NULL,
+                created_at   TEXT    NOT NULL CHECK (length(created_at) >= 10),
                 note         TEXT    CHECK (note IS NULL OR length(note) <= 300),
                 FOREIGN KEY (cheque_id, store_id) REFERENCES cheques (cheque_id, store_id),
-                FOREIGN KEY (user_id, store_id)   REFERENCES users (user_id, store_id)
-            )""",
-            "CREATE INDEX ix_cheque_events_cheque ON cheque_events (cheque_id)",
+                FOREIGN KEY (user_id, store_id)   REFERENCES users (user_id, store_id),
+                UNIQUE (cheque_id, to_version),
+                CHECK (to_status NOT IN ('BOUNCED', 'CANCELLED') OR %s)
+            )""".formatted(integer("to_version", "to_version >= 0"), text("note", 3, 300)),
+            // the first event (RECEIVED, version 0) is written by the database with the cheque itself
+            """
+            CREATE TRIGGER trg_cheque_initial_event AFTER INSERT ON cheques
+            BEGIN
+                INSERT INTO cheque_events (cheque_id, store_id, from_status, to_status, to_version, user_id, created_at)
+                VALUES (NEW.cheque_id, NEW.store_id, NULL, 'RECEIVED', 0, NEW.created_by, NEW.created_at);
+            END""",
+            // an event must describe exactly the next transition of the cheque, by a Store Admin
+            """
+            CREATE TRIGGER trg_cheque_event_valid BEFORE INSERT ON cheque_events
+            WHEN coalesce(
+                (NEW.from_status IS NULL AND NOT (NEW.to_status = 'RECEIVED' AND NEW.to_version = 0
+                    AND (SELECT version FROM cheques WHERE cheque_id = NEW.cheque_id) = 0
+                    AND (SELECT status FROM cheques WHERE cheque_id = NEW.cheque_id) = 'RECEIVED'
+                    AND (SELECT created_by FROM cheques WHERE cheque_id = NEW.cheque_id) = NEW.user_id
+                    AND (SELECT created_at FROM cheques WHERE cheque_id = NEW.cheque_id) = NEW.created_at))
+                OR (NEW.from_status IS NOT NULL AND NOT (
+                    NEW.from_status = (SELECT status FROM cheques WHERE cheque_id = NEW.cheque_id)
+                    AND NEW.to_version = (SELECT version FROM cheques WHERE cheque_id = NEW.cheque_id) + 1
+                    AND ((NEW.from_status = 'RECEIVED' AND NEW.to_status IN ('DEPOSITED', 'CANCELLED'))
+                         OR (NEW.from_status = 'DEPOSITED' AND NEW.to_status IN ('CLEARED', 'BOUNCED'))
+                         OR (NEW.from_status = 'BOUNCED' AND NEW.to_status IN ('DEPOSITED', 'CANCELLED')))
+                    AND %s = 'STORE_ADMIN')), 1)
+            BEGIN SELECT RAISE(ABORT, 'CHEQUE_EVENT_INVALID'); END""".formatted(role("NEW.user_id")),
+            // the event APPLIES the transition (same statement, same transaction): no event, no transition
+            """
+            CREATE TRIGGER trg_cheque_event_apply AFTER INSERT ON cheque_events WHEN NEW.from_status IS NOT NULL
+            BEGIN
+                UPDATE cheques SET status = NEW.to_status, version = NEW.to_version, updated_at = NEW.created_at
+                WHERE cheque_id = NEW.cheque_id;
+            END""",
+            // any other change of a cheque is refused: every committed transition has its event
+            """
+            CREATE TRIGGER trg_cheque_update_needs_event BEFORE UPDATE ON cheques
+            WHEN NOT EXISTS (SELECT 1 FROM cheque_events e WHERE e.cheque_id = OLD.cheque_id
+                AND e.to_version = NEW.version AND e.from_status IS OLD.status AND e.to_status IS NEW.status
+                AND e.created_at IS NEW.updated_at)
+            BEGIN SELECT RAISE(ABORT, 'CHEQUE_UPDATE_WITHOUT_EVENT'); END""",
+            """
+            CREATE TRIGGER trg_cheque_identity BEFORE UPDATE ON cheques
+            WHEN coalesce(NEW.store_id IS NOT OLD.store_id OR NEW.sale_id IS NOT OLD.sale_id
+                OR NEW.payment_id IS NOT OLD.payment_id OR NEW.cheque_number IS NOT OLD.cheque_number
+                OR NEW.bank_name IS NOT OLD.bank_name OR NEW.amount_minor IS NOT OLD.amount_minor
+                OR NEW.due_date IS NOT OLD.due_date OR NEW.notes IS NOT OLD.notes
+                OR NEW.created_by IS NOT OLD.created_by OR NEW.created_at IS NOT OLD.created_at
+                OR NEW.version IS NOT OLD.version + 1, 1)
+            BEGIN SELECT RAISE(ABORT, 'CHEQUE_IDENTITY'); END""",
+            "CREATE TRIGGER trg_cheque_no_delete BEFORE DELETE ON cheques "
+                    + "BEGIN SELECT RAISE(ABORT, 'CHEQUE_NO_DELETE'); END",
             "CREATE TRIGGER trg_cheque_events_no_update BEFORE UPDATE ON cheque_events "
                     + "BEGIN SELECT RAISE(ABORT, 'CHEQUE_EVENTS_APPEND_ONLY'); END",
             "CREATE TRIGGER trg_cheque_events_no_delete BEFORE DELETE ON cheque_events "
                     + "BEGIN SELECT RAISE(ABORT, 'CHEQUE_EVENTS_APPEND_ONLY'); END",
-            // status changes are made by a Store Admin; the first event (RECEIVED) by whoever took it
-            """
-            CREATE TRIGGER trg_cheque_events_actor BEFORE INSERT ON cheque_events
-            WHEN NEW.from_status IS NOT NULL AND coalesce(%s IS NOT 'STORE_ADMIN', 1)
-            BEGIN SELECT RAISE(ABORT, 'CHEQUE_ACTOR_NOT_STORE_ADMIN'); END""".formatted(role("NEW.user_id")),
-            // D6: the refund owed for a return of a cheque sale, decided by a Store Admin
+
+            // D6: what is owed back for a return of a cheque sale; same sale, same store, by construction
             """
             CREATE TABLE cheque_refunds (
-                cheque_refund_id  INTEGER PRIMARY KEY AUTOINCREMENT,
-                store_id          INTEGER NOT NULL,
-                return_id         INTEGER NOT NULL UNIQUE REFERENCES returns (return_id),
-                cheque_id         INTEGER NOT NULL,
-                amount_minor      INTEGER NOT NULL CHECK (%s),
-                status            TEXT    NOT NULL CHECK (status IN ('PENDING', 'PAID', 'CANCELLED')),
-                paid_method       TEXT    CHECK (paid_method IN ('CASH', 'BANK_TRANSFER')),
-                decided_by        INTEGER,
-                decided_at        TEXT,
-                reason            TEXT,
-                created_at        TEXT    NOT NULL,
-                version           INTEGER NOT NULL DEFAULT 0,
-                FOREIGN KEY (cheque_id, store_id)  REFERENCES cheques (cheque_id, store_id),
-                FOREIGN KEY (decided_by, store_id) REFERENCES users (user_id, store_id),
+                cheque_refund_id    INTEGER PRIMARY KEY AUTOINCREMENT,
+                store_id            INTEGER NOT NULL,
+                sale_id             INTEGER NOT NULL,
+                return_id           INTEGER NOT NULL UNIQUE,
+                cheque_id           INTEGER NOT NULL,
+                amount_minor        INTEGER NOT NULL CHECK (%s),
+                status              TEXT    NOT NULL CHECK (status IN ('PENDING', 'PAID', 'CANCELLED')),
+                paid_method         TEXT    CHECK (paid_method IN ('CASH', 'BANK_TRANSFER')),
+                payout_movement_id  INTEGER UNIQUE,
+                decided_by          INTEGER,
+                decided_at          TEXT,
+                reason              TEXT,
+                created_at          TEXT    NOT NULL,
+                version             INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (return_id, sale_id, store_id) REFERENCES returns (return_id, sale_id, store_id),
+                FOREIGN KEY (cheque_id, sale_id, store_id) REFERENCES cheques (cheque_id, sale_id, store_id),
+                FOREIGN KEY (decided_by, store_id)         REFERENCES users (user_id, store_id),
+                -- a cash payout points to ITS movement, which points back (checked at COMMIT)
+                FOREIGN KEY (payout_movement_id, cheque_refund_id)
+                    REFERENCES cash_movements (movement_id, cheque_refund_id) DEFERRABLE INITIALLY DEFERRED,
                 UNIQUE (cheque_refund_id, store_id),
+                UNIQUE (cheque_refund_id, payout_movement_id),
                 CHECK (coalesce(
                     (status = 'PENDING' AND paid_method IS NULL AND decided_by IS NULL AND decided_at IS NULL)
                     OR (status = 'PAID' AND paid_method IS NOT NULL AND decided_by IS NOT NULL AND decided_at IS NOT NULL)
                     OR (status = 'CANCELLED' AND paid_method IS NULL AND decided_by IS NOT NULL
-                        AND decided_at IS NOT NULL AND %s), 0))
+                        AND decided_at IS NOT NULL AND %s), 0)),
+                CHECK (coalesce(status = 'PAID' AND paid_method = 'CASH', 0) = (payout_movement_id IS NOT NULL))
             )""".formatted(integer("amount_minor", "amount_minor > 0"), text("reason", 3, 300)),
-            "CREATE TRIGGER trg_cheque_refund_insert BEFORE INSERT ON cheque_refunds WHEN NEW.status IS NOT 'PENDING' "
-                    + "BEGIN SELECT RAISE(ABORT, 'CHEQUE_REFUND_STARTS_PENDING'); END",
+            // starts PENDING, for exactly the return's refund, of a CHEQUE return, within the cheque amount
+            """
+            CREATE TRIGGER trg_cheque_refund_insert BEFORE INSERT ON cheque_refunds
+            WHEN coalesce(NEW.status IS NOT 'PENDING' OR NEW.version IS NOT 0 OR NEW.payout_movement_id IS NOT NULL
+                OR (SELECT refund_method FROM returns WHERE return_id = NEW.return_id) IS NOT 'CHEQUE'
+                OR (SELECT refund_minor FROM returns WHERE return_id = NEW.return_id) IS NOT NEW.amount_minor
+                OR NEW.amount_minor + coalesce((SELECT sum(amount_minor) FROM cheque_refunds
+                       WHERE cheque_id = NEW.cheque_id AND status <> 'CANCELLED'), 0)
+                   > (SELECT amount_minor FROM cheques WHERE cheque_id = NEW.cheque_id), 1)
+            BEGIN SELECT RAISE(ABORT, 'CHEQUE_REFUND_BAD_INSERT'); END""",
+            // decided once, by a Store Admin; PAID only once the cheque is CLEARED; a CASH payout needs
+            // its movement (written first, same transaction); a bank transfer has no drawer movement
             """
             CREATE TRIGGER trg_cheque_refund_decide BEFORE UPDATE ON cheque_refunds
             WHEN coalesce(OLD.status IS NOT 'PENDING' OR NEW.status NOT IN ('PAID', 'CANCELLED')
                 OR NEW.amount_minor IS NOT OLD.amount_minor OR NEW.cheque_id IS NOT OLD.cheque_id
-                OR NEW.return_id IS NOT OLD.return_id OR NEW.version IS NOT OLD.version + 1
+                OR NEW.return_id IS NOT OLD.return_id OR NEW.sale_id IS NOT OLD.sale_id
+                OR NEW.store_id IS NOT OLD.store_id OR NEW.version IS NOT OLD.version + 1
                 OR %s IS NOT 'STORE_ADMIN'
-                OR (NEW.status = 'PAID' AND (SELECT status FROM cheques WHERE cheque_id = NEW.cheque_id) IS NOT 'CLEARED'), 1)
+                OR (NEW.status = 'PAID' AND (SELECT status FROM cheques WHERE cheque_id = NEW.cheque_id) IS NOT 'CLEARED')
+                OR (NEW.paid_method = 'CASH' AND NOT EXISTS (SELECT 1 FROM cash_movements m
+                    WHERE m.movement_id = NEW.payout_movement_id AND m.cheque_refund_id = NEW.cheque_refund_id
+                      AND m.amount_minor = NEW.amount_minor AND m.created_by = NEW.decided_by))
+                OR (NEW.paid_method IS NOT 'CASH' AND EXISTS (SELECT 1 FROM cash_movements m
+                    WHERE m.cheque_refund_id = NEW.cheque_refund_id)), 1)
             BEGIN SELECT RAISE(ABORT, 'CHEQUE_REFUND_BAD_DECISION'); END""".formatted(role("NEW.decided_by")),
             "CREATE TRIGGER trg_cheque_refund_no_delete BEFORE DELETE ON cheque_refunds "
                     + "BEGIN SELECT RAISE(ABORT, 'CHEQUE_REFUND_NO_DELETE'); END",
@@ -461,6 +544,10 @@ public final class V7StoreOperationsProposal {
                 FOREIGN KEY (shift_id, store_id)         REFERENCES cash_shifts (shift_id, store_id),
                 FOREIGN KEY (created_by, store_id)       REFERENCES users (user_id, store_id),
                 FOREIGN KEY (cheque_refund_id, store_id) REFERENCES cheque_refunds (cheque_refund_id, store_id),
+                -- the refund paid by this movement must be PAID with THIS movement (checked at COMMIT)
+                FOREIGN KEY (cheque_refund_id, movement_id)
+                    REFERENCES cheque_refunds (cheque_refund_id, payout_movement_id) DEFERRABLE INITIALLY DEFERRED,
+                UNIQUE (movement_id, cheque_refund_id),
                 CHECK ((type = 'CHEQUE_REFUND_OUT') = (cheque_refund_id IS NOT NULL))
             )""".formatted(integer("amount_minor", "amount_minor > 0"), text("reason", 3, 300)),
             "CREATE INDEX ix_cash_movements_shift ON cash_movements (shift_id)",
@@ -468,13 +555,31 @@ public final class V7StoreOperationsProposal {
             CREATE TRIGGER trg_cash_movement_insert BEFORE INSERT ON cash_movements
             WHEN coalesce((SELECT status FROM cash_shifts WHERE shift_id = NEW.shift_id) IS NOT 'OPEN'
                 OR %s IS NOT 'STORE_ADMIN'
-                OR (NEW.cheque_refund_id IS NOT NULL AND (SELECT paid_method FROM cheque_refunds
-                    WHERE cheque_refund_id = NEW.cheque_refund_id) IS NOT 'CASH'), 1)
+                OR (NEW.cheque_refund_id IS NOT NULL AND (
+                    (SELECT status FROM cheque_refunds WHERE cheque_refund_id = NEW.cheque_refund_id) IS NOT 'PENDING'
+                    OR (SELECT amount_minor FROM cheque_refunds WHERE cheque_refund_id = NEW.cheque_refund_id)
+                        IS NOT NEW.amount_minor)), 1)
             BEGIN SELECT RAISE(ABORT, 'CASH_MOVEMENT_NOT_ALLOWED'); END""".formatted(role("NEW.created_by")),
             "CREATE TRIGGER trg_cash_movement_no_update BEFORE UPDATE ON cash_movements "
                     + "BEGIN SELECT RAISE(ABORT, 'CASH_MOVEMENTS_APPEND_ONLY'); END",
             "CREATE TRIGGER trg_cash_movement_no_delete BEFORE DELETE ON cash_movements "
-                    + "BEGIN SELECT RAISE(ABORT, 'CASH_MOVEMENTS_APPEND_ONLY'); END"
+                    + "BEGIN SELECT RAISE(ABORT, 'CASH_MOVEMENTS_APPEND_ONLY'); END",
+
+            // ── shift closing: the expected cash is the database's own calculation (I3) ─
+            """
+            CREATE TRIGGER trg_shift_expected BEFORE UPDATE ON cash_shifts
+            WHEN NEW.status = 'CLOSED' AND OLD.status = 'OPEN' AND NEW.expected_cash_minor IS NOT (
+                OLD.opening_cash_minor
+                + coalesce((SELECT sum(CAST(round(p.amount * 100) AS INTEGER)) FROM payments p
+                            JOIN sales s ON s.sale_id = p.sale_id
+                            WHERE s.shift_id = OLD.shift_id AND p.payment_method = 'CASH'), 0)
+                - coalesce((SELECT sum(coalesce(r.refund_minor, CAST(round(r.refund_amount * 100) AS INTEGER)))
+                            FROM returns r WHERE r.shift_id = OLD.shift_id AND r.refund_method = 'CASH'), 0)
+                + coalesce((SELECT sum(amount_minor) FROM cash_movements
+                            WHERE shift_id = OLD.shift_id AND type = 'CASH_IN'), 0)
+                - coalesce((SELECT sum(amount_minor) FROM cash_movements
+                            WHERE shift_id = OLD.shift_id AND type IN ('CASH_OUT', 'CHEQUE_REFUND_OUT')), 0))
+            BEGIN SELECT RAISE(ABORT, 'SHIFT_EXPECTED_MISMATCH'); END"""
     );
 
     // ── the migration procedure ─────────────────────────────────────────────────────
