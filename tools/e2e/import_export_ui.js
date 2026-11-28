@@ -52,8 +52,19 @@ const field = async (p, label, value) => {
   await f.click({ timeout: 8000 }); await p.keyboard.press('Control+A'); await p.keyboard.press('Backspace');
   if (value !== '') await p.keyboard.type(String(value)); await p.waitForTimeout(250);
 };
+// Store upgrade (feature 3): a CASH sale asks "How much did the customer give you?". Like a cashier,
+// take the exact amount and complete the payment. Card / wallet / transfer sales open no dialog.
+const payCashIfAsked = async (p, wait) => {
+  const exact = p.getByRole('button', { name: /^(Exact amount|المبلغ بالضبط)$/ });
+  if (await exact.count() === 0) return;
+  await exact.first().click({ timeout: 8000 }); await p.waitForTimeout(400);
+  await p.getByRole('button', { name: /^(Complete payment|إتمام الدفع)$/ }).first().click({ timeout: 8000 });
+  await p.waitForTimeout(wait);
+};
+const isCompleteSale = (name) => name === 'Complete Sale' || name === 'إتمام البيع';
 const click = async (p, name, wait = 1300, nth = 0) => {
   await p.getByRole('button', typeof name === 'string' ? { name, exact: true } : { name }).nth(nth).click({ timeout: 8000 }); await p.waitForTimeout(wait);
+  if (isCompleteSale(name)) await payCashIfAsked(p, wait);
 };
 // Buttons whose name may carry a visible tooltip or a badge count: matched by prefix, and the mouse is
 // moved away first so a tooltip from the previous click does not change the accessible name.

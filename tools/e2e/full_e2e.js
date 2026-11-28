@@ -27,7 +27,17 @@ async function session(user, pw, w, h) {
   return { ctx, p, st };
 }
 const field = async (p, l, v) => { await p.locator(`flt-semantics-host input[aria-label^="${l}"], flt-semantics-host textarea[aria-label^="${l}"]`).first().click({ timeout: 8000 }); await p.keyboard.press('Control+A'); await p.keyboard.type(v); await p.waitForTimeout(250); };
-const click = async (p, name, wait = 1400) => { await p.getByRole('button', { name }).first().click({ timeout: 8000 }); await p.waitForTimeout(wait); };
+// Store upgrade (feature 3): a CASH sale asks "How much did the customer give you?". Like a cashier,
+// take the exact amount and complete the payment. Card / wallet / transfer sales open no dialog.
+const payCashIfAsked = async (p, wait) => {
+  const exact = p.getByRole('button', { name: /^(Exact amount|المبلغ بالضبط)$/ });
+  if (await exact.count() === 0) return;
+  await exact.first().click({ timeout: 8000 }); await p.waitForTimeout(400);
+  await p.getByRole('button', { name: /^(Complete payment|إتمام الدفع)$/ }).first().click({ timeout: 8000 });
+  await p.waitForTimeout(wait);
+};
+const isCompleteSale = (name) => name === 'Complete Sale' || name === 'إتمام البيع';
+const click = async (p, name, wait = 1400) => { await p.getByRole('button', { name }).first().click({ timeout: 8000 }); await p.waitForTimeout(wait); if (isCompleteSale(name)) await payCashIfAsked(p, wait); };
 const has = async (p, name) => (await p.getByRole('button', { name }).count()) > 0;
 const txt = async p => p.locator('flt-semantics-host').innerText();
 // Visible text PLUS the accessible labels (aria-label) Flutter uses for many texts.

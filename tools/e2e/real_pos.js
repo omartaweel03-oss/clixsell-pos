@@ -45,8 +45,19 @@ const field = async (p, label, value) => {
   await f.click({ timeout: 8000 }); await p.keyboard.press('Control+A'); await p.keyboard.press('Backspace');
   await p.keyboard.type(String(value)); await p.waitForTimeout(250);
 };
+// Store upgrade (feature 3): a CASH sale asks "How much did the customer give you?". Like a cashier,
+// take the exact amount and complete the payment. Card / wallet / transfer sales open no dialog.
+const payCashIfAsked = async (p, wait) => {
+  const exact = p.getByRole('button', { name: /^(Exact amount|المبلغ بالضبط)$/ });
+  if (await exact.count() === 0) return;
+  await exact.first().click({ timeout: 8000 }); await p.waitForTimeout(400);
+  await p.getByRole('button', { name: /^(Complete payment|إتمام الدفع)$/ }).first().click({ timeout: 8000 });
+  await p.waitForTimeout(wait);
+};
+const isCompleteSale = (name) => name === 'Complete Sale' || name === 'إتمام البيع';
 const click = async (p, name, wait = 1300, nth = 0) => {
   await p.getByRole('button', { name }).nth(nth).click({ timeout: 8000 }); await p.waitForTimeout(wait);
+  if (isCompleteSale(name)) await payCashIfAsked(p, wait);
 };
 // The search box is the only input on the Products list and on the POS. Its accessible label is its
 // hint, which disappears once it holds text, so it is found by position, not by label.
@@ -285,6 +296,13 @@ function checkSaleRow(area, exp, row) {
     rec('POS', 'API+DB', `receipt code returned to the app = the saved QR value (the dialog shows it as selectable text, not readable by automation; see ${rshot})`,
       qr, apiSale && apiSale.receiptCode, apiSale && apiSale.receiptCode === qr);
     rec('POS', 'DB', `${inv}: payment method`, 'CASH', one(`select payment_method from payments where sale_id=${sid}`), one(`select payment_method from payments where sale_id=${sid}`) === 'CASH');
+    // Store upgrade, feature 3: the cash dialog (exact amount) — receipt shows cash received and change;
+    // the payment is recorded at the invoice total, one row only.
+    rec('POS', 'UI', `${inv}: receipt shows the cash received and the change`, 'Cash received + Change given',
+      ['Cash received', 'Change given'].filter(w => t.includes(w)).join(', '), t.includes('Cash received') && t.includes('Change given'));
+    const payRows = one(`select count(*) || ':' || printf('%.2f', sum(amount)) from payments where sale_id=${sid}`);
+    rec('POS', 'DB', `${inv}: one payment, at the invoice total (change is not revenue)`, `1:${exp.total.toFixed(2)}`, payRows,
+      payRows === `1:${exp.total.toFixed(2)}`);
     stock.P01 -= 2; stock.P03 -= 3; stock.P04 -= 1; checkStock('POS', ['P01', 'P03', 'P04', 'P05'], 'after T1');
     sales.push({ ...exp, sid, inv });
     await p.keyboard.press('Escape'); await p.waitForTimeout(800);
